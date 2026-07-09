@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "1c4b86d6-8a26-4fa0-98a9-271b09e9abfe",
+  "name": "Shor's Factoring - GateBased 1e-4 - Litinski19 - Lattice Surgery",
+  "createdAt": "2026-07-09T18:30:00Z",
+  "application": {
+    "type": "benchmark",
+    "benchmarkId": "shors-factoring"
+  },
+  "architecture": {
+    "type": "gateBased",
+    "errorRate": 0.0001,
+    "gateTime": 100000,
+    "measurementTime": 100000,
+    "twoQubitGateTime": 100000
+  },
+  "qecCode": "surface_code",
+  "magicStateFactory": "litinski19",
+  "traceTransform": {
+    "type": "latticeSurgery",
+    "slowDownFactor": 1.0
+  },
+  "maxError": 0.001,
+  "qreVersion": "qdk-qre-v1-fixture"
+}

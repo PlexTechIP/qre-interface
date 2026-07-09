@@ -1,0 +1,265 @@
+{
+  "schemaVersion": "1.0.0",
+  "runId": "acaf1c0e-a716-41bc-9774-598cacee033f",
+  "status": "succeeded",
+  "error": null,
+  "frontier": [
+    {
+      "physicalQubits": {
+        "value": 829766,
+        "unit": "qubits",
+        "display": "829,766"
+      },
+      "runtime": {
+        "value": 19100000,
+        "unit": "ns",
+        "display": "19.1 ms"
+      },
+      "logicalCycleTime": {
+        "value": 5200,
+        "unit": "ns",
+        "display": "5.2 us"
+      },
+      "factories": {
+        "value": [
+          {
+            "stateType": "T",
+            "copies": 216
+          }
+        ],
+        "unit": "factories",
+        "display": "216 x T"
+      },
+      "totalError": {
+        "value": 0.00042,
+        "unit": "probability",
+        "display": "4.2e-4"
+      },
+      "codeDistance": {
+        "value": 19,
+        "unit": "",
+        "display": "19"
+      },
+      "additional": {
+        "physicalFactoryQubits": {
+          "value": 610920,
+          "unit": "qubits",
+          "display": "610,920"
+        },
+        "runtimeSingleShot": {
+          "value": 19100000,
+          "unit": "ns",
+          "display": "19.1 ms"
+        },
+        "expectedShots": {
+          "value": 1,
+          "unit": "shots",
+          "display": "1"
+        },
+        "numTsPerRotation": {
+          "value": 20,
+          "unit": "T states",
+          "display": "20"
+        },
+        "source": {
+          "value": "qsharp",
+          "unit": "",
+          "display": "Q#"
+        },
+        "feasibility": {
+          "value": "feasible",
+          "unit": "",
+          "display": "Feasible"
+        }
+      }
+    },
+    {
+      "physicalQubits": {
+        "value": 1048200,
+        "unit": "qubits",
+        "display": "1,048,200"
+      },
+      "runtime": {
+        "value": 14300000,
+        "unit": "ns",
+        "display": "14.3 ms"
+      },
+      "logicalCycleTime": {
+        "value": 4800,
+        "unit": "ns",
+        "display": "4.8 us"
+      },
+      "factories": {
+        "value": [
+          {
+            "stateType": "T",
+            "copies": 288
+          }
+        ],
+        "unit": "factories",
+        "display": "288 x T"
+      },
+      "totalError": {
+        "value": 0.00061,
+        "unit": "probability",
+        "display": "6.1e-4"
+      },
+      "codeDistance": {
+        "value": 17,
+        "unit": "",
+        "display": "17"
+      },
+      "additional": {
+        "physicalFactoryQubits": {
+          "value": 823680,
+          "unit": "qubits",
+          "display": "823,680"
+        },
+        "runtimeSingleShot": {
+          "value": 14300000,
+          "unit": "ns",
+          "display": "14.3 ms"
+        },
+        "expectedShots": {
+          "value": 1,
+          "unit": "shots",
+          "display": "1"
+        },
+        "numTsPerRotation": {
+          "value": 20,
+          "unit": "T states",
+          "display": "20"
+        }
+      }
+    },
+    {
+      "physicalQubits": {
+        "value": 652440,
+        "unit": "qubits",
+        "display": "652,440"
+      },
+      "runtime": {
+        "value": 31800000,
+        "unit": "ns",
+        "display": "31.8 ms"
+      },
+      "logicalCycleTime": {
+        "value": 6800,
+        "unit": "ns",
+        "display": "6.8 us"
+      },
+      "factories": {
+        "value": [
+          {
+            "stateType": "T",
+            "copies": 144
+          }
+        ],
+        "unit": "factories",
+        "display": "144 x T"
+      },
+      "totalError": {
+        "value": 0.00031,
+        "unit": "probability",
+        "display": "3.1e-4"
+      },
+      "codeDistance": {
+        "value": 21,
+        "unit": "",
+        "display": "21"
+      },
+      "additional": {
+        "physicalFactoryQubits": {
+          "value": 403200,
+          "unit": "qubits",
+          "display": "403,200"
+        },
+        "runtimeSingleShot": {
+          "value": 31800000,
+          "unit": "ns",
+          "display": "31.8 ms"
+        },
+        "expectedShots": {
+          "value": 1,
+          "unit": "shots",
+          "display": "1"
+        },
+        "numTsPerRotation": {
+          "value": 20,
+          "unit": "T states",
+          "display": "20"
+        }
+      }
+    }
+  ],
+  "raw": {
+    "status": "success",
+    "engineApi": "qdk-qre-estimation-table",
+    "application": "quantum-dynamics",
+    "configuration": {
+      "architecture": "GateBased",
+      "qecCode": "surface_code",
+      "magicStateFactory": "round_based",
+      "traceTransform": "psspc",
+      "maxError": 1
+    },
+    "frontier": [
+      {
+        "qubits": 829766,
+        "runtime": 19100000,
+        "error": 0.00042,
+        "factories": [
+          {
+            "stateType": "T",
+            "copies": 216
+          }
+        ],
+        "LOGICAL_CYCLE_TIME": 5200,
+        "DISTANCE": 19,
+        "PHYSICAL_FACTORY_QUBITS": 610920,
+        "RUNTIME_SINGLE_SHOT": 19100000,
+        "EXPECTED_SHOTS": 1,
+        "NUM_TS_PER_ROTATION": 20,
+        "source": "qsharp",
+        "FEASIBILITY": "feasible"
+      },
+      {
+        "qubits": 1048200,
+        "runtime": 14300000,
+        "error": 0.00061,
+        "factories": [
+          {
+            "stateType": "T",
+            "copies": 288
+          }
+        ],
+        "LOGICAL_CYCLE_TIME": 4800,
+        "DISTANCE": 17,
+        "PHYSICAL_FACTORY_QUBITS": 823680,
+        "RUNTIME_SINGLE_SHOT": 14300000,
+        "EXPECTED_SHOTS": 1,
+        "NUM_TS_PER_ROTATION": 20
+      },
+      {
+        "qubits": 652440,
+        "runtime": 31800000,
+        "error": 0.00031,
+        "factories": [
+          {
+            "stateType": "T",
+            "copies": 144
+          }
+        ],
+        "LOGICAL_CYCLE_TIME": 6800,
+        "DISTANCE": 21,
+        "PHYSICAL_FACTORY_QUBITS": 403200,
+        "RUNTIME_SINGLE_SHOT": 31800000,
+        "EXPECTED_SHOTS": 1,
+        "NUM_TS_PER_ROTATION": 20
+      }
+    ]
+  },
+  "qreVersion": "qdk-qre-v1-fixture",
+  "startedAt": "2026-07-09T18:22:03Z",
+  "completedAt": "2026-07-09T18:22:06Z"
+}

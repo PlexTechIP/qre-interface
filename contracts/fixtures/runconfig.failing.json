@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "bead9c0e-c3ff-4d33-bb13-5f1c0a01b385",
+  "name": "Quantum Dynamics - GateBased 1e-4 - Unsatisfiable Max Error",
+  "createdAt": "2026-07-09T18:40:00Z",
+  "application": {
+    "type": "benchmark",
+    "benchmarkId": "quantum-dynamics"
+  },
+  "architecture": {
+    "type": "gateBased",
+    "errorRate": 0.0001,
+    "gateTime": 100000,
+    "measurementTime": 100000,
+    "twoQubitGateTime": null
+  },
+  "qecCode": "surface_code",
+  "magicStateFactory": "round_based",
+  "traceTransform": {
+    "type": "psspc",
+    "tStatesPerRotation": 20,
+    "ccxMagicStates": false
+  },
+  "maxError": 1e-12,
+  "qreVersion": "qdk-qre-v1-fixture"
+}
