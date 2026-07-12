@@ -1,4 +1,4 @@
-# Team 3 — `configToInvocation` Design (Jessie's slice)
+# Team 3 — QRE Engine & Execution: Design
 
 **Status:** Draft, week-2 Team 3 (Engine & Execution). Route: **B — `qdk` Python
 subprocess** (primary per `docs/tech-stack.md`; a light Route A evidence spike
@@ -6,24 +6,27 @@ still owed for the DoD, out of scope for this doc).
 
 ## Scope
 
-Team 3 splits `QreEngine implements EstimatorService` into three stages
-(per `docs/week-2/team-3/week-2-team-3-technical-brief.md`). This doc covers
-**only the first stage, owned by Jessie**: `configToInvocation`. Neil owns
-`execute` + `outputToResult` (the Python subprocess wrapper and raw-output
-mapping) — separate doc/PR, out of scope here except for the shared seam
-defined below.
+Build `QreEngine implements EstimatorService` (from `contracts/types.ts`,
+imported verbatim, never re-declared) end to end, in
+`app/src/main/engine/`: consume a `RunConfig`, execute a real QRE estimation
+via the Python `qdk[qre]` subprocess, and emit a conformant `RunResult`.
 
-## Responsibility
+Per `docs/week-2/team-3/week-2-team-3-technical-brief.md`, the implementation
+is three separately-testable stages:
 
-Pure function: `RunConfig` in → `QreInvocation` out, or a validation failure
-that the caller turns into `status: "failed"`, `error.code: "INVALID_CONFIG"`.
-No engine calls, no subprocess, no I/O beyond reading benchmark source files
-already stored in-repo.
+1. **`configToInvocation(config)`** — pure function, `RunConfig` → engine
+   invocation. Config-semantics validation, benchmark/upload source
+   resolution.
+2. **`execute(invocation)`** — the only stage that touches the engine. Spawns
+   the Python subprocess, enforces a timeout, captures stdout/stderr, never
+   lets a crash propagate as an unhandled rejection.
+3. **`outputToResult(raw, config, timing)`** — pure function, raw qdk output →
+   `RunResult` (frontier rows, `raw`, `status`/`error`/`qreVersion`/timestamps).
 
-## The seam: `QreInvocation`
+## Internal type: `QreInvocation`
 
-The only shape Jessie's and Neil's code share. Not part of the frozen
-`contracts/` — an internal implementation detail Team 3 owns.
+The seam between stage 1 and stages 2–3. Not part of the frozen `contracts/`
+— an implementation detail of this module.
 
 ```ts
 interface QreInvocation {
@@ -45,18 +48,17 @@ interface QreInvocation {
 }
 ```
 
-Neil confirms/edits this async before Tuesday's wire-up; either side can
-propose a change since it's not contract-frozen.
+## Stage 1 — `configToInvocation`
 
-## Validation rules (enforced exactly — no more, no less)
+### Validation rules (enforced exactly — no more, no less)
 
 Straight from `docs/data-contracts.md` §Validation and the technical brief's
 "Config semantics you enforce" section:
 
 - `application.type` is `"benchmark"` or `"uploaded"`.
 - Benchmark: `benchmarkId` must resolve in the local benchmark registry
-  (seeded from `contracts/benchmarks.json` + Team 3's real sources); unknown
-  id → `INVALID_CONFIG`.
+  (seeded from `contracts/benchmarks.json` + real sources); unknown id →
+  `INVALID_CONFIG`.
 - Uploaded: `format` is `qsharp`/`openqasm`/`qir`; file must exist and parse
   far enough to identify format mismatches → `INVALID_CONFIG`; actual compile
   failure is `COMPILE_ERROR` and happens downstream in `execute`, not here.
@@ -76,7 +78,7 @@ Failures resolve the promise with a schema-valid failed `RunResult`
 (`INVALID_CONFIG`, analyst-facing `error.message`) — never a rejection, per
 `EstimatorService.run()`'s contract.
 
-## Benchmark source wiring
+### Benchmark source wiring
 
 All 5 ids in `contracts/benchmarks.json` get real, in-repo source programs
 (`shors-factoring`, `ekera-hastad-factoring`, `quantum-dynamics`,
@@ -86,34 +88,71 @@ mirroring the contract file. `configToInvocation` resolves `benchmarkId` →
 `{ sourcePath, format, entryExpr }` via this local registry.
 
 Uploaded programs: resolve `filePath` directly; `addToLibrary` handling
-(copying into the local registry) is in scope for this stage since it's a
-config-time concern, not an execution concern.
+(copying into the local registry) is in scope here since it's a config-time
+concern, not an execution concern.
+
+## Stage 2 — `execute`
+
+- Spawns the Python subprocess (`python3` + `qdk[qre]` invocation script,
+  `QDK_PYTHON_TELEMETRY=none`), passes `QreInvocation` over JSON-over-stdio,
+  reads the JSON response from stdout.
+- Enforces a hard timeout (kill + `TIMEOUT` result); captures stderr for
+  diagnostics.
+- Never lets a subprocess crash propagate as an unhandled rejection — a crash
+  resolves as `status: "failed"`, `error.code: "ENGINE_CRASH"`.
+- Two sequential/concurrent runs must not interfere (no shared mutable state
+  across invocations; each spawn is independent).
+
+## Stage 3 — `outputToResult`
+
+- Maps raw qdk output keys (e.g. `LOGICAL_CYCLE_TIME`, `PHYSICAL_FACTORY_QUBITS`,
+  `DISTANCE`) onto the contract's `RESULT_FIELD_KEYS` per the
+  `data-contracts.md` appendix.
+- Builds `frontier`: one row per estimate, all six default fields required
+  (numeric `value` + `unit` + `display`; `0` is legitimate) — a row missing a
+  default field makes the whole run `failed`/`ESTIMATION_FAILED`.
+- `raw` is the complete, unmodified engine output, verbatim — `null` only
+  when the engine produced nothing (`TIMEOUT`/`ENGINE_CRASH`).
+- `qreVersion` read from the engine/package at runtime, never hardcoded.
+- Failure mapping uses only the canonical `error.code` enum: `INVALID_CONFIG`,
+  `COMPILE_ERROR`, `ESTIMATION_FAILED`, `TIMEOUT`, `ENGINE_CRASH`.
+
+## Conformance harness
+
+CLI or test suite: feed each `contracts/fixtures/runconfig.*.json` fixture
+through the full `QreEngine.run()`, validate the emitted `RunResult` against
+`contracts/runresult.schema.json` with Ajv + ajv-formats. Must pass for all
+4 fixtures, including `runconfig.failing.json` (schema-valid invocation that
+resolves as a schema-valid **failed** result, not a hang or rejection).
 
 ## Testing plan
 
-Unit tests (pure function, no subprocess):
-- All 4 `contracts/fixtures/runconfig.*.json` fixtures → correct
-  `QreInvocation` (or correct `INVALID_CONFIG` where expected — note
-  `runconfig.failing.json` is schema-valid and should produce a *valid*
-  invocation; its failure happens downstream in execution, not here).
-- Boundary cases: Litinski19 at `errorRate` exactly 1e-3 (allowed) and
-  1.01e-3 (rejected); Majorana with `magicStateFactory: litinski19`
-  (rejected); unknown `benchmarkId`; malformed upload `format`.
-- One uploaded-program case end-to-end (good file → valid invocation; bad/
-  garbled file → `INVALID_CONFIG`).
+- **Stage 1 unit tests:** all 4 `runconfig.*` fixtures → correct
+  `QreInvocation` (note: `runconfig.failing.json` is schema-valid and should
+  produce a *valid* invocation — its failure happens downstream in
+  execution). Boundary cases: Litinski19 at `errorRate` exactly 1e-3 (allowed)
+  vs 1.01e-3 (rejected); Majorana with `litinski19` (rejected); unknown
+  `benchmarkId`; malformed upload `format`; one good and one bad uploaded
+  program.
+- **Stage 2/3 unit tests:** against captured real qdk outputs — multi-row
+  frontier, single-row frontier, formatting-stress (very large numbers), a
+  real failure. One capture per architecture type, one per trace transform.
+- **Cross-config sanity:** same benchmark across ≥3 architecture/QEC/factory
+  combinations → plausible, differing outputs.
+- **Conformance harness green** on all 4 fixtures end to end.
 
 ## Claude + Codex workflow
 
-Claude Code drives: writes `configToInvocation`, the validation logic,
-benchmark registry, and the unit tests above. Before each PR into
-`week-2/team-3`, run Codex as an independent review pass checking specifically:
-validation rules match `data-contracts.md` exactly (no missing/extra rules),
-all failure paths resolve rather than throw, benchmark→source mapping is
-correct. Reconcile findings, then Neil does the human PR review per
-`docs/engineering-workflow.md`.
+Claude Code drives: writes all three stages, the benchmark registry, the
+Python subprocess wrapper, and the tests above. After each stage (or logical
+chunk of work), run Codex as an independent review pass checking
+specifically: validation rules match `data-contracts.md` exactly (no
+missing/extra rules), all failure paths resolve rather than throw, the raw
+key mapping is correct and complete, timeout/crash handling can't hang the
+caller, `raw` is preserved verbatim. Reconcile Codex's findings before moving
+to the next stage.
 
 ## Out of scope for this doc
 
-Python subprocess wrapper, `execute`, `outputToResult`, raw-output field
-mapping, timeout/crash handling, conformance harness wiring (Neil's slice /
-joint Tuesday integration), Route A spike.
+Route A spike/decision memo, packaging/bundling for distribution, SQLite
+persistence, any UI.
