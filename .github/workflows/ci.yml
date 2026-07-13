@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [week-2/team-3, main]
+  push:
+    branches: [week-2/team-3, main]
+
+jobs:
+  node-checks:
+    name: typecheck + unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+  # TODO: add a second job once execute()/the conformance harness land —
+  # set up Python, `pip install qdk[qre]==1.29.1`, and run `npm run test:conformance`
+  # (the slow real-engine tests kept out of the fast path above).
