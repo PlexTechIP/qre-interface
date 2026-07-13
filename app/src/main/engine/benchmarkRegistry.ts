@@ -2,7 +2,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const QSHARP_PROJECT_ROOT = path.join(__dirname, "benchmarks", "qsharp-project");
+const QSHARP_PROJECT_ROOT = path.join(
+  __dirname,
+  "benchmarks",
+  "qsharp-project",
+);
 
 export interface BenchmarkEntry {
   id: string;
@@ -21,7 +25,7 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Factoring-oriented benchmark for estimating resources of Shor-style modular arithmetic workloads.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "ShorsFactoring.Main()",
+    entryExpr: "ShorsFactoring.Run()",
   },
   "ekera-hastad-factoring": {
     id: "ekera-hastad-factoring",
@@ -30,7 +34,7 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Factoring benchmark based on the Ekerå-Håstad variant, for contrasting factoring resource estimates against Shor's algorithm.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "EkeraHastadFactoring.Main()",
+    entryExpr: "EkeraHastadFactoring.Run()",
   },
   "quantum-dynamics": {
     id: "quantum-dynamics",
@@ -39,15 +43,16 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Simulation-style benchmark for quantum dynamics workloads and the default baseline for week-2 contract fixtures.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "QuantumDynamics.Main()",
+    entryExpr: "QuantumDynamics.Run()",
   },
   "grovers-search": {
     id: "grovers-search",
     name: "Grover's Search",
-    description: "Search benchmark for Grover-style amplitude amplification workloads.",
+    description:
+      "Search benchmark for Grover-style amplitude amplification workloads.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "GroversSearch.Main()",
+    entryExpr: "GroversSearch.Run()",
   },
   "phase-estimation": {
     id: "phase-estimation",
@@ -56,10 +61,12 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Phase-estimation benchmark for algorithms dominated by controlled unitary applications and precision trade-offs.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "PhaseEstimation.Main()",
+    entryExpr: "PhaseEstimation.Run()",
   },
 };
 
-export function resolveBenchmark(benchmarkId: string): BenchmarkEntry | undefined {
+export function resolveBenchmark(
+  benchmarkId: string,
+): BenchmarkEntry | undefined {
   return BENCHMARK_REGISTRY[benchmarkId];
 }

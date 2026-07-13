@@ -18,7 +18,11 @@ function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactory: "round_based",
-    traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+    traceTransform: {
+      type: "psspc",
+      tStatesPerRotation: 20,
+      ccxMagicStates: false,
+    },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
     ...overrides,
@@ -30,7 +34,7 @@ describe("configToInvocation", () => {
     const result = configToInvocation(baseGateBasedConfig(), 30000);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.invocation.program.entryExpr).toBe("QuantumDynamics.Main()");
+      expect(result.invocation.program.entryExpr).toBe("QuantumDynamics.Run()");
       expect(result.invocation.program.format).toBe("qsharp");
       expect(result.invocation.architecture).toEqual({
         type: "gateBased",
@@ -46,7 +50,9 @@ describe("configToInvocation", () => {
 
   it("rejects an unknown benchmark id with INVALID_CONFIG", () => {
     const result = configToInvocation(
-      baseGateBasedConfig({ application: { type: "benchmark", benchmarkId: "not-a-real-id" } }),
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "not-a-real-id" },
+      }),
       30000,
     );
     expect(result.ok).toBe(false);
@@ -54,7 +60,10 @@ describe("configToInvocation", () => {
   });
 
   it("rejects a GateBased/three_aux mismatch with INVALID_CONFIG", () => {
-    const result = configToInvocation(baseGateBasedConfig({ qecCode: "three_aux" }), 30000);
+    const result = configToInvocation(
+      baseGateBasedConfig({ qecCode: "three_aux" }),
+      30000,
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
   });
@@ -62,7 +71,13 @@ describe("configToInvocation", () => {
   it("rejects litinski19 with errorRate above 1e-3 with INVALID_CONFIG", () => {
     const result = configToInvocation(
       baseGateBasedConfig({
-        architecture: { type: "gateBased", errorRate: 0.005, gateTime: 50, measurementTime: 100, twoQubitGateTime: null },
+        architecture: {
+          type: "gateBased",
+          errorRate: 0.005,
+          gateTime: 50,
+          measurementTime: 100,
+          twoQubitGateTime: null,
+        },
         magicStateFactory: "litinski19",
       }),
       30000,
@@ -74,7 +89,13 @@ describe("configToInvocation", () => {
   it("accepts litinski19 with errorRate exactly 1e-3", () => {
     const result = configToInvocation(
       baseGateBasedConfig({
-        architecture: { type: "gateBased", errorRate: 0.001, gateTime: 50, measurementTime: 100, twoQubitGateTime: null },
+        architecture: {
+          type: "gateBased",
+          errorRate: 0.001,
+          gateTime: 50,
+          measurementTime: 100,
+          twoQubitGateTime: null,
+        },
         magicStateFactory: "litinski19",
       }),
       30000,
@@ -85,7 +106,11 @@ describe("configToInvocation", () => {
   it("rejects majorana with litinski19 with INVALID_CONFIG", () => {
     const result = configToInvocation(
       baseGateBasedConfig({
-        architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
+        architecture: {
+          type: "majorana",
+          errorRate: 0.00001,
+          operationTime: 1000,
+        },
         qecCode: "three_aux",
         magicStateFactory: "litinski19",
       }),
@@ -99,10 +124,18 @@ describe("configToInvocation", () => {
     const result = configToInvocation(
       baseGateBasedConfig({
         application: { type: "benchmark", benchmarkId: "phase-estimation" },
-        architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
+        architecture: {
+          type: "majorana",
+          errorRate: 0.00001,
+          operationTime: 1000,
+        },
         qecCode: "three_aux",
         magicStateFactory: "round_based",
-        traceTransform: { type: "psspc", tStatesPerRotation: 5, ccxMagicStates: false },
+        traceTransform: {
+          type: "psspc",
+          tStatesPerRotation: 5,
+          ccxMagicStates: false,
+        },
       }),
       30000,
     );
@@ -111,14 +144,23 @@ describe("configToInvocation", () => {
   });
 
   it("does NOT reject an in-range-but-unsatisfiable maxError (passes through)", () => {
-    const result = configToInvocation(baseGateBasedConfig({ maxError: 1e-12 }), 30000);
+    const result = configToInvocation(
+      baseGateBasedConfig({ maxError: 1e-12 }),
+      30000,
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.invocation.maxError).toBe(1e-12);
   });
 
   it("rejects PSSPC tStatesPerRotation out of [5,20] with INVALID_CONFIG", () => {
     const result = configToInvocation(
-      baseGateBasedConfig({ traceTransform: { type: "psspc", tStatesPerRotation: 21, ccxMagicStates: false } }),
+      baseGateBasedConfig({
+        traceTransform: {
+          type: "psspc",
+          tStatesPerRotation: 21,
+          ccxMagicStates: false,
+        },
+      }),
       30000,
     );
     expect(result.ok).toBe(false);

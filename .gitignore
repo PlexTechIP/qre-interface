@@ -2,3 +2,7 @@
 .DS_Store
 node_modules/
 app/src/main/engine/python/.venv/
+app/src/main/engine/python/.qre-cache/
+app/src/main/engine/python/.matplotlib/
+.tmp/
+__pycache__/
