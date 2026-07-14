@@ -65,7 +65,7 @@ Your track has the most unknowns of the three — front-load the risky part
       Litinski19 availability → `INVALID_CONFIG`; **in-range-but-
       unsatisfiable is NOT pre-blocked** — see technical brief §Config
       semantics) — confirmed: `configToInvocation.ts` +
-      `configToInvocation.test.ts` (10 cases covering all the rules above,
+      `configToInvocation.test.ts` (9 cases covering all the rules above,
       including an explicit "does NOT reject an in-range-but-unsatisfiable
       maxError" test)
 - [x] **Output translation:** engine output → `RunResult.frontier` — one
@@ -74,7 +74,7 @@ Your track has the most unknowns of the three — front-load the risky part
       additional reported fields mapped per the appendix; **complete verbatim
       output preserved in `raw`**, `qreVersion` + timestamps + `status`
       populated — confirmed: `outputToResult.ts` +
-      `outputToResult.test.ts` (8 cases, including a test covering all 31
+      `outputToResult.test.ts` (7 cases, including a test covering all 31
       non-default `RESULT_FIELD_KEYS` and a zero-values-preserved case)
 - [x] **Failure mapping:** invalid config / compile error (incl. bad
       uploads) / estimation failure / timeout / crash → `status: "failed"`
