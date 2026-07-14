@@ -44,5 +44,29 @@ describe("robustness", () => {
     expect(r2.runId).toBe("44444444-4444-4444-8444-444444444444");
     expect(r1.status).toBe("succeeded");
     expect(r2.status).toBe("succeeded");
+
+    // runId/status alone can't catch a stdout mix-up between the two concurrent
+    // child processes: runId is echoed straight from the JS-side config closure
+    // (outputToResult.ts sets `runId: config.id`) and never round-trips through
+    // Python, so both assertions above would still pass even if run1 silently
+    // received run2's stdout. `raw` is the verbatim, unmodified output of the
+    // Python subprocess (estimate.py's `entries[].runtime`/`.error`, copied
+    // straight from qdk's EstimationTableEntry) and is genuinely
+    // benchmark-specific: phase-estimation and quantum-dynamics are different
+    // Q# programs that this fixed config resolves to different Pareto frontier
+    // runtime/error values for. If the two concurrent subprocess calls' stdout
+    // got swapped or interleaved, one of these would report the other
+    // benchmark's numbers (or fail to match at all) even though runId/status
+    // still looked fine.
+    expect(r1.raw).toMatchObject({
+      entries: [
+        expect.objectContaining({ runtime: 3064950, error: 0.5609254302906356 }),
+      ],
+    });
+    expect(r2.raw).toMatchObject({
+      entries: [
+        expect.objectContaining({ runtime: 585900, error: 0.2218502264687556 }),
+      ],
+    });
   }, 90000);
 });
