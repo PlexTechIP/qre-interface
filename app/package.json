@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
-    "test": "vitest run",
+    "test": "vitest run src/main/engine/configToInvocation.test.ts src/main/engine/outputToResult.test.ts src/main/engine/execute.test.ts src/main/engine/qreEngine.test.ts",
+    "test:engine": "vitest run src/main/engine/conformance.test.ts src/main/engine/uploadedProgram.test.ts src/main/engine/robustness.test.ts src/main/engine/crossConfig.test.ts src/main/engine/execute.test.ts src/main/engine/qreEngine.test.ts",
+    "test:all": "vitest run",
     "test:watch": "vitest"
   },
   "engines": {

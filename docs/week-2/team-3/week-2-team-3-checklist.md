@@ -106,14 +106,17 @@ Your track has the most unknowns of the three — front-load the risky part
       sources under `benchmarks/qsharp-project/src/`, and
       `uploadedProgram.test.ts` proves an OpenQASM upload succeeding and a
       garbled upload failing soft
-- [ ] Cross-config sanity check: same benchmark across ≥3 architecture/QEC/
+- [x] Cross-config sanity check: same benchmark across ≥3 architecture/QEC/
       budget combinations → plausible, *differing* outputs (compare against
-      Microsoft's published tutorial numbers where available) — **not done.**
-      No test or doc in the repo runs the same benchmark across ≥3 differing
-      configs and compares against Microsoft's published numbers; the
-      capture set covers different benchmarks/architectures but isn't the
-      same-benchmark comparison this item asks for. Left unchecked; flagged
-      as an open item in the route decision memo
+      Microsoft's published tutorial numbers where available) — confirmed:
+      `app/src/main/engine/crossConfig.test.ts` runs `quantum-dynamics`
+      through GateBased+PSSPC, GateBased+LatticeSurgery, and
+      Majorana+ThreeAux, asserts positive metrics and three distinct
+      first-row signatures, and pins the observed `qdk[qre]==1.29.1`
+      runtimes (585,900 ns, 320,250 ns, 10,602,000 ns). No Microsoft
+      published tutorial numbers for this exact three-config comparison are
+      committed in the repo; if PMs provide canonical external numbers, swap
+      the package-derived anchors for those references.
 - [x] Version capture: `qreVersion` read from the engine/package itself, not
       hardcoded — confirmed: `estimate.py`'s `qre_version()` calls
       `importlib.metadata.version("qdk")` at runtime; all 5 real captures

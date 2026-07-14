@@ -8,7 +8,7 @@ on:
 
 jobs:
   node-checks:
-    name: typecheck + unit tests
+    name: typecheck + fast unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,6 +31,30 @@ jobs:
       - name: Unit tests
         run: npm run test
 
-  # TODO: add a second job once execute()/the conformance harness land —
-  # set up Python, `pip install qdk[qre]==1.29.1`, and run `npm run test:conformance`
-  # (the slow real-engine tests kept out of the fast path above).
+  real-engine-checks:
+    name: real QDK engine tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install qdk[qre]
+        run: src/main/engine/python/setup_venv.sh
+
+      - name: Real engine tests
+        run: npm run test:engine

@@ -24,16 +24,18 @@ crash or malformed output propagate as an unhandled rejection.
 
 ```bash
 app/src/main/engine/python/setup_venv.sh   # one-time: creates .venv, installs qdk[qre]==1.29.1
-cd app && npm run test                      # runs all vitest suites, including conformance.test.ts
+cd app && npm run test                      # fast local/pre-commit suite
+cd app && npm run test:engine               # real qdk/qre suite, including conformance
+cd app && npm run test:all                  # every Vitest suite
 cd app && npm run typecheck                 # tsc --noEmit -p tsconfig.node.json
 ```
 
 `setup_venv.sh` creates `app/src/main/engine/python/.venv` and installs
-`requirements.txt` (`qdk[qre]==1.29.1`) into it. All engine tests locate the
-interpreter at `app/src/main/engine/python/.venv/bin/python3`, so the venv
-must exist before running `npm run test`.
+`requirements.txt` (`qdk[qre]==1.29.1`) into it. The real engine tests locate
+the interpreter at `app/src/main/engine/python/.venv/bin/python3`, so the venv
+must exist before running `npm run test:engine` or `npm run test:all`.
 
-Test suites in this module (`vitest run`, 31 tests across 7 files):
+Test suites in this module:
 
 - `configToInvocation.test.ts` — pure-function config validation/translation
 - `execute.test.ts` — subprocess execution, timeout, crash handling
@@ -46,6 +48,8 @@ Test suites in this module (`vitest run`, 31 tests across 7 files):
 - `robustness.test.ts` — two sequential runs and two concurrent runs,
   asserting on `raw` (not just `runId`/`status`) so a subprocess stdout
   mix-up between concurrent runs would be caught
+- `crossConfig.test.ts` — same benchmark across three architecture/transform
+  combinations, asserting positive metrics and distinct pinned outputs
 
 The conformance harness (`app/src/main/engine/conformance.test.ts`) runs the
 real engine against all 4 frozen `contracts/fixtures/runconfig.*.json`
