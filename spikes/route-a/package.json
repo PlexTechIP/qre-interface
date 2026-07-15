@@ -1,0 +1,15 @@
+{
+  "name": "qre-route-a-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Throwaway probe of the QDK qsharp-lang JS/WASM resource-estimator API",
+  "scripts": {
+    "probe": "node probe.cjs",
+    "probe:worker": "node worker-probe.cjs",
+    "probe:python": ".python-venv\\Scripts\\python.exe python-route-b-probe.py"
+  },
+  "dependencies": {
+    "qsharp-lang": "1.29.1"
+  }
+}

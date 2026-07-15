@@ -26,14 +26,19 @@ Your track has the most unknowns of the three — front-load the risky part
       `SurfaceCode`, `ThreeAux`, `RoundBasedFactory`, `Litinski19Factory`,
       `PSSPC`, `LatticeSurgery`, `QSharpApplication`, `OpenQASMApplication`,
       `QIRApplication` — the full contract vocabulary
-- [ ] **Route A spike (QDK JS/WASM npm surface):** in a throwaway Node
+- [x] **Route A spike (QDK JS/WASM npm surface):** in a throwaway Node
       project, get any contract-shaped estimate to run and print output.
       Note: feature coverage vs. the spec, supported inputs (Q#/OpenQASM/
       QIR), how parameters are passed, output shape, version pinning,
-      install size — **not done.** No `qsharp-lang` code, spike script, or
-      documented failure exists anywhere in this repo. Left unchecked
-      honestly; see `docs/week-2/team-3/route-decision-memo.md` §Route A for
-      the full writeup and the open question this raises against the DoD
+      install size — done as a **documented not-viable finding**. The npm
+      package `qsharp-lang@1.29.1` runs real Q#/OpenQASM estimates in-process
+      but exposes only the *legacy* estimator: no Three-Aux, Litinski19,
+      selectable factory/trace transforms, or QIR input, and a 43-field
+      legacy frontier that doesn't match the contract's row shape. Full
+      writeup, probe scripts, and verbatim output samples are committed under
+      `spikes/route-a/` (`spikes/route-a/FINDINGS.md`); recap in
+      `docs/week-2/team-3/route-decision-memo.md` §Route A. This closes the
+      DoD's "both routes spiked (working code or documented failure)" bar
 - [x] **Route B spike (`qdk` Python package, subprocess):** same goal —
       invoked from a Node parent process. Note: feature coverage, Python
       runtime bundling implications, invocation interface, output shape,
@@ -138,10 +143,10 @@ Your track has the most unknowns of the three — front-load the risky part
       NOT required" list)
 - [ ] Walk through `week-2-team-3-definition-of-done.md` — every box checkable
       — walkthrough performed as part of this task; **not every box is
-      checkable yet** — specifically the Route A spike, the cross-config
-      sanity check, the acceptance-walkthrough rehearsal, and the PR-merged-
-      to-main item are still open (see above and below). Left unchecked
-      because the literal claim ("every box checkable") isn't true yet
+      checkable yet** — the Route A spike and cross-config sanity check are now
+      done; the acceptance-walkthrough rehearsal and the PR-merged-to-main item
+      remain open (see below). Left unchecked because the literal claim ("every
+      box checkable") isn't true yet
 - [ ] Acceptance walkthrough: harness run live (config in → real estimation →
       conformant result out), failure case, cross-config comparison table,
       route decision recap — not yet rehearsed/prepared as a live walkthrough

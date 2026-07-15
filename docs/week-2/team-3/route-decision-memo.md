@@ -61,31 +61,39 @@ This is the exact call shape the shipped `QreEngine` uses in production
 `contracts/fixtures/runconfig.*.json` fixtures, plus a live benchmark and
 uploaded-program suite (31/31 tests passing as of this memo).
 
-## Route A (JS/WASM `qsharp-lang`) — not spiked this cycle
+## Route A (JS/WASM `qsharp-lang`) — spiked, not viable
 
-**Honest status: no Route A spike was done.** There is no `qsharp-lang`
-code, throwaway script, or documented failure anywhere in this repo — only
-the `qsharp-lang` `optionalDependency` entry inherited from the scaffold's
-baseline `package.json` (`docs/tech-stack.md`'s install baseline) and doc
-mentions of the route as an option. Nobody on this team ran
-`qsharp-lang@1.29.1`, checked whether it exposes an equivalent `qre`
-estimation surface with factory/transform control, or hit a documented
-failure trying.
+**Status: spiked with a documented not-viable finding.** Full writeup, probe
+scripts, and verbatim output samples are committed under `spikes/route-a/`
+(start at [`spikes/route-a/FINDINGS.md`](../../../spikes/route-a/FINDINGS.md)).
 
-This is a real gap against the Definition of Done, which calls for **"both
-packaging routes spiked (working code or documented failure)."** That bar
-is not fully met — only Route B was spiked. We're flagging this honestly
-rather than writing up a fabricated Route A finding. Given Route B's
-evidence is strong (full contract vocabulary coverage, real multi-row and
-single-row captures, a real failure capture, both architecture types, both
-trace transforms, and a working conformance-tested implementation), the
-team's engineering judgment is that Route B is very likely correct
-regardless of what a Route A spike would find — but that judgment hasn't
-been de-risked by an actual JS/WASM spike. **Question for PMs/stakeholders:**
-is a retroactive Route A spike (even a light one — "does `qsharp-lang`
-import and expose a `qre`-equivalent namespace at all") required before
-this decision is considered final, or is the Route B evidence sufficient to
-close this decision now and treat Route A as intentionally not pursued?
+The correct npm package is **`qsharp-lang`** (not `qsharp`), evaluated at
+`1.29.1` to match the pinned QDK version. It runs real resource estimates
+**in-process in Node** for Q# and OpenQASM — including a genuine 12-point
+legacy Pareto frontier — and a heavy estimate can be isolated in a
+`worker_thread` so it doesn't block the main event loop. So its clean
+in-process packaging is real. **But** it exposes only the *legacy*
+target-parameter estimator, not the current composable `qdk.qre` surface the
+contract needs:
+
+- No named `ThreeAux`, `RoundBasedFactory`, `Litinski19Factory`, or
+  selectable PSSPC / Lattice Surgery transforms — passing the current
+  model-shaped params returns `Qsc.Estimates.IOError.CannotParseJSON`.
+- No QIR as estimator input (`getEstimates` has no QIR project type).
+- The legacy frontier row carries ~43 legacy fields, not the contract's
+  ~37-field row shape.
+
+Bridging those gaps would mean binding substantial new QRE surface rather
+than integrating an existing npm API. **Verdict: Route A is not viable for
+the Team 3 contract; Route B (Python `qdk.qre`) is the route.** This closes
+the DoD's "both packaging routes spiked (working code or documented
+failure)" bar.
+
+*Caveat (documented in FINDINGS.md):* the npm registry was unreachable in the
+spike environment, so the probes ran against version-matched official QDK
+extension artifacts as an offline fallback. That does not change the
+missing-model-surface conclusion, which is established from the package's
+own typings/source and its parameter parser.
 
 ## Findings that affect the contract
 
