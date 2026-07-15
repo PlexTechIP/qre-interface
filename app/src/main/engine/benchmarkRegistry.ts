@@ -31,7 +31,7 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
     id: "ekera-hastad-factoring",
     name: "Ekerå-Håstad Factoring",
     description:
-      "Factoring benchmark based on the Ekerå-Håstad variant, for contrasting factoring resource estimates against Shor's algorithm.",
+      "Factoring benchmark based on the Ekerå-Håstad variant, useful for contrasting factoring resource estimates against Shor's algorithm.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
     entryExpr: "EkeraHastadFactoring.Run()",

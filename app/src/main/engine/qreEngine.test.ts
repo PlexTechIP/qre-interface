@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { RunConfig } from "../../shared/types.js";
+import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PYTHON_BIN =
-  process.env["QRE_PYTHON_BIN"] ??
-  path.join(
-    __dirname,
-    "python",
-    ".venv",
-    process.platform === "win32" ? "Scripts/python.exe" : "bin/python3",
-  );
+const PYTHON_BIN = resolvePythonBin();
 const QRE_AVAILABLE =
   spawnSync(PYTHON_BIN, ["-c", "import qdk.qre"], { stdio: "ignore" })
     .status === 0;

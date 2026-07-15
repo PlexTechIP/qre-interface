@@ -23,6 +23,85 @@ const FAILURE_CODES = new Set([
   "ESTIMATION_FAILED",
 ]);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function processDiagnosticsRaw(
+  stdout: string,
+  stderr: string,
+  exitCode: number | null,
+): Record<string, unknown> | null {
+  if (stdout.length === 0 && stderr.length === 0) return null;
+  return { stdout, stderr, exitCode };
+}
+
+export function interpretProcessCompletion(
+  exitCode: number | null,
+  stdout: string,
+  stderr: string,
+): ExecuteResult {
+  const diagnostics = processDiagnosticsRaw(stdout, stderr, exitCode);
+  if (exitCode !== 0) {
+    return {
+      ok: false,
+      code: "ENGINE_CRASH",
+      message: `Engine process exited with code ${String(exitCode)}. stderr: ${stderr.slice(0, 2000)} Inspect raw diagnostics, verify the Python environment, and retry.`,
+      raw: diagnostics,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout) as unknown;
+  } catch {
+    return {
+      ok: false,
+      code: "ENGINE_CRASH",
+      message: `Engine produced non-JSON output. stderr: ${stderr.slice(0, 2000)} Inspect raw diagnostics and verify the qdk wrapper version.`,
+      raw: diagnostics,
+    };
+  }
+
+  if (!isRecord(parsed)) {
+    return {
+      ok: false,
+      code: "ENGINE_CRASH",
+      message:
+        "Engine JSON was not an object. Inspect raw diagnostics and verify the qdk wrapper version.",
+      raw: diagnostics,
+    };
+  }
+
+  if (parsed["status"] === "failed") {
+    const rawCode = String(parsed["code"] ?? "ESTIMATION_FAILED");
+    const code = FAILURE_CODES.has(rawCode)
+      ? (rawCode as
+          "TIMEOUT" | "ENGINE_CRASH" | "COMPILE_ERROR" | "ESTIMATION_FAILED")
+      : "ESTIMATION_FAILED";
+    return {
+      ok: false,
+      code,
+      message: String(
+        parsed["message"] ??
+          "The engine reported a failure; adjust the configuration and retry.",
+      ),
+      raw: parsed,
+    };
+  }
+
+  if (parsed["status"] !== "success") {
+    return {
+      ok: false,
+      code: "ENGINE_CRASH",
+      message:
+        "Engine JSON omitted a recognized status. Inspect raw diagnostics and verify the qdk wrapper version.",
+      raw: diagnostics,
+    };
+  }
+  return { ok: true, raw: parsed };
+}
+
 export function execute(
   invocation: QreInvocation,
   pythonBin: string,
@@ -57,7 +136,7 @@ export function execute(
         ok: false,
         code: "TIMEOUT",
         message: `Estimation exceeded ${invocation.timeoutMs}ms. Increase the timeout or simplify the run.`,
-        raw: null,
+        raw: processDiagnosticsRaw(stdout, stderr, null),
       });
     }, invocation.timeoutMs);
 
@@ -66,7 +145,7 @@ export function execute(
         ok: false,
         code: "ENGINE_CRASH",
         message: `Failed to start engine process: ${error.message}. Verify the configured Python environment.`,
-        raw: null,
+        raw: processDiagnosticsRaw(stdout, stderr, null),
       });
     });
 
@@ -82,61 +161,7 @@ export function execute(
 
     child.on("close", (exitCode) => {
       if (settled) return;
-      if (exitCode !== 0) {
-        finish({
-          ok: false,
-          code: "ENGINE_CRASH",
-          message: `Engine process exited with code ${String(exitCode)}. stderr: ${stderr.slice(0, 2000)}`,
-          raw: null,
-        });
-        return;
-      }
-
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(stdout) as Record<string, unknown>;
-      } catch {
-        finish({
-          ok: false,
-          code: "ENGINE_CRASH",
-          message: `Engine produced non-JSON output. stderr: ${stderr.slice(0, 2000)}`,
-          raw: null,
-        });
-        return;
-      }
-
-      if (parsed["status"] === "failed") {
-        const rawCode = String(parsed["code"] ?? "ESTIMATION_FAILED");
-        const code = FAILURE_CODES.has(rawCode)
-          ? (rawCode as
-              | "TIMEOUT"
-              | "ENGINE_CRASH"
-              | "COMPILE_ERROR"
-              | "ESTIMATION_FAILED")
-          : "ESTIMATION_FAILED";
-        finish({
-          ok: false,
-          code,
-          message: String(
-            parsed["message"] ??
-              "The engine reported a failure; adjust the configuration and retry.",
-          ),
-          raw: parsed,
-        });
-        return;
-      }
-
-      if (parsed["status"] !== "success") {
-        finish({
-          ok: false,
-          code: "ENGINE_CRASH",
-          message:
-            "Engine JSON omitted a recognized status. Verify the qdk wrapper version.",
-          raw: null,
-        });
-        return;
-      }
-      finish({ ok: true, raw: parsed });
+      finish(interpretProcessCompletion(exitCode, stdout, stderr));
     });
 
     child.stdin.end(JSON.stringify(invocation));

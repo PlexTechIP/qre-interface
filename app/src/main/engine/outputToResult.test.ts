@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { RESULT_FIELD_KEYS, type RunConfig } from "../../shared/types.js";
 import type { ExecuteResult } from "./execute.js";
 import { outputToResult } from "./outputToResult.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CAPTURE_DIR = path.resolve(
+  __dirname,
+  "../../../../docs/week-2/team-3/qre-output-captures",
+);
+
+function loadCapture(name: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(path.join(CAPTURE_DIR, `${name}.output.json`), "utf8"),
+  ) as Record<string, unknown>;
+}
 
 const config: RunConfig = {
   schemaVersion: "1.0.0",
@@ -105,6 +120,25 @@ function successRaw(rowOverrides: Record<string, unknown> = {}): ExecuteResult {
 }
 
 describe("outputToResult", () => {
+  for (const [name, expectedRows] of [
+    ["multi-row-gatebased-psspc", 5],
+    ["single-row-gatebased-psspc", 1],
+  ] as const) {
+    it(`maps the committed ${name} real output without altering its verbatim blob`, () => {
+      const wrapperOutput = loadCapture(name);
+      const result = outputToResult(
+        config,
+        { ok: true, raw: wrapperOutput },
+        "t0",
+        "t1",
+      );
+      expect(result.status).toBe("succeeded");
+      expect(result.frontier).toHaveLength(expectedRows);
+      expect(result.raw).toEqual(wrapperOutput["verbatim"]);
+      expect(result.qreVersion).toBe("1.29.1");
+    });
+  }
+
   it("maps defaults, stores only the dedicated verbatim QDK blob as raw, and trusts runtime version", () => {
     const result = outputToResult(
       config,
@@ -222,5 +256,21 @@ describe("outputToResult", () => {
     const result = outputToResult(config, executeResult, "t0", "t1");
     expect(result.raw).toBeNull();
     expect(result.error?.code).toBe("TIMEOUT");
+  });
+
+  it("preserves transport diagnostics unchanged when no verbatim blob exists", () => {
+    const diagnostics = {
+      stdout: "partial output\n",
+      stderr: "engine traceback\n",
+      exitCode: 3,
+    };
+    const executeResult: ExecuteResult = {
+      ok: false,
+      code: "ENGINE_CRASH",
+      message: "Engine crashed; inspect raw diagnostics and retry.",
+      raw: diagnostics,
+    };
+    const result = outputToResult(config, executeResult, "t0", "t1");
+    expect(result.raw).toBe(diagnostics);
   });
 });

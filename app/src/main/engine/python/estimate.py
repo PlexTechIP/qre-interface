@@ -266,18 +266,24 @@ def main() -> int:
         }))
         return 0
     except Exception as exc:  # The subprocess boundary must fail soft.
-        message = str(exc)
+        diagnostic = str(exc)
         exc_type = type(exc).__name__
         compile_error = (
-            "compil" in message.lower()
+            "compil" in diagnostic.lower()
             or "resolve" in exc_type.lower()
             or "qsharp" in exc_type.lower()
-            or "openqasm" in message.lower()
+            or "openqasm" in diagnostic.lower()
+        )
+        detail = diagnostic or exc_type
+        message = (
+            f"{detail} Check the program source and entry point, then retry."
+            if compile_error
+            else f"{detail} Review the raw diagnostics, adjust the configuration, and retry."
         )
         print(json.dumps(failure(
             "COMPILE_ERROR" if compile_error else "ESTIMATION_FAILED",
-            message or exc_type,
-            {"error": {"type": exc_type, "message": message}},
+            message,
+            {"error": {"type": exc_type, "message": diagnostic}},
         )))
         return 0
 

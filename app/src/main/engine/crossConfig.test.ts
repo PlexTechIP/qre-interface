@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { QreEngine } from "./qreEngine.js";
-import type { RunConfig } from "../../shared/types.js";
+import type { RunConfig, RunResult } from "../../shared/types.js";
+import { resolvePythonBin } from "./pythonBin.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PYTHON_BIN = path.join(__dirname, "python", ".venv", "bin", "python3");
+const PYTHON_BIN = resolvePythonBin();
 
 function config(id: string, overrides: Partial<RunConfig>): RunConfig {
   return {
@@ -37,15 +35,11 @@ function config(id: string, overrides: Partial<RunConfig>): RunConfig {
 describe("cross-config sanity", () => {
   it("produces plausible differing outputs for the same benchmark across three configs", async () => {
     const engine = new QreEngine(PYTHON_BIN);
-    const baseline = await engine.run(
+    const configs = [
       config("55555555-5555-4555-8555-555555555555", {}),
-    );
-    const latticeSurgery = await engine.run(
       config("66666666-6666-4666-8666-666666666666", {
-        traceTransform: { type: "latticeSurgery", slowDownFactor: 1.0 },
+        maxError: 0.01,
       }),
-    );
-    const majorana = await engine.run(
       config("77777777-7777-4777-8777-777777777777", {
         architecture: {
           type: "majorana",
@@ -54,9 +48,17 @@ describe("cross-config sanity", () => {
         },
         qecCode: "three_aux",
       }),
+    ];
+    const inputTuples = new Set(
+      configs.map(
+        (item) =>
+          `${item.architecture.type}:${item.qecCode}:${String(item.maxError)}`,
+      ),
     );
+    expect(inputTuples.size).toBe(3);
 
-    const results = [baseline, latticeSurgery, majorana];
+    const results: RunResult[] = [];
+    for (const item of configs) results.push(await engine.run(item));
     for (const result of results) {
       expect(result.status).toBe("succeeded");
       expect(result.frontier?.length).toBeGreaterThan(0);
@@ -78,11 +80,13 @@ describe("cross-config sanity", () => {
     );
     expect(signatures.size).toBe(3);
 
-    // Pinned qdk[qre] 1.29.1 regression anchors for the same benchmark/configs.
+    // Pinned qdk[qre] 1.29.1 regression anchors derived from real local runs
+    // for GateBased/Surface/maxError=1, GateBased/Surface/maxError=.01, and
+    // Majorana/ThreeAux/maxError=1 respectively.
     // If Microsoft publishes canonical tutorial numbers for this exact trio,
     // replace these package-derived anchors with those external references.
     expect(firstRows[0]!.runtime.value).toBe(585900);
-    expect(firstRows[1]!.runtime.value).toBe(320250);
+    expect(firstRows[1]!.runtime.value).toBe(2538900);
     expect(firstRows[2]!.runtime.value).toBe(10602000);
   }, 120000);
 });

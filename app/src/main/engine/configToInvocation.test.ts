@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { configToInvocation } from "./configToInvocation.js";
 import type { RunConfig } from "../../shared/types.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE_DIR = path.resolve(__dirname, "../../../../contracts/fixtures");
+
+function loadFixture(name: string): RunConfig {
+  return JSON.parse(
+    readFileSync(path.join(FIXTURE_DIR, name), "utf8"),
+  ) as RunConfig;
+}
 
 function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
@@ -30,6 +42,18 @@ function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
 }
 
 describe("configToInvocation", () => {
+  for (const fixtureName of [
+    "runconfig.benchmark.json",
+    "runconfig.large.json",
+    "runconfig.sparse.json",
+    "runconfig.failing.json",
+  ]) {
+    it(`translates the committed ${fixtureName} fixture`, () => {
+      const result = configToInvocation(loadFixture(fixtureName), 30_000);
+      expect(result.ok).toBe(true);
+    });
+  }
+
   it("translates a valid GateBased/PSSPC config into an invocation", () => {
     const result = configToInvocation(baseGateBasedConfig(), 30000);
     expect(result.ok).toBe(true);

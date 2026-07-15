@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
-    "test": "vitest run src/main/engine/configToInvocation.test.ts src/main/engine/outputToResult.test.ts src/main/engine/execute.test.ts src/main/engine/qreEngine.test.ts",
-    "test:engine": "vitest run src/main/engine/conformance.test.ts src/main/engine/uploadedProgram.test.ts src/main/engine/robustness.test.ts src/main/engine/crossConfig.test.ts src/main/engine/execute.test.ts src/main/engine/qreEngine.test.ts",
-    "test:all": "vitest run",
+    "test": "vitest run src/main/engine/pythonBin.test.ts src/main/engine/benchmarkRegistry.test.ts src/main/engine/configToInvocation.test.ts src/main/engine/outputToResult.test.ts src/main/engine/execute.test.ts src/main/engine/qreEngine.test.ts",
+    "test:engine": "vitest run --no-file-parallelism --maxWorkers=1 src/main/engine/pythonBin.test.ts src/main/engine/benchmarkRegistry.test.ts src/main/engine/benchmarkSmoke.test.ts src/main/engine/conformance.test.ts src/main/engine/uploadedProgram.test.ts src/main/engine/robustness.test.ts src/main/engine/crossConfig.test.ts src/main/engine/execute.test.ts src/main/engine/qreEngine.test.ts",
+    "acceptance": "tsx src/main/engine/acceptanceHarness.ts",
+    "test:all": "vitest run --no-file-parallelism --maxWorkers=1",
     "test:watch": "vitest"
   },
   "engines": {
