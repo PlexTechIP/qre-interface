@@ -45,16 +45,19 @@ Your track has the most unknowns of the three — front-load the risky part
       version pinning — done and superseded by a full production
       implementation: `app/src/main/engine/python/estimate.py` +
       `execute.ts` invoke it via JSON-over-stdio from Node, exercised by
-      31/31 passing tests including `conformance.test.ts` against all 4
-      frozen fixtures
+      the real-engine suite including strengthened conformance against all 4
+      committed fixtures
 - [x] **Capture real contract-shaped output for the PMs** (multi-row frontier,
       single-row, formatting-stress, a real failure; both architecture types;
       both transforms) — PMs use this to validate or update the contract
-      fixtures; — confirmed delivered at
-      `docs/week-2/team-3/qre-output-captures/` (5 capture pairs +
+      fixtures; — the capture set is committed at
+      `docs/week-2/team-3/qre-output-captures/` (6 capture pairs +
       `manifest.json`): multi-row and single-row GateBased+PSSPC frontiers,
       a real `COMPILE_ERROR` failure, Majorana+ThreeAux, and Lattice
-      Surgery — covers both architecture types and both trace transforms
+      Surgery, plus `formatting-stress-wide-frontier` — covers both
+      architecture types and both contract-selected trace configurations.
+      Repository evidence is complete; human confirmation that PMs received
+      it is tracked separately in the DoD and remains unchecked
 
 ## B. Engine adapter
 
@@ -66,21 +69,29 @@ Your track has the most unknowns of the three — front-load the risky part
 - [x] **Input translation:** `RunConfig` → engine invocation (application →
       program source or uploaded file; architecture params, QEC code,
       factory, trace transform, max error → engine parameters), enforcing
-      exactly the contract's semantics (arch→QEC coupling, numeric bounds,
+      the contract's validation semantics (arch→QEC coupling, numeric bounds,
       Litinski19 availability → `INVALID_CONFIG`; **in-range-but-
       unsatisfiable is NOT pre-blocked** — see technical brief §Config
       semantics) — confirmed: `configToInvocation.ts` +
-      `configToInvocation.test.ts` (9 cases covering all the rules above,
-      including an explicit "does NOT reject an in-range-but-unsatisfiable
-      maxError" test)
+      `configToInvocation.test.ts`, including all committed fixtures and an
+      explicit "does NOT reject an in-range-but-unsatisfiable maxError" test.
+      Two engine-mapping differences are decisions of record rather than
+      hidden equivalences: Majorana `operationTime` is validated/threaded but
+      QDK 1.29.1 cannot consume it, and the wrapper composes PSSPC + Lattice
+      Surgery although the contract models the selection one-of. See the
+      route memo for the exact rulings and follow-ups
 - [x] **Output translation:** engine output → `RunResult.frontier` — one
-      entry per estimate row; all six default fields per row (0 is a
-      legitimate value; a missing default field ⇒ `ESTIMATION_FAILED`);
+      entry per estimate row; five numeric default metrics plus the structured
+      `factories` default per row (0/empty are legitimate; a missing default
+      field ⇒ `ESTIMATION_FAILED`);
       additional reported fields mapped per the appendix; **complete verbatim
       output preserved in `raw`**, `qreVersion` + timestamps + `status`
       populated — confirmed: `outputToResult.ts` +
-      `outputToResult.test.ts` (7 cases, including a test covering all 31
-      non-default `RESULT_FIELD_KEYS` and a zero-values-preserved case)
+      `outputToResult.test.ts`, including all 31 non-default
+      `RESULT_FIELD_KEYS`, zero-values preservation, and committed real-capture
+      mapping without alteration of the dedicated verbatim blob. The current
+      `additional.source` value is provisionally the application input format,
+      not yet the contract's ISA meaning; see the route memo
 - [x] **Failure mapping:** invalid config / compile error (incl. bad
       uploads) / estimation failure / timeout / crash → `status: "failed"`
       with the **canonical `error.code` enum** from `data-contracts.md` and
@@ -88,8 +99,9 @@ Your track has the most unknowns of the three — front-load the risky part
       (or `raw: null` only when the engine produced nothing) — the process
       never hangs the caller — confirmed: `execute.ts` assigns `TIMEOUT`/
       `ENGINE_CRASH`, `estimate.py` assigns `COMPILE_ERROR`/
-      `ESTIMATION_FAILED`, only the canonical 5 codes are ever used
-      (grepped the module — no invented codes)
+      `ESTIMATION_FAILED`, only the canonical 5 codes are used, and transport
+      tests preserve complete stdout/stderr/exit-code diagnostics for nonzero,
+      malformed, and unrecognized-status process completions
 
 ## C. Conformance & benchmarks
 
@@ -101,30 +113,38 @@ Your track has the most unknowns of the three — front-load the risky part
       confirmed: `app/src/main/engine/conformance.test.ts` runs all 4 frozen
       fixtures (`runconfig.benchmark.json`, `runconfig.large.json`,
       `runconfig.sparse.json`, `runconfig.failing.json`) through the real
-      engine and Ajv-validates each `RunResult`; passing as of this commit
+      engine and Ajv-validates each `RunResult`. The three expected-success
+      fixtures must additionally return `succeeded`, `error: null`, a
+      nonempty frontier, and all default result fields; the failing fixture
+      must return `failed`. The approved sparse fixture uses
+      `tStatesPerRotation: 20`, which QDK 1.29.1 can estimate. The strengthened
+      real-engine gate is green on Windows
 - [x] Every id in the frozen `contracts/benchmarks.json` is runnable: real
       sources for all five starter benchmarks stored in-repo with metadata
       mirroring the contract file (seeds the Part-3 benchmark library), and
       **at least one uploaded program proven end-to-end** (file in →
       estimate out; bad file → clean `INVALID_CONFIG`/`COMPILE_ERROR`) —
-      confirmed: all 5 ids present in `benchmarkRegistry.ts` with real `.qs`
-      sources under `benchmarks/qsharp-project/src/`, and
-      `uploadedProgram.test.ts` proves an OpenQASM upload succeeding and a
-      garbled upload failing soft
+      all 5 ids resolve to runnable `.qs` sources under
+      `benchmarks/qsharp-project/src/`; Shor and Ekerå–Håstad are explicitly
+      representative resource-estimation stand-ins rather than faithful full
+      algorithms. `uploadedProgram.test.ts` proves an OpenQASM upload
+      succeeding and a garbled OpenQASM upload failing soft. Uploaded Q# and
+      QIR are follow-up validation work, not this week's E2E proof
 - [x] Cross-config sanity check: same benchmark across ≥3 architecture/QEC/
       budget combinations → plausible, *differing* outputs (compare against
       Microsoft's published tutorial numbers where available) — confirmed:
       `app/src/main/engine/crossConfig.test.ts` runs `quantum-dynamics`
-      through GateBased+PSSPC, GateBased+LatticeSurgery, and
-      Majorana+ThreeAux, asserts positive metrics and three distinct
+      through GateBased+SurfaceCode at maxError 1, GateBased+SurfaceCode at
+      maxError 0.01, and Majorana+ThreeAux at maxError 1; it asserts three
+      genuinely distinct input tuples, positive metrics, and three distinct
       first-row signatures, and pins the observed `qdk[qre]==1.29.1`
-      runtimes (585,900 ns, 320,250 ns, 10,602,000 ns). No Microsoft
+      runtimes (585,900 ns, 2,538,900 ns, 10,602,000 ns). No Microsoft
       published tutorial numbers for this exact three-config comparison are
       committed in the repo; if PMs provide canonical external numbers, swap
       the package-derived anchors for those references.
 - [x] Version capture: `qreVersion` read from the engine/package itself, not
       hardcoded — confirmed: `estimate.py`'s `qre_version()` calls
-      `importlib.metadata.version("qdk")` at runtime; all 5 real captures
+      `importlib.metadata.version("qdk")` at runtime; all 6 real captures
       independently report `"qreVersion": "1.29.1"`
 
 ## D. Robustness + acceptance prep
@@ -143,13 +163,17 @@ Your track has the most unknowns of the three — front-load the risky part
       NOT required" list)
 - [ ] Walk through `week-2-team-3-definition-of-done.md` — every box checkable
       — walkthrough performed as part of this task; **not every box is
-      checkable yet** — the Route A spike and cross-config sanity check are now
-      done; the acceptance-walkthrough rehearsal and the PR-merged-to-main item
-      remain open (see below). Left unchecked because the literal claim ("every
-      box checkable") isn't true yet
-- [ ] Acceptance walkthrough: harness run live (config in → real estimation →
+      checkable yet** — the acceptance evidence is prepared, but exact config
+      semantics still have the two documented QDK mapping gaps, PM receipt of
+      captures needs human confirmation, and the team branch is not merged to
+      main. Left unchecked because the literal claim ("every box checkable")
+      is not yet true
+- [x] Acceptance walkthrough: harness run live (config in → real estimation →
       conformant result out), failure case, cross-config comparison table,
-      route decision recap — not yet rehearsed/prepared as a live walkthrough
+      route decision recap — prepared in
+      `docs/week-2/team-3/acceptance-walkthrough.md` with the reproducible
+      Windows commands, actual fixture summaries, three-tuple table, capture
+      links, and route-decision recap
 - [ ] PR(s) merged to `main` by Wed Jul 15 EOD — final acceptance from `main`
       — not yet opened; this task's work ends at commit + handoff to Codex
       for pre-PR review per the task brief's checkpoint

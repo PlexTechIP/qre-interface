@@ -8,9 +8,13 @@ from `app/src/shared/types.ts`, identical to `contracts/types.ts`).
 **`qdk[qre]==1.29.1` Python subprocess** — in this team's technical brief and
 checklist this is called "Route B"; `docs/tech-stack.md` numbers the same two
 options the other way around ("Route A" = Python `qdk`, "Route B" = JS/WASM
-`qsharp-lang`). This README follows the team-3 brief/checklist naming. See
-`docs/week-2/team-3/route-decision-memo.md` for the full evidence, including
-an honest note that the JS/WASM route was never spiked this cycle.
+`qsharp-lang`). This README follows the team-3 brief/checklist naming. See the
+[route-decision memo](../../../../docs/week-2/team-3/route-decision-memo.md)
+for the full decision and the [Route A findings](../../../../spikes/route-a/FINDINGS.md)
+for the executed JS/WASM spike. That spike proved
+that `qsharp-lang@1.29.1` can estimate Q# and OpenQASM in-process, but does not
+expose the current composable model surface or QIR input required by this
+contract; the Python subprocess is therefore the selected route.
 
 `app/src/main/engine/python/estimate.py` is the JSON-over-stdio wrapper
 around `qdk.qre.estimate`: it builds the application/architecture/QEC/trace
@@ -22,21 +26,39 @@ crash or malformed output propagate as an unhandled rejection.
 
 ## Running the harness
 
+POSIX setup:
+
 ```bash
 app/src/main/engine/python/setup_venv.sh   # one-time: creates .venv, installs qdk[qre]==1.29.1
-cd app && npm run test                      # fast local/pre-commit suite
-cd app && npm run test:engine               # real qdk/qre suite, including conformance
-cd app && npm run test:all                  # every Vitest suite
-cd app && npm run typecheck                 # tsc --noEmit -p tsconfig.node.json
 ```
 
-`setup_venv.sh` creates `app/src/main/engine/python/.venv` and installs
-`requirements.txt` (`qdk[qre]==1.29.1`) into it. The real engine tests locate
-the interpreter at `app/src/main/engine/python/.venv/bin/python3`, so the venv
-must exist before running `npm run test:engine` or `npm run test:all`.
+Windows PowerShell setup:
+
+```powershell
+app/src/main/engine/python/setup_venv.ps1  # one-time: creates .venv, installs qdk[qre]==1.29.1
+```
+
+Run the harness from either platform, from the repository root:
+
+```bash
+npm --prefix app run test         # fast local/pre-commit suite
+npm --prefix app run test:engine  # real qdk/qre suite, including conformance
+npm --prefix app run test:all     # every Vitest suite
+npm --prefix app run typecheck    # tsc --noEmit -p tsconfig.node.json
+```
+
+Both setup scripts require the repository-pinned Python 3.13.14, create
+`app/src/main/engine/python/.venv`, and install `requirements.txt`
+(`qdk[qre]==1.29.1`) into it. The real engine tests resolve
+`.venv/bin/python3` on POSIX and `.venv/Scripts/python.exe` on Windows. Set
+`QRE_PYTHON_BIN` to an executable path to override that interpreter explicitly.
+The venv must exist before running `npm run test:engine` or `npm run test:all`.
 
 Test suites in this module:
 
+- `pythonBin.test.ts` — Windows/POSIX venv and explicit-override resolution
+- `benchmarkRegistry.test.ts` — frozen id/name/description parity
+- `benchmarkSmoke.test.ts` — all five frozen ids through the real QDK engine
 - `configToInvocation.test.ts` — pure-function config validation/translation
 - `execute.test.ts` — subprocess execution, timeout, crash handling
 - `outputToResult.test.ts` — pure-function output mapping, including the
@@ -48,28 +70,43 @@ Test suites in this module:
 - `robustness.test.ts` — two sequential runs and two concurrent runs,
   asserting on `raw` (not just `runId`/`status`) so a subprocess stdout
   mix-up between concurrent runs would be caught
-- `crossConfig.test.ts` — same benchmark across three architecture/transform
-  combinations, asserting positive metrics and distinct pinned outputs
+- `crossConfig.test.ts` — same benchmark across three distinct
+  architecture/QEC/error-budget tuples, asserting positive metrics and
+  distinct package-derived regression outputs
+
+`npm --prefix app run acceptance` executes the four frozen fixture configs,
+schema-validates their real results, and prints the concise evidence recorded
+in `docs/week-2/team-3/acceptance-walkthrough.md`.
 
 The conformance harness (`app/src/main/engine/conformance.test.ts`) runs the
 real engine against all 4 frozen `contracts/fixtures/runconfig.*.json`
 fixtures (`runconfig.benchmark.json`, `runconfig.large.json`,
 `runconfig.sparse.json`, `runconfig.failing.json`) and validates the emitted
 `RunResult` against `contracts/runresult.schema.json` with Ajv, including
-confirming the failing fixture resolves to a schema-valid `failed` result
-rather than a hang or rejection.
+requiring every expected-success fixture to return `status: "succeeded"`, a
+nonempty frontier, and all six default result fields. The failing fixture must
+resolve to a schema-valid `failed` result rather than a hang or rejection.
 
 ## Benchmark list
 
-All 5 starter benchmarks from `contracts/benchmarks.json` (`shors-factoring`,
-`ekera-hastad-factoring`, `quantum-dynamics`, `grovers-search`,
-`phase-estimation`) have real Q# sources under
-`app/src/main/engine/benchmarks/qsharp-project/src/`, registered in
-`app/src/main/engine/benchmarkRegistry.ts` with matching id/name/description
-metadata. Uploaded programs (Q#, OpenQASM, QIR — `RunConfig.application.type
-=== "uploaded"`) are also supported; `uploadedProgram.test.ts` exercises a
-worked OpenQASM example against `app/src/main/engine/uploads/sample-bell.qasm`
-and a garbled-file failure against `app/src/main/engine/uploads/bad-sample.qasm`.
+All 5 starter ids from `contracts/benchmarks.json` (`shors-factoring`,
+`ekera-hastad-factoring`, `quantum-dynamics`, `grovers-search`, and
+`phase-estimation`) resolve to runnable Q# sources under
+`app/src/main/engine/benchmarks/qsharp-project/src/`. The Shor and
+Ekerå–Håstad programs are explicitly representative resource-estimation
+stand-ins for their modular-arithmetic workloads, not faithful implementations
+of the complete algorithms.
+
+The wrapper has application constructors for Q#, OpenQASM, and QIR uploads.
+This week proves **OpenQASM** end-to-end: `uploadedProgram.test.ts` estimates
+`uploads/sample-bell.qasm` and confirms a garbled OpenQASM file fails soft.
+Uploaded Q# and QIR remain follow-ups; they are not claimed as end-to-end
+proven here.
+
+The six real wrapper captures are indexed by
+`docs/week-2/team-3/qre-output-captures/manifest.json`. They cover multi-row,
+single-row, formatting-stress, real compile-failure, both architecture types,
+and both contract-selected trace-transform configurations.
 
 ## Error codes
 
@@ -88,26 +125,35 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 
-## Known gaps vs. the contract (flagged to PMs)
+## Decisions of record and known gaps
 
-- **`Majorana.operation_time` has no effect.** `qdk[qre]==1.29.1`'s
+- **`Majorana.operationTime`: known engine-mapping gap.**
+  `qdk[qre]==1.29.1`'s
   `Majorana` dataclass (`qdk.qre.models.Majorana`) only accepts `error_rate`
   — there is no `operation_time` constructor parameter at all in this
   package version. Internally, `Majorana.provided_isa` hardcodes
   `time=1000` (ns) for every instruction (state prep, measurement, T gate)
-  regardless of configuration. `estimate.py`'s `build_architecture` reflects
-  this: it constructs `Majorana(error_rate=architecture["errorRate"])` and
-  never reads `architecture["operationTime"]`. `configToInvocation.ts` still
-  validates `operationTime > 0` and threads it through the invocation JSON
-  for forward-compatibility (and because the contract requires it on the
-  wire), but it is silently dropped before reaching the qdk object and has
-  no effect on any Majorana estimate. **Open question for PMs:** should the
-  UI still expose this field for Majorana runs, or mark it read-only /
-  informational until a package update exposes real control?
+  regardless of configuration. The wrapper therefore builds
+  `Majorana(error_rate=…)` only: `operationTime` is validated and retained in
+  the invocation, but is not consumed by this QDK version. It is recorded as
+  a known gap rather than represented as effective. Follow-up: map it if a
+  future QDK version exposes a parameter.
+- **Trace-transform composition:** the frozen contract models PSSPC and
+  Lattice Surgery as a one-of selection, while `qdk.qre` produces the required
+  estimate through a composed `PSSPC * LatticeSurgery` trace pipeline. The
+  selected transform carries the user's parameters and the two selections
+  produce distinct valid estimates, as the committed captures demonstrate.
+  Follow-up: implement a true one-of mapping after verifying that QDK supports
+  a lone transform for these workloads.
+- **`source` is provisional.** The current `frontier[].additional.source`
+  value records the application input format (`qsharp`, `openqasm`, or `qir`).
+  The frozen contract describes this field as the ISA/instruction-set source,
+  which QDK 1.29.1 does not expose as a flat result property. Consumers should
+  treat the current value as provisional until a true ISA mapping is agreed.
 - **Several appendix property names don't exist in this qdk version.**
-  `docs/data-contracts.md`'s appendix lists `SOURCE`, `BLOCK_SIZE`,
-  `BASE_SYSTEM_COST`, `SHOT_COST`, `COST_PER_QUBIT`, `COST_PER_HOUR`,
-  `COST_PER_QUBIT_PER_HOUR`, `DATA_QUBIT_SPACING`. None of these names exist
+  `docs/data-contracts.md`'s appendix lists `BLOCK_SIZE`, `BASE_SYSTEM_COST`,
+  `SHOT_COST`, `COST_PER_QUBIT`, `COST_PER_HOUR`,
+  `COST_PER_QUBIT_PER_HOUR`, and `DATA_QUBIT_SPACING`. None of these names exist
   on `qdk.qre.property_keys` in `1.29.1` (verified directly against the
   installed package), so `estimate.py`'s `PROPERTY_IDS` — built from
   `dir(property_keys)` — never includes them, and they never appear in
