@@ -41,6 +41,14 @@
       "frontierRows": 1,
       "input": "lattice-surgery.input.json",
       "verbatimOutput": "lattice-surgery.output.json"
+    },
+    {
+      "name": "formatting-stress-wide-frontier",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 5,
+      "input": "formatting-stress-wide-frontier.input.json",
+      "verbatimOutput": "formatting-stress-wide-frontier.output.json"
     }
   ]
 }

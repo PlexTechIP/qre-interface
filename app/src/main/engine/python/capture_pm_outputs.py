@@ -65,12 +65,25 @@ def cases() -> dict[str, dict]:
         "slowDownFactor": 1.0,
     }
 
+    # Formatting stress combines the widest property set QDK 1.29.1 reports
+    # for this adapter with five rows and billion-nanosecond runtime values.
+    formatting_stress = base_invocation()
+    formatting_stress["architecture"] = {
+        "type": "gateBased",
+        "errorRate": 0.0001,
+        "gateTime": 100000,
+        "measurementTime": 100000,
+        "twoQubitGateTime": 100000,
+    }
+    formatting_stress["maxError"] = 0.01
+
     return {
         "multi-row-gatebased-psspc": multi_row,
         "single-row-gatebased-psspc": single_row,
         "real-compile-failure": failure,
         "majorana-three-aux": majorana,
         "lattice-surgery": lattice_surgery,
+        "formatting-stress-wide-frontier": formatting_stress,
     }
 
 
