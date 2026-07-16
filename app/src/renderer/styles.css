@@ -32,6 +32,10 @@
   --color-skeleton-a: #e7eef8;
   --color-skeleton-b: #f7faff;
   --color-raw-number: #b06a00;
+  --color-chart-grid: #dceaf4;
+  --color-chart-axis: #b9c9dc;
+  --color-chart-line: #1ca3c5;
+  --color-chart-point-stroke: #a9ddec;
 
   color: var(--color-text);
   background: var(--color-bg);
@@ -76,6 +80,10 @@
   --color-skeleton-a: #1a2036;
   --color-skeleton-b: #222a44;
   --color-raw-number: #f2b84b;
+  --color-chart-grid: #232a40;
+  --color-chart-axis: #3a4360;
+  --color-chart-line: #38d0ea;
+  --color-chart-point-stroke: #355269;
 }
 
 * {
@@ -466,6 +474,124 @@ select {
 .field-filter-list small {
   color: var(--color-faint-label);
   font-size: 10px;
+}
+
+.chart-help {
+  margin: 6px 0 12px;
+  color: var(--color-label-soft);
+  font-size: 12px;
+}
+
+.scatter-wrap {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+}
+
+.frontier-scatter {
+  width: 100%;
+  max-width: 460px;
+  min-height: 220px;
+}
+
+.chart-gridline {
+  stroke: var(--color-chart-grid);
+  stroke-dasharray: 4 5;
+}
+
+.chart-axis {
+  stroke: var(--color-chart-axis);
+  stroke-width: 1.5;
+}
+
+.chart-tick,
+.chart-label {
+  fill: var(--color-row-index);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chart-tick.x {
+  text-anchor: middle;
+}
+
+.chart-tick.y {
+  text-anchor: end;
+}
+
+.chart-label {
+  fill: var(--color-muted);
+  font-size: 12px;
+}
+
+.chart-label.x {
+  text-anchor: middle;
+}
+
+.chart-label.y {
+  text-anchor: middle;
+}
+
+.frontier-line {
+  fill: none;
+  stroke: var(--color-chart-line);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.scatter-point {
+  fill: var(--color-surface);
+  stroke: var(--color-chart-point-stroke);
+  stroke-width: 2.5;
+  cursor: pointer;
+  outline: none;
+}
+
+.scatter-point:hover,
+.scatter-point:focus {
+  stroke: var(--color-accent);
+  stroke-width: 3;
+}
+
+.scatter-point.selected {
+  fill: var(--color-accent);
+  stroke: var(--color-surface);
+}
+
+.scatter-point-ring {
+  fill: var(--color-accent-bg);
+  opacity: 0.95;
+}
+
+.scatter-tooltip {
+  filter: drop-shadow(0 8px 14px rgb(21 34 59 / 24%));
+}
+
+.scatter-tooltip-bg {
+  fill: #253044;
+  opacity: 0.96;
+}
+
+.scatter-tooltip-title {
+  fill: #20a8cc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.scatter-tooltip-row {
+  fill: #dbe5f2;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.scatter-tooltip-label {
+  fill: #9fadc3;
+}
+
+.scatter-tooltip-value {
+  fill: #ffffff;
+  font-weight: 800;
 }
 
 .table-scroll {
