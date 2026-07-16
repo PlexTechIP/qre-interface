@@ -286,6 +286,124 @@ select {
   line-height: 1.35;
 }
 
+.chart-help {
+  margin: 6px 0 12px;
+  color: #91a0b8;
+  font-size: 12px;
+}
+
+.scatter-wrap {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+}
+
+.frontier-scatter {
+  width: 100%;
+  max-width: 460px;
+  min-height: 220px;
+}
+
+.chart-gridline {
+  stroke: #dceaf4;
+  stroke-dasharray: 4 5;
+}
+
+.chart-axis {
+  stroke: #b9c9dc;
+  stroke-width: 1.5;
+}
+
+.chart-tick,
+.chart-label {
+  fill: #8fa0b9;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chart-tick.x {
+  text-anchor: middle;
+}
+
+.chart-tick.y {
+  text-anchor: end;
+}
+
+.chart-label {
+  fill: #72819b;
+  font-size: 12px;
+}
+
+.chart-label.x {
+  text-anchor: middle;
+}
+
+.chart-label.y {
+  text-anchor: middle;
+}
+
+.frontier-line {
+  fill: none;
+  stroke: #1ca3c5;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.scatter-point {
+  fill: #ffffff;
+  stroke: #a9ddec;
+  stroke-width: 2.5;
+  cursor: pointer;
+  outline: none;
+}
+
+.scatter-point:hover,
+.scatter-point:focus {
+  stroke: #1597b7;
+  stroke-width: 3;
+}
+
+.scatter-point.selected {
+  fill: #1597b7;
+  stroke: #ffffff;
+}
+
+.scatter-point-ring {
+  fill: #d8f4fb;
+  opacity: 0.95;
+}
+
+.scatter-tooltip {
+  filter: drop-shadow(0 8px 14px rgb(21 34 59 / 24%));
+}
+
+.scatter-tooltip-bg {
+  fill: #253044;
+  opacity: 0.96;
+}
+
+.scatter-tooltip-title {
+  fill: #20a8cc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.scatter-tooltip-row {
+  fill: #dbe5f2;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.scatter-tooltip-label {
+  fill: #9fadc3;
+}
+
+.scatter-tooltip-value {
+  fill: #ffffff;
+  font-weight: 800;
+}
+
 .table-scroll {
   margin: 16px -18px -18px;
   overflow: auto;

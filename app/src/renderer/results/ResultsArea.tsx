@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ResultsAreaProps } from "../../shared/types";
 import { ConfigSummary } from "./ConfigSummary";
 import { formatMetric } from "./formatMetric";
+import { FrontierScatter } from "./FrontierScatter";
 import { FrontierTable } from "./FrontierTable";
 import { SelectedRowDetail } from "./SelectedRowDetail";
 
@@ -105,10 +106,8 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
 
         <section className="panel">
           <h2>Qubits vs. Runtime</h2>
-          <p className="placeholder-copy">
-            The hand-rolled scatter graph will use these same {frontierCount} frontier row
-            {frontierCount === 1 ? "" : "s"} in the next display branch.
-          </p>
+          <p className="chart-help">Click or focus a point to select its matching table row.</p>
+          <FrontierScatter rows={frontierRows} selectedIndex={safeSelectedIndex} onSelect={setSelectedIndex} />
         </section>
       </div>
 
