@@ -54,44 +54,57 @@ Read first: `../week-2-overview.md`, `week-2-team-2-technical-brief.md`,
 - [ ] **Configuration summary** alongside results: what produced this result
       (from the `config` prop — application, architecture, QEC code, factory,
       transform, max error, QRE version)
-- [ ] **Everything else from `raw`**: structured, browsable view of the full
+- [x] **Everything else from `raw`**: structured, browsable view of the full
       QRE output (collapsible tree or grouped sections) — nothing QRE emits
       is unreachable
+      — `RawExplorer.tsx`; handles `raw: null` (TIMEOUT/ENGINE_CRASH) and `{}`.
 
 ## D. Filtering, interactivity & states
 
-- [ ] **Field filtering controls** (SOW Part 1.7): user selects which result
+- [x] **Field filtering controls** (SOW Part 1.7): user selects which result
       fields are in view — applied to the detail display, the table's
       columns, and (where sensible) the graph — over the ~10–15 fields a run
       reports (six defaults start visible; the 37-field appendix is the
       universe); full output remains one click away; selection survives
       switching between results this session (in-memory is fine)
+      — `FieldFilter.tsx`, wired into `ResultsArea`/`FrontierTable`/`SelectedRowDetail`.
+      Graph wiring pending the graph component (blocked, see below).
 - [ ] **Interactive visuals:** every graph point shows a tooltip (exact +
       formatted values, from the formatting module) on **hover and keyboard
       focus**; table↔graph selection sync keyboard-operable; visuals hold up
       on single-row frontiers, zero values, and year-scale/1e-19-scale
       magnitudes. Stretch if time allows: selected row links into the matching
       `raw` section in the explorer
-- [ ] **States:** loading/running (skeleton or progress per reference design),
+      — **blocked:** no graph component exists yet (tracked under C). Table/detail
+      side of "holds up on single-row/zero/huge-magnitude" is done and tested.
+- [x] **States:** loading/running (skeleton or progress per reference design),
       **failed** (renders `error.code`/`error.message` usefully + next step;
       canonical codes per `data-contracts.md`, unknown codes tolerated; works
       with `raw` diagnostics present AND with `raw: null`), **empty** (no run
       yet), **sparse** (few fields, zeros, single-row frontier — renders
       without crashes, `undefined`, or `NaN`)
-- [ ] Formatting-stress data renders legibly (year-scale runtimes,
+- [x] Formatting-stress data renders legibly (year-scale runtimes,
       billion-scale counts, 1e-19 rates — no overflow, no unreadable raw
       exponents where the design says otherwise)
 - [ ] Unit tests: formatting utils; component renders every fixture without
       error **including table + graph** (one-row, zero-value, and
       huge-magnitude cases); field filtering shows/hides across views;
       selection sync works
+      — table + detail + filtering covered (`ResultsArea.test.tsx`,
+      `RawExplorer.test.tsx`); graph render/selection-sync tests blocked on
+      the graph component existing.
 
 ## E. Polish + acceptance prep
 
-- [ ] Visual pass against the reference design
+- [ ] Visual pass against the reference design — needs the merged Figma
+      reference + a human eyeball pass, not done here
 - [ ] Walk through `week-2-team-2-definition-of-done.md` — every box checkable
+      — not yet: graph-dependent boxes still open
 - [ ] Acceptance walkthrough via the fixture switcher: success → **frontier
       table + graph (tooltips, point↔row selection)** → field filtering →
       selected-row detail → raw explorer → formatting-stress data → sparse
       (**one-row frontier, still legible**) → failed → empty
+      — blocked on the graph step; everything else in the sequence works today
 - [ ] PR(s) merged to `main` by Wed Jul 15 EOD — final acceptance from `main`
+      — **not merged; this date has passed** — reconfirm the real deadline
+      with PMs before treating this as done

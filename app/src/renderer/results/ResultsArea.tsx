@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import type { ResultsAreaProps } from "../../shared/types";
 import { ConfigSummary } from "./ConfigSummary";
+import { FieldFilter } from "./FieldFilter";
 import { formatMetric } from "./formatMetric";
 import { FrontierTable } from "./FrontierTable";
+import { RawExplorer } from "./RawExplorer";
+import { getAdditionalFieldDefinitions } from "./resultFields";
 import { SelectedRowDetail } from "./SelectedRowDetail";
 
 export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  // Field-filter selections deliberately persist across result switches this session (SOW Part 1.7)
+  // — never reset this alongside selectedIndex.
+  const [hiddenAdditionalKeys, setHiddenAdditionalKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -51,10 +58,11 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
           <strong>{result.error?.code ?? "UNKNOWN_ERROR"}</strong>
           <p>{result.error?.message ?? "The estimator failed without a detailed message."}</p>
           <p className="muted">
-            Try adjusting the run configuration, then rerun the estimate. Engine diagnostics will appear in the raw
-            output explorer when available.
+            Try adjusting the run configuration, then rerun the estimate. Engine diagnostics, when the engine
+            produced any, are available below in the raw output explorer.
           </p>
         </div>
+        <RawExplorer raw={result.raw} />
       </section>
     );
   }
@@ -65,6 +73,39 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
   const selectedRow = frontierRows[safeSelectedIndex] ?? null;
   const selectedRowNumber = safeSelectedIndex + 1;
   const selectedRowAnnouncement = `Selected row ${selectedRowNumber} of ${frontierCount}`;
+
+  const additionalFieldDefinitions = getAdditionalFieldDefinitions(frontierRows);
+  const visibleAdditionalFields = additionalFieldDefinitions.filter(
+    (field) => !hiddenAdditionalKeys.has(field.key),
+  );
+
+  const toggleAdditionalField = (key: string) => {
+    setHiddenAdditionalKeys((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const showAllFields = () => {
+    setHiddenAdditionalKeys((previous) => {
+      const next = new Set(previous);
+      additionalFieldDefinitions.forEach((field) => next.delete(field.key));
+      return next;
+    });
+  };
+
+  const showDefaultsOnly = () => {
+    setHiddenAdditionalKeys((previous) => {
+      const next = new Set(previous);
+      additionalFieldDefinitions.forEach((field) => next.add(field.key));
+      return next;
+    });
+  };
 
   return (
     <section className="results-page" aria-labelledby="results-title">
@@ -95,9 +136,37 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
               <h2>Frontier Configurations</h2>
               <p>Selected row represents this run in History & Comparison.</p>
             </div>
-            <button type="button">Columns 6</button>
+            {additionalFieldDefinitions.length > 0 ? (
+              <button
+                type="button"
+                className="filter-toggle"
+                aria-expanded={isFilterOpen}
+                aria-controls="field-filter-panel"
+                onClick={() => setIsFilterOpen((open) => !open)}
+              >
+                Filter fields ({visibleAdditionalFields.length}/{additionalFieldDefinitions.length} extra shown)
+                <span aria-hidden="true">{isFilterOpen ? "▲" : "▼"}</span>
+              </button>
+            ) : (
+              <span className="muted">6 default fields shown — this run reported no extra fields</span>
+            )}
           </div>
-          <FrontierTable rows={frontierRows} selectedIndex={safeSelectedIndex} onSelect={setSelectedIndex} />
+          {isFilterOpen && additionalFieldDefinitions.length > 0 ? (
+            <FieldFilter
+              id="field-filter-panel"
+              fields={additionalFieldDefinitions}
+              hiddenKeys={hiddenAdditionalKeys}
+              onToggle={toggleAdditionalField}
+              onShowAll={showAllFields}
+              onShowDefaultsOnly={showDefaultsOnly}
+            />
+          ) : null}
+          <FrontierTable
+            rows={frontierRows}
+            selectedIndex={safeSelectedIndex}
+            onSelect={setSelectedIndex}
+            additionalFields={visibleAdditionalFields}
+          />
           <p className="sr-only" aria-live="polite">
             {selectedRowAnnouncement}
           </p>
@@ -112,8 +181,15 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
         </section>
       </div>
 
-      {selectedRow ? <SelectedRowDetail row={selectedRow} rowNumber={selectedRowNumber} /> : null}
+      {selectedRow ? (
+        <SelectedRowDetail
+          row={selectedRow}
+          rowNumber={selectedRowNumber}
+          hiddenAdditionalKeys={hiddenAdditionalKeys}
+        />
+      ) : null}
       <ConfigSummary config={config} qreVersion={result.qreVersion} />
+      <RawExplorer raw={result.raw} />
     </section>
   );
 }

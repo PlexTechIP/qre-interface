@@ -144,18 +144,39 @@ export function getDefaultMetric(row: FrontierRow, key: string): FieldMetric {
   }
 }
 
-export function getDisplayFields(row: FrontierRow): DisplayField[] {
+/**
+ * @param hiddenKeys Additional-field keys to exclude, e.g. from field-filter state. The six
+ * default fields are never hidden. Omit to show every reported field (unfiltered).
+ */
+export function getDisplayFields(row: FrontierRow, hiddenKeys: ReadonlySet<string> = new Set()): DisplayField[] {
   const defaultFields = DEFAULT_FIELD_DEFINITIONS.map((definition) => ({
     ...definition,
     metric: getDefaultMetric(row, definition.key),
   }));
 
-  const additionalFields = Object.entries(row.additional ?? {}).map(([key, metric]) => ({
-    ...getFieldDefinition(key, metric.unit),
-    metric,
-  }));
+  const additionalFields = Object.entries(row.additional ?? {})
+    .filter(([key]) => !hiddenKeys.has(key))
+    .map(([key, metric]) => ({
+      ...getFieldDefinition(key, metric.unit),
+      metric,
+    }));
 
   return [...defaultFields, ...additionalFields];
+}
+
+/** The union of additional (non-default) field definitions reported across any row in the frontier. */
+export function getAdditionalFieldDefinitions(rows: readonly FrontierRow[]): ResultFieldDefinition[] {
+  const seen = new Map<string, ResultFieldDefinition>();
+
+  for (const row of rows) {
+    for (const [key, metric] of Object.entries(row.additional ?? {})) {
+      if (!seen.has(key)) {
+        seen.set(key, getFieldDefinition(key, metric.unit));
+      }
+    }
+  }
+
+  return [...seen.values()];
 }
 
 export function getFieldDefinition(key: string, unit: string): ResultFieldDefinition {
@@ -225,7 +246,7 @@ function humanizeIdentifier(value: string): string {
     .join(" ");
 }
 
-function humanizeKey(value: string): string {
+export function humanizeKey(value: string): string {
   return value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
