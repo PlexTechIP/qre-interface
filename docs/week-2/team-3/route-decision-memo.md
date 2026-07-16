@@ -156,6 +156,19 @@ own typings/source and its parameter parser.
   transform carries the user's params, pipeline yields distinct valid
   estimates (captures confirm); follow-up to implement true one-of after
   verifying QDK supports a lone transform.
+- **Sparse fixture unsatisfiable at `tStatesPerRotation: 5` (⚠️ proposed contract
+  change):** the frozen `contracts/fixtures/runconfig.sparse.json` pairs a
+  `runresult.success-sparse.json` (expected **success**) with a config that is
+  **unsatisfiable** on QDK 1.29.1. Verified directly against the installed
+  package: at `tStatesPerRotation: 5` the real engine returns `ESTIMATION_FAILED`
+  / 0 rows ("no feasible Pareto frontier point"); at `20` it returns a 2-row
+  success. To honor the fixture's success intent, the value was changed 5 → 20
+  (user-approved during implementation). This **edits a frozen, cross-team
+  contract artifact**, so it is a proposed contract change **pending PM
+  ratification** and must be synced with Teams 1/2, who also consume this
+  fixture. **Fallback if rejected (Option B):** revert the fixture to `5` and
+  have the conformance harness treat `sparse` as an expected `ESTIMATION_FAILED`
+  case — a small harness change that keeps the frozen contract untouched.
 
 These are explicit closeout rulings for the current adapter, not assertions
 that the frozen contract and QDK surface are identical. They remain visible

@@ -116,9 +116,15 @@ Your track has the most unknowns of the three — front-load the risky part
       engine and Ajv-validates each `RunResult`. The three expected-success
       fixtures must additionally return `succeeded`, `error: null`, a
       nonempty frontier, and all default result fields; the failing fixture
-      must return `failed`. The approved sparse fixture uses
-      `tStatesPerRotation: 20`, which QDK 1.29.1 can estimate. The strengthened
-      real-engine gate is green on Windows
+      must return `failed`. **Contract-fixture note (pending PM ratification):**
+      the frozen `runconfig.sparse.json` originally set `tStatesPerRotation: 5`,
+      which is **unsatisfiable** on QDK 1.29.1 (verified directly:
+      `ESTIMATION_FAILED`, 0 rows) even though its paired
+      `runresult.success-sparse.json` marks it an expected success. It was
+      changed to `tStatesPerRotation: 20` (2-row success) — user-approved during
+      implementation to honor that success intent — a **proposed contract-fixture
+      correction**, not a settled freeze edit; see the route memo §Decisions of
+      record and the PR. The strengthened real-engine gate is green on Windows
 - [x] Every id in the frozen `contracts/benchmarks.json` is runnable: real
       sources for all five starter benchmarks stored in-repo with metadata
       mirroring the contract file (seeds the Part-3 benchmark library), and
