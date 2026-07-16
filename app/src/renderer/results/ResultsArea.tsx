@@ -1,4 +1,5 @@
 import type { ResultsAreaProps } from "../../shared/types";
+import { formatMetric } from "./formatMetric";
 
 export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) {
   if (phase === "idle" || result === null) {
@@ -65,12 +66,12 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
       </div>
 
       <div className="metric-grid" aria-label="Default result fields preview">
-        <MetricCard label="Physical Qubits" value={firstRow?.physicalQubits.display ?? "—"} />
-        <MetricCard label="Runtime" value={firstRow?.runtime.display ?? "—"} />
-        <MetricCard label="Total Error" value={firstRow?.totalError.display ?? "—"} />
-        <MetricCard label="Factories" value={firstRow?.factories.display ?? "—"} />
-        <MetricCard label="Code Distance" value={firstRow?.codeDistance.display ?? "—"} />
-        <MetricCard label="Logical Cycle Time" value={firstRow?.logicalCycleTime.display ?? "—"} />
+        <MetricCard label="Physical Qubits" value={formatMetric(firstRow?.physicalQubits)} />
+        <MetricCard label="Runtime" value={formatMetric(firstRow?.runtime)} />
+        <MetricCard label="Total Error" value={formatMetric(firstRow?.totalError)} />
+        <MetricCard label="Factories" value={formatMetric(firstRow?.factories)} />
+        <MetricCard label="Code Distance" value={formatMetric(firstRow?.codeDistance)} />
+        <MetricCard label="Logical Cycle Time" value={formatMetric(firstRow?.logicalCycleTime)} />
       </div>
 
       <div className="foundation-grid">
