@@ -211,6 +211,7 @@ select {
 
 .metric-card,
 .panel,
+.detail-item,
 .state-card,
 .alert-card {
   border: 1px solid #dce5f1;
@@ -285,6 +286,136 @@ select {
   line-height: 1.35;
 }
 
+.table-scroll {
+  margin: 16px -18px -18px;
+  overflow: auto;
+}
+
+.frontier-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+  color: #4f5f78;
+  font-size: 13px;
+}
+
+.frontier-table th,
+.frontier-table td {
+  border-top: 1px solid #eef3f8;
+  padding: 12px 14px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.frontier-table thead th {
+  background: #f7f9fc;
+  color: #94a2b9;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.frontier-table thead th span,
+.frontier-table thead th small {
+  display: block;
+}
+
+.frontier-table thead th small {
+  margin-top: 2px;
+  color: #b0bcd0;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.frontier-table tbody tr {
+  cursor: pointer;
+}
+
+.frontier-table tbody tr:hover,
+.frontier-table tbody tr:focus {
+  background: #f5fbfd;
+  outline: none;
+}
+
+.frontier-table tbody tr:focus {
+  box-shadow: inset 0 0 0 2px #75d9eb;
+}
+
+.frontier-table tbody tr.selected {
+  background: #dcf8fc;
+  color: #1597b7;
+  font-weight: 800;
+}
+
+.frontier-table tbody th {
+  color: #8fa0b9;
+  font-weight: 800;
+}
+
+.detail-panel {
+  min-height: 0;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.detail-item {
+  min-height: 78px;
+  padding: 12px;
+  box-shadow: none;
+}
+
+.detail-item dt,
+.config-grid dt {
+  color: #94a2b9;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-item dt span {
+  display: block;
+  margin-top: 2px;
+  color: #b0bcd0;
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.detail-item dd,
+.config-grid dd {
+  margin: 8px 0 0;
+  color: #172033;
+  font-weight: 800;
+}
+
+.config-summary {
+  min-height: 0;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin: 16px 0 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .state-card,
 .alert-card {
   padding: 24px;
@@ -341,5 +472,10 @@ select {
 
   .foundation-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-grid,
+  .config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

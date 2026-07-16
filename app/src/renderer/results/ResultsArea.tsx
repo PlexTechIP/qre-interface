@@ -1,7 +1,17 @@
+import { useEffect, useState } from "react";
 import type { ResultsAreaProps } from "../../shared/types";
+import { ConfigSummary } from "./ConfigSummary";
 import { formatMetric } from "./formatMetric";
+import { FrontierTable } from "./FrontierTable";
+import { SelectedRowDetail } from "./SelectedRowDetail";
 
 export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [result?.runId]);
+
   if (phase === "idle" || result === null) {
     return (
       <section className="empty-state" aria-labelledby="results-empty-title">
@@ -49,8 +59,12 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
     );
   }
 
-  const firstRow = result.frontier?.[0] ?? null;
-  const frontierCount = result.frontier?.length ?? 0;
+  const frontierRows = result.frontier ?? [];
+  const frontierCount = frontierRows.length;
+  const safeSelectedIndex = frontierCount > 0 ? Math.min(selectedIndex, frontierCount - 1) : 0;
+  const selectedRow = frontierRows[safeSelectedIndex] ?? null;
+  const selectedRowNumber = safeSelectedIndex + 1;
+  const selectedRowAnnouncement = `Selected row ${selectedRowNumber} of ${frontierCount}`;
 
   return (
     <section className="results-page" aria-labelledby="results-title">
@@ -66,12 +80,12 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
       </div>
 
       <div className="metric-grid" aria-label="Default result fields preview">
-        <MetricCard label="Physical Qubits" value={formatMetric(firstRow?.physicalQubits)} />
-        <MetricCard label="Runtime" value={formatMetric(firstRow?.runtime)} />
-        <MetricCard label="Total Error" value={formatMetric(firstRow?.totalError)} />
-        <MetricCard label="Factories" value={formatMetric(firstRow?.factories)} />
-        <MetricCard label="Code Distance" value={formatMetric(firstRow?.codeDistance)} />
-        <MetricCard label="Logical Cycle Time" value={formatMetric(firstRow?.logicalCycleTime)} />
+        <MetricCard label="Physical Qubits" value={formatMetric(selectedRow?.physicalQubits)} />
+        <MetricCard label="Runtime" value={formatMetric(selectedRow?.runtime)} />
+        <MetricCard label="Total Error" value={formatMetric(selectedRow?.totalError)} />
+        <MetricCard label="Factories" value={formatMetric(selectedRow?.factories)} />
+        <MetricCard label="Code Distance" value={formatMetric(selectedRow?.codeDistance)} />
+        <MetricCard label="Logical Cycle Time" value={formatMetric(selectedRow?.logicalCycleTime)} />
       </div>
 
       <div className="foundation-grid">
@@ -79,21 +93,27 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
           <div className="panel-header">
             <div>
               <h2>Frontier Configurations</h2>
-              <p>Table, filtering, and row selection build on this fixture-backed surface.</p>
+              <p>Selected row represents this run in History & Comparison.</p>
             </div>
             <button type="button">Columns 6</button>
           </div>
-          <p className="placeholder-copy">
-            Foundation branch: the component receives {frontierCount} frontier row{frontierCount === 1 ? "" : "s"} from
-            props. The formatted table lands in the next display feature.
+          <FrontierTable rows={frontierRows} selectedIndex={safeSelectedIndex} onSelect={setSelectedIndex} />
+          <p className="sr-only" aria-live="polite">
+            {selectedRowAnnouncement}
           </p>
         </section>
 
         <section className="panel">
           <h2>Qubits vs. Runtime</h2>
-          <p className="placeholder-copy">The hand-rolled scatter graph will consume the same frontier rows.</p>
+          <p className="placeholder-copy">
+            The hand-rolled scatter graph will use these same {frontierCount} frontier row
+            {frontierCount === 1 ? "" : "s"} in the next display branch.
+          </p>
         </section>
       </div>
+
+      {selectedRow ? <SelectedRowDetail row={selectedRow} rowNumber={selectedRowNumber} /> : null}
+      <ConfigSummary config={config} qreVersion={result.qreVersion} />
     </section>
   );
 }
