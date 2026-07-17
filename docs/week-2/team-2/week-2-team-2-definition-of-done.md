@@ -16,15 +16,16 @@ The bar for Wednesday Jul 15 EOD.
 - [ ] **Interactive visuals:** every graph point exposes a tooltip (exact +
       formatted values) on hover **and** keyboard focus — no mouse-only
       interactions
-- [ ] **Field filtering:** user selects which result fields are in view,
+- [x] **Field filtering:** user selects which result fields are in view,
       applied across the detail display, table columns, and (where sensible)
       the graph; six defaults visible initially; filtered-out ≠ deleted (full
       output one interaction away); filter state survives switching results
       within the session
+      — table/detail wired; graph wiring pending the graph component
 - [ ] **Configuration summary** visible with results: application,
       architecture, QEC code, magic state factory, trace transform, max
       error, QRE version of the producing run
-- [ ] **Raw output explorer:** the complete `raw` blob is browsable
+- [x] **Raw output explorer:** the complete `raw` blob is browsable
       (collapsible tree/grouped sections); nothing in the fixture is
       unreachable from the UI
 - [ ] **All committed fixtures render correctly**, verified

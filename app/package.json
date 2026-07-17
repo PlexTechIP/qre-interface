@@ -8,6 +8,12 @@
     "npm": "11.16.0"
   },
   "packageManager": "npm@11.16.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
   "dependencies": {
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",

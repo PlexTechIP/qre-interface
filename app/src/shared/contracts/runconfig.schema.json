@@ -1,0 +1,245 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://qre-dashboard.plextech.dev/contracts/runconfig.schema.json",
+  "title": "RunConfig",
+  "description": "CANONICAL contract schema (v1.0.0), frozen by the PMs. RunConfig is fully app-controlled, so this schema is deliberately strict (additionalProperties: false, closed enums where the product owns the choice set): a producer typo should fail fast here, not inside the engine. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "createdAt",
+    "application",
+    "architecture",
+    "qecCode",
+    "magicStateFactory",
+    "traceTransform",
+    "maxError",
+    "qreVersion"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0",
+      "description": "Contract version."
+    },
+    "id": {
+      "type": "string",
+      "description": "UUID v4, assigned when the user clicks Run (not while editing).",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "description": "User-editable label; auto-derived from the configuration and serialized when the user leaves it blank.",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp, stamped at Run-click.",
+      "format": "date-time"
+    },
+    "application": {
+      "description": "Application — exactly one benchmark or uploaded program variant.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "benchmarkId"],
+          "properties": {
+            "type": { "const": "benchmark" },
+            "benchmarkId": {
+              "type": "string",
+              "description": "A benchmark id from contracts/benchmarks.json. Kept an open string here because the benchmark library can grow at runtime; the engine fail-softs on unknown ids with INVALID_CONFIG.",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "filePath", "format", "addToLibrary"],
+          "properties": {
+            "type": { "const": "uploaded" },
+            "filePath": {
+              "type": "string",
+              "description": "Absolute or app-resolved path selected by the user.",
+              "minLength": 1
+            },
+            "format": {
+              "type": "string",
+              "enum": ["qsharp", "openqasm", "qir"]
+            },
+            "addToLibrary": {
+              "type": "boolean",
+              "description": "Whether the uploaded program should be added to the benchmark list."
+            }
+          }
+        }
+      ]
+    },
+    "architecture": {
+      "description": "Physical architecture, discriminated by type. Times are serialized in nanoseconds.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "errorRate", "gateTime", "measurementTime"],
+          "properties": {
+            "type": { "const": "gateBased" },
+            "errorRate": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 0.01,
+              "description": "Default UI value: 1e-4."
+            },
+            "gateTime": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Nanoseconds. Required; no UI default."
+            },
+            "measurementTime": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Nanoseconds. Required; no UI default."
+            },
+            "twoQubitGateTime": {
+              "description": "Optional nanoseconds. If present, must be null or > 0.",
+              "oneOf": [
+                { "type": "null" },
+                { "type": "number", "exclusiveMinimum": 0 }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "errorRate", "operationTime"],
+          "properties": {
+            "type": { "const": "majorana" },
+            "errorRate": {
+              "type": "number",
+              "enum": [0.0001, 0.00001, 0.000001],
+              "description": "Default UI value: 1e-5; select-only."
+            },
+            "operationTime": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Nanoseconds. Default UI value: 1000."
+            }
+          }
+        }
+      ]
+    },
+    "qecCode": {
+      "type": "string",
+      "description": "Derived from architecture: gateBased -> surface_code; majorana -> three_aux.",
+      "enum": ["surface_code", "three_aux"]
+    },
+    "magicStateFactory": {
+      "type": "string",
+      "description": "round_based by default; litinski19 is allowed only for GateBased architectures with errorRate <= 1e-3.",
+      "enum": ["round_based", "litinski19"]
+    },
+    "traceTransform": {
+      "description": "Trace transform settings, discriminated by type. PSSPC is the default transform.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tStatesPerRotation", "ccxMagicStates"],
+          "properties": {
+            "type": { "const": "psspc" },
+            "tStatesPerRotation": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 20,
+              "description": "Default UI value: 20."
+            },
+            "ccxMagicStates": {
+              "type": "boolean",
+              "description": "Default UI value: false."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "slowDownFactor"],
+          "properties": {
+            "type": { "const": "latticeSurgery" },
+            "slowDownFactor": {
+              "const": 1.0,
+              "description": "Fixed optimistic slowdown factor; no other values are selectable."
+            }
+          }
+        }
+      ]
+    },
+    "maxError": {
+      "type": "number",
+      "description": "Cap on total logical error probability. Default UI value: 1.0 (= unconstrained). In-range values can still be infeasible for a given configuration; that is a failed RunResult, not a validation error.",
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    },
+    "qreVersion": {
+      "type": "string",
+      "description": "The bundled engine version shown to the user at configuration time (informational — RunResult.qreVersion is the authoritative record of what actually executed).",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["architecture"],
+        "properties": {
+          "architecture": {
+            "required": ["type"],
+            "properties": { "type": { "const": "gateBased" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qecCode": { "const": "surface_code" }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["architecture"],
+        "properties": {
+          "architecture": {
+            "required": ["type"],
+            "properties": { "type": { "const": "majorana" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qecCode": { "const": "three_aux" },
+          "magicStateFactory": { "const": "round_based" }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["magicStateFactory"],
+        "properties": {
+          "magicStateFactory": { "const": "litinski19" }
+        }
+      },
+      "then": {
+        "properties": {
+          "architecture": {
+            "required": ["type", "errorRate"],
+            "properties": {
+              "type": { "const": "gateBased" },
+              "errorRate": { "maximum": 0.001 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

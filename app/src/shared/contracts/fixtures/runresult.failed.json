@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "runId": "bead9c0e-c3ff-4d33-bb13-5f1c0a01b385",
+  "status": "failed",
+  "error": {
+    "code": "ESTIMATION_FAILED",
+    "message": "The estimator could not find a feasible frontier point within maxError = 1e-12 for this GateBased configuration. Try a larger max error cap, lower hardware error rate, or a faster architecture."
+  },
+  "frontier": null,
+  "raw": {
+    "status": "failed",
+    "engineApi": "qdk-qre-estimation-table",
+    "code": "Qre.Estimation.NoFeasibleFrontierPoint",
+    "message": "No feasible Pareto frontier point satisfied maxError = 1e-12 under the supplied architecture and transform settings.",
+    "configuration": {
+      "architecture": "GateBased",
+      "qecCode": "surface_code",
+      "magicStateFactory": "round_based",
+      "traceTransform": "psspc",
+      "maxError": 1e-12
+    }
+  },
+  "qreVersion": "qdk-qre-v1-fixture",
+  "startedAt": "2026-07-09T18:40:02Z",
+  "completedAt": "2026-07-09T18:40:03Z"
+}
