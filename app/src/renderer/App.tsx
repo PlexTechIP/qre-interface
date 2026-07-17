@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ResultsArea } from "./results/ResultsArea";
-import { DEFAULT_FIXTURE_SCENARIO, FIXTURE_SCENARIOS, type FixtureScenarioId } from "./results/fixtures";
+import { useEffect, useState } from "react";
+import { RunConfiguration } from "./RunConfiguration";
 import { ThemeToggle, type Theme } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
@@ -20,12 +19,7 @@ function getInitialTheme(): Theme {
 }
 
 export function App() {
-  const [scenarioId, setScenarioId] = useState<FixtureScenarioId>("idle");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
-  const selectedScenario = useMemo(
-    () => FIXTURE_SCENARIOS.find((scenario) => scenario.id === scenarioId) ?? DEFAULT_FIXTURE_SCENARIO,
-    [scenarioId],
-  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -50,34 +44,15 @@ export function App() {
       <main className="app-shell">
         <aside className="sidebar" aria-label="Primary navigation">
           <nav className="nav-list">
-            <span>Run Configuration</span>
-            <span className="active">Results</span>
+            <span className="active">Run Configuration</span>
+            <span>Results</span>
             <span>Run History</span>
             <span>Comparison</span>
           </nav>
         </aside>
 
         <section className="workspace">
-          <div className="fixture-toolbar">
-            <label htmlFor="fixture-scenario">Fixture scenario</label>
-            <select
-              id="fixture-scenario"
-              value={scenarioId}
-              onChange={(event) => setScenarioId(event.target.value as FixtureScenarioId)}
-            >
-              {FIXTURE_SCENARIOS.map((scenario) => (
-                <option key={scenario.id} value={scenario.id}>
-                  {scenario.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <ResultsArea
-            phase={selectedScenario.phase}
-            result={selectedScenario.result}
-            config={selectedScenario.config}
-          />
+          <RunConfiguration />
         </section>
       </main>
     </div>
