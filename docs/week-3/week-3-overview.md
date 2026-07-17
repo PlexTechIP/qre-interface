@@ -1,8 +1,8 @@
 # Week 3 Overview — The Swap + Part 2 Starts (Three Parallel Tracks)
 
-**Dates:** Thu Jul 16 → Wed Jul 22, 2026
-**Deliverables due:** **Wednesday Jul 22 EOD** — Tue Jul 21 is a checkpoint
-meeting; Microsoft check-in Fri Jul 17
+**Dates:** Thu Jul 16 → Tue Jul 21, 2026
+**Deliverables due:** **Tuesday Jul 21 EOD** — the Tue Jul 21 5–6pm meeting is
+the checkpoint; final acceptance is EOD that same day. Microsoft check-in Fri Jul 17
 **Goal:** the week-2 **mock→real swap** (integration) lands, and — because the
 week-2 **swap gate passed** — the start of SOW **Part 2 (Run History,
 Traceability)** is pulled forward and built in parallel behind a frozen
@@ -34,7 +34,7 @@ run-record contract.
 | Team | Track | One-line mission |
 |---|---|---|
 | **Team 3** (Neil + Jessie) | **Integration — the swap** | Stand up the Electron main process + typed IPC bridge, run the **real QRE** behind `EstimatorService`, swap `MockEngine → QreEngine`, verify configure → run → real estimation → results end-to-end, and close the pending engine/contract decisions |
-| **Team 1** (Sun Min + Emma) | **Part 2 — Run History UI** (frontend) | The Run History surface: the list of saved runs, per-run **View Details** (reusing Team 2's Results components), **Delete**, an **Export-Markdown** stub, and search + filters — built against **mock run records** |
+| **Team 1** (Sun Min + Emma) | **Part 2 — Run History UI + Comparison UI** (frontend) | **Two full page tabs, built to the Figma reference.** **History:** the list of saved runs, per-run **View Details** (reusing Team 2's Results components), **Delete**, **Export-Markdown** stub, and search + filters. **Comparison:** multi-run selection, a side-by-side comparison table + per-run bar charts, and a comparison **Export** stub — both built against **mock run records** |
 | **Team 2** (Melody + Rishabh) | **Part 2 — Run Persistence + Rerun** (backend) | A **SQLite** persistence layer that saves every run as an **immutable record**, a **query/filter/load API** over saved records, and the **Rerun** data path (record → reconstructed config) — built to the same `RunStore` API Team 1 consumes |
 
 ## Why Part 2 starts now — the swap gate passed
@@ -90,9 +90,11 @@ what you're building on:
 
 Week 3 starts from that `main`:
 
-- **Team 1** builds the History UI as a new renderer surface that **reuses
-  Team 2's already-merged Results/`ResultsArea` components** to render a saved
-  run's detail — no re-implementing the frontier table/graph.
+- **Team 1** builds **two** new renderer surfaces — the **History** tab and the
+  **Comparison** tab — both **reusing Team 2's already-merged Results components**
+  (`ResultsArea` for a saved run's detail; the `formatMetric` module + field
+  filter for the comparison table/bars) rather than re-implementing them. Both are
+  built to the **Figma** reference design.
 - **Team 2** builds the persistence layer in the Electron main process
   (`app/src/main/`), behind the `RunStore` API — the same surface Team 1 codes
   against.
@@ -141,7 +143,7 @@ decisions below. Process details: `docs/engineering-workflow.md`.
 - **Team branches:** each team creates its own working branch off the **updated
   `main`** at kickoff (Day 0 = **Thu Jul 16**) — `week-3/team-1`,
   `week-3/team-2`, `week-3/team-3` — and works from it all week (feature branches
-  PR into the team branch; the team branch merges to `main` by **Wed Jul 22
+  PR into the team branch; the team branch merges to `main` by **Tue Jul 21
   EOD**). Start from `main` **after** the week-2 integration merge (`d731f19`);
   do not branch off a week-2 team branch. Details:
   `docs/engineering-workflow.md`.
@@ -149,9 +151,12 @@ decisions below. Process details: `docs/engineering-workflow.md`.
   (continuity beats novelty mid-integration); Teams 1 and 2 open the Part-2
   tracks (History UI / persistence). Weekly rotation resumes once the seams
   stabilize — don't assume you keep your week-3 area.
-- **Design source:** build to the same merged reference design used in week 2
-  (the History surface is specified in `docs/project-overview.md` §The four main
-  surfaces; reuse the week-2 Results visuals for run detail).
+- **Design source — reference the Figma.** Build the History and Comparison tabs
+  to the **reference design (Figma):** <https://frolicking-zabaione-b67d47.netlify.app/>
+  (the History and Comparison frames specifically). The surfaces are also specified
+  in `docs/project-overview.md` §The four main surfaces; reuse the week-2 Results
+  visuals for run detail and `formatMetric` for the comparison table/bars. Where
+  Figma and this doc disagree on layout, follow Figma and flag it.
 - **Where code goes:** `app/src/renderer/` (Team 1 — History UI),
   `app/src/main/` (Team 2 — SQLite `RunStore`; Team 3 — Electron main + engine +
   IPC), `app/src/shared/` (PM-owned contract types + the reference
@@ -161,28 +166,35 @@ decisions below. Process details: `docs/engineering-workflow.md`.
   outgoing side of any seam leaves an updated module README + known-issues note
   (rotation begins next week; the incoming pair needs it).
 - **Checkpoint bar:** final acceptance uses your definition-of-done doc at the
-  **Wed Jul 22 EOD** deadline, from `main` — not a branch.
+  **Tue Jul 21 EOD** deadline, from `main` — not a branch.
 
 ## What week 3 does NOT include
 
-- **No comparison workspace, no multi-run comparison charts** (Part 2 week 5).
-  History renders *single*-run detail by reusing the week-2 Results visuals.
+- **No *live* comparison/history data.** Both tabs read the **mock run records**
+  this week; wiring them to Team 2's real SQLite store is week-4 integration. (The
+  Comparison workspace itself — multi-run select, table, bar charts, export stub —
+  **is** in Team 1's scope now; see the team-1 docs. History renders single-run
+  detail by reusing the week-2 Results visuals.)
 - **No real export.** Team 1 ships an **Export-Markdown stub** (the affordance +
   a placeholder/preview), not the real Markdown generator (Part 3, week 6).
 - **No store-swap or Rerun end-to-end wiring.** Team 1 builds against mock
   records; Team 2 builds the real store + the pure Rerun reconstruction behind
   the API. Connecting the real store, the save-after-run trigger, and the live
   Rerun-into-the-form path is **week-4 integration**, done deliberately.
-- **No charting-library adoption.** The Recharts-vs-Plotly ruling still ships
-  with the week-5 comparison work; run detail reuses the hand-rolled week-2
-  visuals.
+- **Charting library — ruled: use Recharts or Plotly.** The PMs have signed off on
+  a charting library for the comparison bar charts (Recharts recommended as the
+  lighter React-native fit; either is approved). **Do not hand-roll the comparison
+  bars.** Keep the same accessibility bar as week 2 (every chart has a text
+  equivalent — the comparison table — and never relies on color alone) and format
+  ticks/labels with Team 2's `formatMetric`. Team 2's existing week-2 scatter stays
+  as-is; this ruling covers the new comparison charts only.
 - **No new estimation-contract scope.** Team 3's job is to make the real engine
   honor the *existing* `RunConfig`/`RunResult` contract and to resolve the
   acknowledged gaps through the contract-change process — not to expand it.
 
 ## Team docs
 
-- `team-1/` — checklist, technical brief, definition-of-done (Run History UI)
+- `team-1/` — checklist, technical brief, definition-of-done (Run History UI + Comparison UI)
 - `team-2/` — checklist, technical brief, definition-of-done (Persistence + Rerun)
 - `team-3/` — checklist, technical brief, definition-of-done (Integration / the swap)
 

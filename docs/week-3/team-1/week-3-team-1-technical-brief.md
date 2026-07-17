@@ -1,10 +1,14 @@
-# Week 3 — Team 1 — Technical Brief: Run History UI
+# Week 3 — Team 1 — Technical Brief: Run History UI + Comparison UI
 
-Your track: the **Run History** surface — SOW Part 2 (Run History,
-Traceability). You render the list of every saved run and its per-run actions,
-and you reuse Team 2's already-merged Results components to show a saved run's
-detail. You are the *consumer* side of the new run-record contract — the same
-posture you had toward `RunResult` in week 2, one surface up.
+Your track: **two full page tabs** — the **Run History** surface and the
+**Comparison** surface — SOW Part 2 (Run History, Traceability, Comparison). You
+render the list of every saved run and its per-run actions, you let analysts select
+runs and compare them side by side, and you reuse Team 2's already-merged Results
+components throughout. You are the *consumer* side of the new run-record contract —
+the same posture you had toward `RunResult` in week 2, one surface up. **Build both
+tabs to the reference design (Figma):**
+<https://frolicking-zabaione-b67d47.netlify.app/> (the History and Comparison
+frames); where Figma and this brief disagree on layout, follow Figma and flag it.
 
 > The **Run History Area** (`docs/project-overview.md`) is the list of all saved
 > runs. Each record carries the run name, full configuration, date/time, QRE
@@ -124,6 +128,49 @@ state.
 | **Export Markdown** | **Stub only** — present the affordance and a placeholder/preview (modal or copyable stub). The real Markdown generator is Part 3 (week 6). Build the seam, not the exporter |
 | **Rerun** | Feed the selected record to the provided `reconstructConfig(record, stamp)` (`contracts/types.ts`) to get the pre-fill `RunConfig`. Against mock records, prove the action yields the reconstructed config. **Navigating into the live pre-filled form is week-4 integration** — you own the affordance and the handoff, not the wiring |
 
+## The Comparison surface (second tab — build it fully)
+
+The **Comparison page** (`docs/project-overview.md` §The four main surfaces) lets an
+analyst select runs from History and compare them side by side. Like History, it is
+a **pure function of a selected set of `RunRecord`s** — no new contract, no store
+knowledge; it reads the same records you already render. Build it to the **Figma**
+reference.
+
+- **Multi-run selection.** The user picks N runs to compare — via a selection
+  control on the Comparison tab and/or a "compare selected" hand-off from History.
+  The selected set is the surface's input; a **one-run** and a **many-run**
+  selection must both render sensibly.
+- **Comparison table.** One **column per selected run**, one **row per result
+  field** — the **six default fields** visible by default (physical qubits, runtime,
+  logical cycle time, factories used, total error, code distance), with the same
+  **field-filter** affordance from week 2 to add/remove rows (reuse Team 2's field
+  filter + `formatMetric`; never parse `display`). Each column header carries the
+  run's identity: name · application · architecture · QRE version.
+- **Comparison bar charts.** Per-metric bar charts across the selected runs —
+  **physical qubits, runtime, logical cycle time, physical factory qubits, total
+  error, code distance** (the SOW set). One bar per run per metric; labeled,
+  formatted axes (via `formatMetric`); handles wide magnitude ranges and a
+  single-run selection without looking broken; color is never the only encoding and
+  every chart has a text equivalent (the table is it). **Build these with the
+  approved charting library (Recharts or Plotly) — do not hand-roll them** (see the
+  charting note); format all tick/label/tooltip values with `formatMetric`.
+- **Comparison export (stub).** The affordance to export the comparison set
+  (selected runs' configs, timestamps, QRE versions, and the comparison table) is
+  present and wired to a placeholder/preview — the **real** Markdown exporter is
+  Part 3 (week 6). Build the seam, not the exporter.
+
+**Charting library — ruled:** use **Recharts or Plotly** for the comparison bars
+(Recharts recommended as the lighter React-native fit; either is approved). The PMs
+have signed off on the dependency — **do not hand-roll the bars.** Keep the week-2
+accessibility bar (text-equivalent table, never color-alone) and route all
+tick/label/tooltip values through `formatMetric`. Team 2's week-2 scatter stays
+hand-rolled and untouched; this covers the new comparison charts only.
+
+**Data:** build against the committed **mock run records** — the set spans varied
+architectures/benchmarks/QRE versions so the table and bars show real differences.
+If you need a multi-run scenario the fixtures don't cover, request it from the PMs
+(contract-change process); don't fabricate records locally.
+
 ## Boundaries — what is NOT yours this week
 
 | Not yours | Whose |
@@ -132,7 +179,8 @@ state.
 | The frontier table/graph and result rendering | Team 2's already-merged Results components — you reuse them, you don't rebuild them |
 | The real Markdown exporter | Part 3 (week 6) — you ship the stub affordance |
 | Wiring Rerun into the live config form; the store swap; the save-after-run trigger | Week-4 integration |
-| The multi-run comparison workspace / bar charts | Part 2, week 5 |
+| Choosing *whether* to use a charting library | PMs — **ruled: use Recharts or Plotly** for the comparison bars (approved; don't hand-roll them — see §The Comparison surface) |
+| Wiring Comparison/History to the **live** SQLite store; the **real** comparison exporter | Week-4 integration (store) / Part 3, week 6 (export) — both tabs run on mock records with export stubs this week |
 | The `RunRecord`/`RunStore` schema + the estimation contract | PMs, via contract-change process |
 | Standing up the Electron main process / IPC | Team 3 |
 
@@ -144,4 +192,7 @@ store/engine imports — grep-provable); list, filters, and per-run actions
 keyboard-navigable; no dead-end states (empty, no-matches, a saved failed run,
 and a deleted-last-record state each have a clear next step); renders every
 committed mock record — including a sparse/one-row and a failed record — without
-crashing.
+crashing. **Comparison** holds the same bar: the comparison table + bars are
+keyboard-navigable, a one-run and a many-run selection both render cleanly, every
+chart has a text equivalent and never relies on color alone, and all values come
+from `formatMetric` (`value` + `unit`, never `display`).

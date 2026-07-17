@@ -25,9 +25,11 @@ const R2 = "22222222-2222-4222-8222-222222222222"; // shors, gateBased, litinski
 const R3 = "33333333-3333-4333-8333-333333333333"; // grovers, gateBased, round_based, 1.28.0, sparse
 const R4 = "44444444-4444-4444-8444-444444444444"; // phase, majorana, three_aux, 1.29.1
 const R5 = "55555555-5555-4555-8555-555555555555"; // ekera, gateBased, FAILED, 1.29.1
+const R6 = "66666666-6666-4666-8666-666666666666"; // shors, gateBased, round_based, 1.29.1
+const R7 = "77777777-7777-4777-8777-777777777777"; // shors, majorana, three_aux, 1.29.1
 
-/** newest-first by config.createdAt: R4(11:15) R2(10:30) R1(09:00) R5(08:00) R3(prev day). */
-const NEWEST_FIRST = [R4, R2, R1, R5, R3];
+/** newest-first by config.createdAt: R7(14:30) R6(14:00) R4(11:15) R2(10:30) R1(09:00) R5(08:00) R3(prev day). */
+const NEWEST_FIRST = [R7, R6, R4, R2, R1, R5, R3];
 
 const byId = (id: string): RunRecord => {
   const rec = MOCK_RUN_RECORDS.find((r) => r.id === id);
@@ -38,9 +40,9 @@ const byId = (id: string): RunRecord => {
 const seededStore = (): InMemoryRunStore => new InMemoryRunStore(MOCK_RUN_RECORDS);
 
 describe("mock run-record fixtures", () => {
-  it("ships exactly the five documented records", () => {
-    expect(MOCK_RUN_RECORDS).toHaveLength(5);
-    expect(MOCK_RUN_RECORDS.map((r) => r.id).sort()).toEqual([R1, R2, R3, R4, R5]);
+  it("ships exactly the seven documented records", () => {
+    expect(MOCK_RUN_RECORDS).toHaveLength(7);
+    expect(MOCK_RUN_RECORDS.map((r) => r.id).sort()).toEqual([R1, R2, R3, R4, R5, R6, R7]);
   });
 
   it("every fixture validates against the committed run-record schema", () => {
@@ -94,9 +96,9 @@ describe("InMemoryRunStore — list / get / delete", () => {
     const store = seededStore();
     await store.delete(R1);
     expect(await store.get(R1)).toBeNull();
-    expect((await store.list()).map((r) => r.id)).toEqual([R4, R2, R5, R3]);
+    expect((await store.list()).map((r) => r.id)).toEqual([R7, R6, R4, R2, R5, R3]);
     await store.delete("00000000-0000-4000-8000-000000000000");
-    expect(await store.list()).toHaveLength(4);
+    expect(await store.list()).toHaveLength(6);
   });
 });
 
@@ -130,18 +132,20 @@ describe("query / filter", () => {
 
   it("filters by each field the History surface exposes", async () => {
     const store = seededStore();
-    expect((await store.query({ architecture: "majorana" })).map((r) => r.id)).toEqual([R4]);
-    expect((await store.query({ qecCode: "three_aux" })).map((r) => r.id)).toEqual([R4]);
+    expect((await store.query({ architecture: "majorana" })).map((r) => r.id)).toEqual([R7, R4]);
+    expect((await store.query({ qecCode: "three_aux" })).map((r) => r.id)).toEqual([R7, R4]);
     expect((await store.query({ magicStateFactory: "litinski19" })).map((r) => r.id)).toEqual([R2]);
     expect((await store.query({ qreVersion: "qdk-qre-1.28.0" })).map((r) => r.id)).toEqual([R3]);
     expect((await store.query({ application: "quantum-dynamics" })).map((r) => r.id)).toEqual([R1]);
     expect((await store.query({ nameSearch: "GROVER" })).map((r) => r.id)).toEqual([R3]); // case-insensitive
+    // The same-benchmark Shor's trio for the Comparison surface, newest-first.
+    expect((await store.query({ application: "shors-factoring" })).map((r) => r.id)).toEqual([R7, R6, R2]);
   });
 
   it("combines filters (intersection), still newest-first", async () => {
     const store = seededStore();
     const got = await store.query({ architecture: "gateBased", qreVersion: "qdk-qre-1.29.1" });
-    expect(got.map((r) => r.id)).toEqual([R2, R1, R5]); // R3 is 1.28.0, R4 is majorana
+    expect(got.map((r) => r.id)).toEqual([R6, R2, R1, R5]); // R3 is 1.28.0; R4, R7 are majorana
   });
 
   it("a whitespace-only name search does not constrain", () => {
@@ -215,7 +219,7 @@ describe("end-to-end: record -> reconstruct -> run -> record -> save -> query", 
 
     // 4. It is retrievable, queryable, and additive (the original still exists).
     expect(await store.get(cfg.id)).toEqual(record);
-    expect(await store.list()).toHaveLength(6);
+    expect(await store.list()).toHaveLength(8);
     expect((await store.query({ application: "quantum-dynamics" })).map((r) => r.id)).toContain(cfg.id);
     expect(await store.get(R1)).not.toBeNull(); // the original run is untouched
   });

@@ -12,9 +12,9 @@ fall after the Tuesday meeting. Microsoft check-ins are **every Friday**.
 |---|---|---|---|---|
 | **1** | Tue Jun 30 → Tue Jul 7 | Onboarding + high-fidelity Figma mockups (all teams, same task) | Pre-work | Historical checkpoint: mockups presented at the Tue 7/7, 5–6pm meeting. Microsoft check-in Fri 7/3. |
 | **2** | Tue Jul 7 → Tue Jul 14 | Part 1 build, 3 parallel tracks: Config UI (T1), Output Display (T2), Engine & Execution (T3) | Part 1 | Tuesday 7/14 is a checkpoint meeting only; **week-2 tasks are due Wed 7/15 EOD**. |
-| **3** | Tue Jul 14 → Tue Jul 21 | **Published.** Integration + Part 2 start (the **swap gate passed** — see below). T3 = the swap (Electron main + IPC + real engine behind `EstimatorService`, mock→real, verify end-to-end, close contract decisions); T1 = Run History UI (against mock records); T2 = SQLite persistence + immutable run records + query API + Rerun reconstruction | Part 1 + Part 2 (pulled forward) | Rotation: T3 holds the engine track through the swap; T1/T2 open the Part-2 tracks. Deadline PM-announced. Check-in Fri 7/17. |
+| **3** | Tue Jul 14 → Tue Jul 21 | **Published.** Integration + Part 2 start (the **swap gate passed** — see below). T3 = the swap (Electron main + IPC + real engine behind `EstimatorService`, mock→real, verify end-to-end, close contract decisions); T1 = Run History UI **+ Comparison UI** (both tabs, built to Figma, against mock records); T2 = SQLite persistence + immutable run records + query API + Rerun reconstruction | Part 1 + Part 2 (pulled forward) | Rotation: T3 holds the engine track through the swap; T1/T2 open the Part-2 tracks. **Deadline: Tue Jul 21 EOD.** Check-in Fri 7/17. |
 | **4** | Tue Jul 21 → Tue Jul 28 | Run persistence (SQLite), immutable run records, run history UI — **continuation if started in week 3**, otherwise starts here; buffer + midterm hardening | Part 2 | **Midterm deliverable to Microsoft Fri Jul 24** (Part 1 complete). |
-| **5** | Tue Jul 28 → Tue Aug 4 | Comparison workspace: multi-run selection, comparison table + per-run bar charts; rerun workflow | Part 2 | Check-in Fri 7/31. |
+| **5** | Tue Jul 28 → Tue Aug 4 | Comparison **live wiring + polish** (the comparison-workspace UI was built in week 3): multi-run comparison against the real store end-to-end, rerun workflow complete, comparison table/bar-chart refinement; Part-2 hardening | Part 2 | Check-in Fri 7/31. |
 | **6** | Tue Aug 4 → Tue Aug 11 | Export (Markdown-first, summary + detailed views, metadata); QRE version tracking end-to-end | Part 3 | Check-in Fri 8/7. |
 | **7** | Tue Aug 11 → Tue Aug 18 | Pull-oriented update mechanism (app + benchmark library); packaging groundwork (installers) | Part 3 | Check-in Fri 8/14. |
 | **8** | Tue Aug 18 → Tue Aug 25 | Packaging (macOS + Windows), polish, bug bash, documentation, final presentation draft | Part 4 | Check-in Fri 8/21. |
@@ -58,8 +58,8 @@ schema-valid failed result), Team 1's emitted `RunConfig` validates against the
 canonical schema, and the Team-1 ⇄ Team-2 Results seam works against the
 MockEngine including the failure path. Accordingly the **week-3 folder is
 published with Part 2 pulled forward**: Team 3 runs the integration/swap while
-Teams 1 and 2 open Part 2 (run history UI / SQLite persistence + Rerun) behind a
-frozen run-record contract. See `docs/week-3/week-3-overview.md`.
+Teams 1 and 2 open Part 2 (run history **+ comparison** UI / SQLite persistence +
+Rerun) behind a frozen run-record contract. See `docs/week-3/week-3-overview.md`.
 
 ## How weekly planning works
 

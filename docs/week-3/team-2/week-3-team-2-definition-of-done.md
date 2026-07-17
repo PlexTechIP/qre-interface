@@ -1,6 +1,6 @@
 # Week 3 — Team 2 (Melody + Rishabh) — Definition of Done: Run Persistence + Rerun
 
-The bar for Wednesday Jul 22 EOD.
+The bar for Tuesday Jul 21 EOD.
 
 ## Functional
 
@@ -57,7 +57,7 @@ The bar for Wednesday Jul 22 EOD.
 
 - [ ] Team branch `week-3/team-2` created Day 0 (**Thu Jul 16**) off the
       **updated `main`**; all feature PRs target it
-- [ ] Team branch merged to `main` via reviewed PR by **Wed Jul 22 EOD**
+- [ ] Team branch merged to `main` via reviewed PR by **Tue Jul 21 EOD**
 - [ ] Checklist file updated with boxes checked
 - [ ] **Post-swap smoke check** recorded: after the real engine lands behind
       IPC, the week-2 Results Area still renders real results unregressed

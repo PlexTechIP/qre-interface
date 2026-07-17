@@ -1,6 +1,6 @@
 # Week 3 — Team 3 (Neil + Jessie) — Checklist: Integration — The Swap
 
-**Due: Wednesday Jul 22 EOD** — Day 0 is Thu Jul 16; Tue Jul 21 is a checkpoint
+**Due: Tuesday Jul 21 EOD** — Day 0 is Thu Jul 16; Tue Jul 21 is a checkpoint
 meeting.
 Read first: `../week-3-overview.md`, `week-3-team-3-technical-brief.md`,
 `docs/tech-stack.md` §Architecture + §How QRE v3 gets executed locally,
@@ -14,7 +14,7 @@ before polishing — the whole app is renderer-only today.
 
 - [ ] **Create your team branch** `week-3/team-3` off the **updated `main`**
       (after the week-2 integration merge) — feature branches PR into it; it
-      lands on `main` via a reviewed PR by **Wed Jul 22 EOD** (see the merge
+      lands on `main` via a reviewed PR by **Tue Jul 21 EOD** (see the merge
       step in §E; `docs/engineering-workflow.md`)
 - [ ] Attend the Tuesday meeting; confirm the week-3 assignment (integration —
       you **hold** the engine track through the swap) and the deadline
@@ -111,7 +111,7 @@ before polishing — the whole app is renderer-only today.
       your teammate reviews first, **and** a PM (or the owning team) reviews the
       seam per `docs/engineering-workflow.md`. The PR description says *what
       changed, how to verify it, which checklist item it advances*
-- [ ] **After review approval, merge onto `main`** by **Wed Jul 22 EOD** —
+- [ ] **After review approval, merge onto `main`** by **Tue Jul 21 EOD** —
       final acceptance is from `main`, not a branch (unlike the week-2 Team-1+2
       integration, which the PMs composed and landed; this swap is Team 3's PR
       to own through review and merge)

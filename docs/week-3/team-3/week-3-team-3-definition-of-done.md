@@ -1,6 +1,6 @@
 # Week 3 — Team 3 (Neil + Jessie) — Definition of Done: Integration — The Swap
 
-The bar for Wednesday Jul 22 EOD.
+The bar for Tuesday Jul 21 EOD.
 
 ## Functional
 
@@ -68,7 +68,7 @@ The bar for Wednesday Jul 22 EOD.
       **updated `main`**; all feature PRs target it
 - [ ] Swap **PR opened** `week-3/team-3 → main`, **reviewed** by the teammate
       **and** a PM/owning team (it touches the shared scaffold + both teams'
-      surfaces), then **merged onto `main` after approval** by **Wed Jul 22
+      surfaces), then **merged onto `main` after approval** by **Tue Jul 21
       EOD**
 - [ ] Checklist file updated with boxes checked
 - [ ] Acceptance walkthrough prepared: live end-to-end run (configure → real QRE

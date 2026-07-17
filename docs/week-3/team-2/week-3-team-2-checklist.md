@@ -1,6 +1,6 @@
 # Week 3 — Team 2 (Melody + Rishabh) — Checklist: Run Persistence + Rerun
 
-**Due: Wednesday Jul 22 EOD** — Day 0 is Thu Jul 16; Tue Jul 21 is a checkpoint
+**Due: Tuesday Jul 21 EOD** — Day 0 is Thu Jul 16; Tue Jul 21 is a checkpoint
 meeting.
 Read first: `../week-3-overview.md`, `week-3-team-2-technical-brief.md`,
 `docs/data-contracts.md`, `docs/tech-stack.md` §Persistence. Check items off as
@@ -13,7 +13,7 @@ This week rotates you from the frontend (Results Area) into the **backend**
 
 - [ ] **Create your team branch** `week-3/team-2` off the **updated `main`**
       (after the week-2 integration merge) — feature branches PR into it; it
-      merges to `main` by **Wed Jul 22 EOD**
+      merges to `main` by **Tue Jul 21 EOD**
       (`docs/engineering-workflow.md`). Do **not** branch off a week-2 branch
 - [ ] Attend the Tuesday meeting; confirm the week-3 assignment (persistence +
       Rerun, backend) and the deadline
@@ -92,5 +92,5 @@ This week rotates you from the frontend (Results Area) into the **backend**
 - [ ] Acceptance walkthrough: harness run live (save a run → filter by each
       field → get it back byte-faithful → reconstruct its config → delete),
       immutability demonstrated, Rerun reconstruction shown validating
-- [ ] PR(s) merged to `main` by **Wed Jul 22 EOD** — final acceptance from
+- [ ] PR(s) merged to `main` by **Tue Jul 21 EOD** — final acceptance from
       `main`, not a branch
