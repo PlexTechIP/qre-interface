@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "44444444-4444-4444-8444-444444444444",
+  "config": {
+    "schemaVersion": "1.0.0",
+    "id": "44444444-4444-4444-8444-444444444444",
+    "name": "Phase Estimation - Majorana Three-Aux",
+    "createdAt": "2026-07-16T11:15:00Z",
+    "application": { "type": "benchmark", "benchmarkId": "phase-estimation" },
+    "architecture": { "type": "majorana", "errorRate": 0.00001, "operationTime": 1000 },
+    "qecCode": "three_aux",
+    "magicStateFactory": "round_based",
+    "traceTransform": { "type": "psspc", "tStatesPerRotation": 20, "ccxMagicStates": false },
+    "maxError": 1,
+    "qreVersion": "qdk-qre-1.29.1"
+  },
+  "result": {
+    "schemaVersion": "1.0.0",
+    "runId": "44444444-4444-4444-8444-444444444444",
+    "status": "succeeded",
+    "error": null,
+    "frontier": [
+      {
+        "physicalQubits": { "value": 450000, "unit": "qubits", "display": "450,000" },
+        "runtime": { "value": 5400000, "unit": "ns", "display": "5.4 ms" },
+        "logicalCycleTime": { "value": 2000, "unit": "ns", "display": "2 us" },
+        "factories": { "value": [{ "stateType": "T", "copies": 64 }], "unit": "factories", "display": "64 x T" },
+        "totalError": { "value": 0.0002, "unit": "probability", "display": "2.0e-4" },
+        "codeDistance": { "value": 15, "unit": "", "display": "15" }
+      }
+    ],
+    "raw": { "engine": "mock-fixture", "application": "phase-estimation", "architecture": "majorana" },
+    "qreVersion": "qdk-qre-1.29.1",
+    "startedAt": "2026-07-16T11:15:01Z",
+    "completedAt": "2026-07-16T11:15:02Z"
+  },
+  "savedAt": "2026-07-16T11:15:03Z"
+}

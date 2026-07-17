@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "55555555-5555-4555-8555-555555555555",
+  "config": {
+    "schemaVersion": "1.0.0",
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Ekera-Hastad - infeasible budget",
+    "createdAt": "2026-07-16T08:00:00Z",
+    "application": { "type": "benchmark", "benchmarkId": "ekera-hastad-factoring" },
+    "architecture": {
+      "type": "gateBased",
+      "errorRate": 0.001,
+      "gateTime": 60,
+      "measurementTime": 120,
+      "twoQubitGateTime": null
+    },
+    "qecCode": "surface_code",
+    "magicStateFactory": "round_based",
+    "traceTransform": { "type": "psspc", "tStatesPerRotation": 20, "ccxMagicStates": false },
+    "maxError": 0.0001,
+    "qreVersion": "qdk-qre-1.29.1"
+  },
+  "result": {
+    "schemaVersion": "1.0.0",
+    "runId": "55555555-5555-4555-8555-555555555555",
+    "status": "failed",
+    "error": {
+      "code": "ESTIMATION_FAILED",
+      "message": "The engine ran but could not reach the requested max error (1e-4) for this architecture. Try relaxing max error or lowering the physical error rate."
+    },
+    "frontier": null,
+    "raw": { "engine": "mock-fixture", "diagnostic": "no feasible code distance <= 50 for target error 1e-4" },
+    "qreVersion": "qdk-qre-1.29.1",
+    "startedAt": "2026-07-16T08:00:01Z",
+    "completedAt": "2026-07-16T08:00:02Z"
+  },
+  "savedAt": "2026-07-16T08:00:02Z"
+}

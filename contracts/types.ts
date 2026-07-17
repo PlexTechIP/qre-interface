@@ -312,3 +312,146 @@ export interface ResultsAreaProps {
   /** The producing config, for the configuration summary. Pass it when available. */
   config?: RunConfig | null;
 }
+
+// ---------------------------------------------------------------------------
+// RunRecord — an immutable saved run (Part 2: persistence, history, rerun)
+// ---------------------------------------------------------------------------
+
+/**
+ * A saved run: the producing RunConfig, its RunResult, and when it was
+ * persisted. IMMUTABLE — a record is never edited after it is written; to
+ * iterate on a run you Rerun it, which produces a NEW record with a new id.
+ *
+ * `id` is the run's UUID; it equals `config.id` AND `result.runId` (the record
+ * IS one run). The run's launch time and the engine version that executed are
+ * NOT duplicated here — they live on `config.createdAt` and the authoritative
+ * `result.qreVersion`, so no copy can drift out of sync. Query helpers derive
+ * every filterable value from `config`/`result`.
+ */
+export interface RunRecord {
+  schemaVersion: typeof SCHEMA_VERSION;
+  /** The run's UUID — equals config.id and result.runId. The record's stable key. */
+  id: string;
+  config: RunConfig;
+  result: RunResult;
+  /** ISO 8601 UTC, stamped when the record is persisted. */
+  savedAt: string;
+}
+
+/**
+ * Assemble an immutable RunRecord from a finished run. THROWS on a mismatched
+ * (config, result) pair — `result.runId` MUST equal `config.id`, or these did
+ * not come from the same run. This is the sanctioned way to mint a record; the
+ * save-after-run trigger (week 4) calls it. `savedAt` is passed in (ISO 8601
+ * UTC) so the function stays pure and testable.
+ */
+export function makeRunRecord(config: RunConfig, result: RunResult, savedAt: string): RunRecord {
+  if (result.runId !== config.id) {
+    throw new Error(
+      `RunRecord mismatch: result.runId (${result.runId}) !== config.id (${config.id}) — not the same run.`,
+    );
+  }
+  return { schemaVersion: SCHEMA_VERSION, id: config.id, config, result, savedAt };
+}
+
+/**
+ * The filter set the Run History surface exposes (SOW Part 2). Every field is
+ * optional; an omitted field does not constrain. `nameSearch` is a
+ * case-insensitive substring over the run name; the rest are exact matches.
+ * `qreVersion` matches the AUTHORITATIVE `result.qreVersion`.
+ */
+export interface RunFilter {
+  nameSearch?: string;
+  /** applicationKey(config): a benchmark id, or `uploaded:<filePath>`. */
+  application?: string;
+  architecture?: ArchitectureType;
+  qecCode?: QecCodeId;
+  magicStateFactory?: MagicStateFactoryId;
+  qreVersion?: string;
+}
+
+/**
+ * The stable key the Application filter groups by: the benchmark id for
+ * benchmark runs, or `uploaded:<filePath>` for uploaded programs. Team 1 builds
+ * the filter's option list from the distinct keys present across the records.
+ */
+export function applicationKey(config: RunConfig): string {
+  return config.application.type === "benchmark"
+    ? config.application.benchmarkId
+    : `uploaded:${config.application.filePath}`;
+}
+
+/** Does a record satisfy every constraint in the filter? Pure — the reference match semantics. */
+export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean {
+  const { config, result } = record;
+  if (filter.nameSearch !== undefined) {
+    const needle = filter.nameSearch.trim().toLowerCase();
+    if (needle.length > 0 && !config.name.toLowerCase().includes(needle)) return false;
+  }
+  if (filter.application !== undefined && applicationKey(config) !== filter.application) return false;
+  if (filter.architecture !== undefined && config.architecture.type !== filter.architecture) return false;
+  if (filter.qecCode !== undefined && config.qecCode !== filter.qecCode) return false;
+  if (filter.magicStateFactory !== undefined && config.magicStateFactory !== filter.magicStateFactory) return false;
+  if (filter.qreVersion !== undefined && result.qreVersion !== filter.qreVersion) return false;
+  return true;
+}
+
+/**
+ * Newest-first ordering used by list()/query(): by the run's launch time
+ * (`config.createdAt`) descending, tie-broken by `savedAt` then `id` so the
+ * order is total and deterministic (no reliance on insertion order).
+ */
+export function sortRunRecordsNewestFirst(records: readonly RunRecord[]): RunRecord[] {
+  return [...records].sort((a, b) => {
+    if (a.config.createdAt !== b.config.createdAt) return a.config.createdAt < b.config.createdAt ? 1 : -1;
+    if (a.savedAt !== b.savedAt) return a.savedAt < b.savedAt ? 1 : -1;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  });
+}
+
+/**
+ * Apply a filter and return the matches newest-first. Pure — the canonical
+ * query semantics a real store (SQLite) must reproduce.
+ */
+export function queryRunRecords(records: readonly RunRecord[], filter: RunFilter = {}): RunRecord[] {
+  return sortRunRecordsNewestFirst(records.filter((r) => matchesRunFilter(r, filter)));
+}
+
+// ---------------------------------------------------------------------------
+// RunStore — the persistence/query boundary (Team 1 UI ⇄ Team 2 store)
+// ---------------------------------------------------------------------------
+
+/**
+ * The ONE interface the Run History UI talks to. Week 3: Team 1 builds against
+ * `InMemoryRunStore` (mock records, see app/src/shared/runStore.ts); Team 2
+ * builds a SQLite `RunStore` behind the same signature. Week 4: the SQLite
+ * store swaps in — the same play as MockEngine -> QreEngine.
+ *
+ * Records are WRITE-ONCE: `save` REJECTS if a record with the same id already
+ * exists (immutability is structural — there is no update path). `list`/`query`
+ * return newest-first; `get`/`query`/`list` hand back copies so callers can
+ * never mutate stored state.
+ */
+export interface RunStore {
+  save(record: RunRecord): Promise<void>;
+  list(): Promise<RunRecord[]>;
+  get(id: string): Promise<RunRecord | null>;
+  delete(id: string): Promise<void>;
+  query(filter: RunFilter): Promise<RunRecord[]>;
+}
+
+/**
+ * Reconstruct a config that pre-fills the Run Configuration form for a Rerun.
+ * Rerun makes a NEW run, so the caller supplies a fresh `id`/`createdAt` stamp;
+ * everything else is carried from the saved run. The original config was
+ * schema-valid and internally consistent (coupling/availability rules), so the
+ * reconstruction is too — and it is re-runnable through `EstimatorService.run`.
+ *
+ * `qreVersion` is carried as-is (it is informational on the config side). When
+ * the UI hydrates the form it may refresh it to the currently bundled engine;
+ * the authoritative version of the re-run is re-read at execution time into the
+ * new RunResult.
+ */
+export function reconstructConfig(record: RunRecord, stamp: { id: string; createdAt: string }): RunConfig {
+  return { ...record.config, id: stamp.id, createdAt: stamp.createdAt };
+}
