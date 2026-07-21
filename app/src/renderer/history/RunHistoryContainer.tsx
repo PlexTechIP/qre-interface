@@ -9,6 +9,7 @@ import {
   type RunRecord,
   type RunStore,
 } from "../../shared/types";
+import { RunHistoryList } from "./RunHistoryList";
  
 /**
  * Phase 1 container for the Run History + Comparison surfaces.
@@ -40,6 +41,7 @@ export function RunHistoryContainer() {
  
   const [records, setRecords] = useState<RunRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  {isLoading ? <p className="muted">Loading runs…</p> : null}
   const [loadError, setLoadError] = useState<string | null>(null);
  
   const [filter, setFilter] = useState<RunFilter>({});
@@ -137,6 +139,16 @@ export function RunHistoryContainer() {
     [selectedId, records],
   );
  
+  // Computed now, consumed in later phases: `selectedRecord` + `rerunRequest`
+  // drive the Phase 4 detail/rerun panels; `comparisonRecords` + `clearComparison`
+  // + `setFilter` feed the Phase 5 Comparison surface and Phase 3 filter bar.
+  // Referenced here so strict noUnusedLocals stays green until then.
+  void selectedRecord;
+  void rerunRequest;
+  void comparisonRecords;
+  void clearComparison;
+  void setFilter;
+ 
   // Total count is needed to distinguish "no runs yet" from "no matches":
   // records.length reflects the active filter, so an unfiltered empty store is
   // the true empty state. Children receive both signals.
@@ -153,41 +165,32 @@ export function RunHistoryContainer() {
     [filter],
   );
  
-  // Phase 1 renders a minimal diagnostic view so we can verify the store wiring
-  // before the real History list (Phase 2) drops in here.
   return (
     <div className="run-history-container">
-      {isLoading ? <p>Loading runs…</p> : null}
+      <header className="surface-header">
+        <h1>Run History</h1>
+        <p>Search, filter, rerun, export, or select runs for comparison.</p>
+      </header>
+ 
       {loadError ? <p role="alert">{loadError}</p> : null}
-      {!isLoading && !loadError ? (
-        <p>
-          {records.length} run{records.length === 1 ? "" : "s"} loaded
-          {hasActiveFilter ? " (filtered)" : ""}.
-        </p>
-      ) : null}
  
       {/*
-        Phase 2+ replaces this block with <RunHistoryList /> and <ComparisonView />,
-        both pure functions of the values below:
- 
-        <RunHistoryList
-          records={records}
-          selectedId={selectedId}
-          comparisonIds={comparisonIds}
-          hasActiveFilter={hasActiveFilter}
-          filter={filter}
-          onFilterChange={setFilter}
-          onViewDetails={onViewDetails}
-          onRerun={onRerun}
-          onDelete={onDelete}
-          onExport={onExport}
-          onToggleComparison={toggleComparison}
-        />
-        <ComparisonView
-          records={comparisonRecords}
-          onClear={clearComparison}
-        />
+        Phase 2 (this commit): the History list. Phase 3 adds the search/filter
+        bar (driving `filter` via setFilter). Phase 5 adds <ComparisonView
+        records={comparisonRecords} onClear={clearComparison} />. The Rerun
+        payload (`rerunRequest`) surfaces in the Phase 4 actions pass.
       */}
+      <RunHistoryList
+        records={records}
+        selectedId={selectedId}
+        comparisonIds={comparisonIds}
+        hasActiveFilter={hasActiveFilter}
+        onViewDetails={onViewDetails}
+        onRerun={onRerun}
+        onDelete={onDelete}
+        onExport={onExport}
+        onToggleComparison={toggleComparison}
+      />
     </div>
   );
 }
