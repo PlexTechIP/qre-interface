@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { validateRunRecord } from "../shared/runRecordValidation.js";
 import { RunRecordExistsError } from "../shared/runStore.js";
 import {
   applicationKey,
@@ -89,6 +90,16 @@ export class SqliteRunStore implements RunStore {
   }
 
   async save(record: RunRecord): Promise<void> {
+    const existing = this.database
+      .prepare("SELECT 1 FROM run_records WHERE id = ?")
+      .get(record.id);
+    if (existing !== undefined) throw new RunRecordExistsError(record.id);
+
+    const validation = validateRunRecord(record);
+    if (!validation.valid) {
+      throw new Error(`Cannot save invalid RunRecord: ${validation.errors}`);
+    }
+
     const insert = this.database.prepare(`
       INSERT INTO run_records (
         id,
