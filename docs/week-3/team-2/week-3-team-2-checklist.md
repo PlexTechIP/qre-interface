@@ -30,13 +30,13 @@ This week rotates you from the frontend (Results Area) into the **backend**
 
 ## B. The persistence store
 
-- [ ] Stand up the SQLite store in **`app/src/main/`** (main-process only; the
+- [x] Stand up the SQLite store in **`app/src/main/`** (main-process only; the
       renderer never touches SQLite — `docs/tech-stack.md` §Architecture)
-- [ ] Schema/migration for run records: a stable table keyed by record id,
+- [x] Schema/migration for run records: a stable table keyed by record id,
       storing the full `RunConfig` + full `RunResult` (+ `savedAt`) — with the
       filterable values (application, architecture, QEC code, factory, QRE
       version, name, date) denormalized into indexed columns for query speed
-- [ ] **`RunStore implements` the committed API:** `save`, `list`, `get`,
+- [x] **`RunStore implements` the committed API:** `save`, `list`, `get`,
       `delete`, `query` — the exact interface Team 1 codes against (see technical
       brief §The API)
 
