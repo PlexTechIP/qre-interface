@@ -18,6 +18,28 @@ expected outcomes:
 | `runconfig.sparse.json` | `runresult.success-sparse.json` | `succeeded` | Majorana path: Three-Aux QEC, Round-Based only, one-row frontier, zero factory qubits |
 | `runconfig.failing.json` | `runresult.failed.json` | `failed` | A schema-valid config the engine cannot satisfy: tight `maxError` maps to `ESTIMATION_FAILED`, `frontier: null`, diagnostics in `raw` |
 
+## Run records (Part 2, added week 3)
+
+`runrecord.*.json` are **mock saved runs** — the dev data for Team 1's Run
+History UI while Team 2 builds the real SQLite store behind the same `RunStore`
+API (mock records out, real store in = week 4). Each record embeds a full
+`RunConfig` + `RunResult` with `id === config.id === result.runId`, validated
+against `runrecord.schema.json`. Exported typed as `MOCK_RUN_RECORDS` from
+`app/src/shared/runRecordFixtures.ts`.
+
+| Run record fixture | Application | Architecture / QEC | Factory · Transform | QRE version | Status |
+|---|---|---|---|---|---|
+| `runrecord.quantum-dynamics-success.json` | quantum-dynamics | GateBased / Surface Code | round_based · PSSPC | `qdk-qre-1.29.1` | `succeeded` (2 rows) |
+| `runrecord.shors-litinski19-success.json` | shors-factoring | GateBased / Surface Code | litinski19 · PSSPC | `qdk-qre-1.29.1` | `succeeded` (1 row) |
+| `runrecord.grovers-sparse-success.json` | grovers-search | GateBased / Surface Code | round_based · Lattice Surgery | `qdk-qre-1.28.0` | `succeeded` (sparse: one row, zeros, no factories) |
+| `runrecord.phase-majorana-success.json` | phase-estimation | Majorana / Three-Aux | round_based · PSSPC | `qdk-qre-1.29.1` | `succeeded` (1 row) |
+| `runrecord.ekera-failed.json` | ekera-hastad-factoring | GateBased / Surface Code | round_based · PSSPC | `qdk-qre-1.29.1` | `failed` (`ESTIMATION_FAILED`) |
+
+The set deliberately spans every History filter: 5 distinct applications, both
+architectures, both QEC codes, both factories, two QRE versions, and both
+statuses — so search + each filter (and combinations) have something to bite on.
+`savedAt`/`createdAt` are staggered so newest-first ordering is observable.
+
 ## Fixture Notes
 
 The committed fixtures are contract fixtures sized to exercise the UI and

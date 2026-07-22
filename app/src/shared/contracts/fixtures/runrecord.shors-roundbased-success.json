@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "66666666-6666-4666-8666-666666666666",
+  "config": {
+    "schemaVersion": "1.0.0",
+    "id": "66666666-6666-4666-8666-666666666666",
+    "name": "Shor's Factoring - GateBased Round-Based",
+    "createdAt": "2026-07-16T14:00:00Z",
+    "application": { "type": "benchmark", "benchmarkId": "shors-factoring" },
+    "architecture": {
+      "type": "gateBased",
+      "errorRate": 0.0001,
+      "gateTime": 30,
+      "measurementTime": 80,
+      "twoQubitGateTime": null
+    },
+    "qecCode": "surface_code",
+    "magicStateFactory": "round_based",
+    "traceTransform": { "type": "psspc", "tStatesPerRotation": 15, "ccxMagicStates": true },
+    "maxError": 0.001,
+    "qreVersion": "qdk-qre-1.29.1"
+  },
+  "result": {
+    "schemaVersion": "1.0.0",
+    "runId": "66666666-6666-4666-8666-666666666666",
+    "status": "succeeded",
+    "error": null,
+    "frontier": [
+      {
+        "physicalQubits": { "value": 2900000, "unit": "qubits", "display": "2,900,000" },
+        "runtime": { "value": 108000000000, "unit": "ns", "display": "1.8 min" },
+        "logicalCycleTime": { "value": 4200, "unit": "ns", "display": "4.2 us" },
+        "factories": { "value": [{ "stateType": "T", "copies": 512 }], "unit": "factories", "display": "512 x T" },
+        "totalError": { "value": 0.0009, "unit": "probability", "display": "9.0e-4" },
+        "codeDistance": { "value": 24, "unit": "", "display": "24" },
+        "additional": {
+          "physicalFactoryQubits": { "value": 1900000, "unit": "qubits", "display": "1,900,000" },
+          "source": { "value": "qsharp", "unit": "", "display": "Q#" }
+        }
+      }
+    ],
+    "raw": { "engine": "mock-fixture", "application": "shors-factoring", "magicStateFactory": "round_based" },
+    "qreVersion": "qdk-qre-1.29.1",
+    "startedAt": "2026-07-16T14:00:01Z",
+    "completedAt": "2026-07-16T14:00:03Z"
+  },
+  "savedAt": "2026-07-16T14:00:04Z"
+}

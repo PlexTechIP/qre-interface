@@ -24,6 +24,19 @@ single JSON object (`status: "success"` with `frontier`/`verbatim`, or
 `execute.ts` spawns this script, enforces the timeout, and never lets a
 crash or malformed output propagate as an unhandled rejection.
 
+## Electron IPC boundary
+
+The Electron main process owns one `QreEngine` instance and registers
+`estimator:run`. The sandboxed preload exposes only
+`window.estimator.run(config): Promise<RunResult>`; it never exposes
+`ipcRenderer` or Node globals. The handler catches unexpected exceptions and
+resolves an `ENGINE_CRASH` result, so engine failures do not reject the IPC
+request. `execute.ts` tracks live Python children and the main process kills
+them during `before-quit` and `window-all-closed`.
+
+`npm run dev` first bundles `main.cjs` and `preload.cjs`, starts Vite, then
+launches Electron. `npm run build` produces `dist/` and `dist-electron/`.
+
 ## Running the harness
 
 POSIX setup:
@@ -103,10 +116,10 @@ This week proves **OpenQASM** end-to-end: `uploadedProgram.test.ts` estimates
 Uploaded Q# and QIR remain follow-ups; they are not claimed as end-to-end
 proven here.
 
-The six real wrapper captures are indexed by
+The eight real wrapper captures are indexed by
 `docs/week-2/team-3/qre-output-captures/manifest.json`. They cover multi-row,
-single-row, formatting-stress, real compile-failure, both architecture types,
-and both contract-selected trace-transform configurations.
+single-row, Litinski19, formatting stress, real compile and estimation failures,
+both architecture types, and both contract-selected trace configurations.
 
 ## Error codes
 
@@ -119,13 +132,17 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
   fail soft).
 - `execute.ts` — `TIMEOUT` on a killed subprocess, `ENGINE_CRASH` on a
   nonzero exit / non-JSON stdout / unrecognized `status`.
-- `estimate.py` — `COMPILE_ERROR` when the caught exception looks like a
-  program-compile/resolve failure, `ESTIMATION_FAILED` otherwise (including
-  an empty Pareto frontier).
+- `estimate.py` — `COMPILE_ERROR` only for QDK's structured `QSharpError`
+  exception type, `ESTIMATION_FAILED` otherwise (including an empty Pareto
+  frontier). Message substrings are not used for classification.
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 
 ## Decisions of record and known gaps
+
+The four contract items below remain proposals pending PM arbitration; this
+branch does not treat them as approved contract changes. Evidence and proposed
+mappings are in `docs/week-3/team-3/contract-decision-proposals.md`.
 
 - **`Majorana.operationTime`: known engine-mapping gap.**
   `qdk[qre]==1.29.1`'s
@@ -167,3 +184,14 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
   `distance * codeCycleTime` (confirmed against a real capture:
   distance 13 × codeCycleTime 350ns = logicalCycleTime 4550ns in
   `docs/week-2/team-3/qre-output-captures/multi-row-gatebased-psspc.output.json`).
+
+## Python distribution plan
+
+Local development uses the checked-in setup scripts and a repo-relative venv.
+For packaged builds, ship a platform-specific Python 3.13.14 runtime plus the
+pinned wheels beside `dist-electron/python`, then resolve it relative to the
+installed app resources. Build one artifact per OS/architecture; do not share a
+venv between platforms. The runtime increases installer size substantially and
+all native binaries must be included in code-signing, notarization, malware
+scanning, and SBOM work. Deep packaging is deferred to Part 3/4; the current
+build intentionally copies wrapper sources but not the development `.venv`.

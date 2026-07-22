@@ -13,9 +13,34 @@ a dedicated contract-change PR updates schema + fixtures + version together
 |---|---|
 | `runconfig.schema.json` | Canonical JSON Schema for `RunConfig` (strict: seven-input shape, parameterized architectures, architecture-derived QEC, factory/transform rules, `maxError`) |
 | `runresult.schema.json` | Canonical JSON Schema for `RunResult` (tolerant top-level output, `frontier` rows on success, status/error coupling) |
-| `types.ts` | Canonical TypeScript types + `EstimatorService` interface + the Team-1⇄Team-2 seam props (`ResultsAreaProps`). Copy verbatim into your workspace until the shared scaffold wires it; never re-declare shapes |
+| `runrecord.schema.json` | **(Part 2, added week 3)** Canonical JSON Schema for `RunRecord` — an immutable saved run. Embeds the `RunConfig` and `RunResult` schemas by `$ref` and adds the persistence identity + `savedAt`. Register all three schemas in one Ajv instance to resolve the refs |
+| `types.ts` | Canonical TypeScript types + `EstimatorService` interface + the Team-1⇄Team-2 seam props (`ResultsAreaProps`) **+ the Part-2 run-record surface** (`RunRecord`, `RunStore`, `RunFilter`, `reconstructConfig`, `makeRunRecord`, `applicationKey`, `queryRunRecords`). Copy verbatim into your workspace until the shared scaffold wires it; never re-declare shapes |
 | `benchmarks.json` | Canonical v1 starter benchmark list (five entries) plus supported upload formats |
-| `fixtures/` | Config/result fixture pairs — see `fixtures/README.md` for the pairing table |
+| `fixtures/` | Config/result fixture pairs **and mock run records** — see `fixtures/README.md` for the tables |
+
+## Part 2 — the run-record surface (added week 3)
+
+The estimation boundary (`RunConfig`/`RunResult`/`EstimatorService`) is
+unchanged. Part 2 adds a **new surface** for persistence, history, and rerun:
+
+- **`RunRecord`** — an immutable saved run: `{ schemaVersion, id, config,
+  result, savedAt }`, where `id === config.id === result.runId`. The record does
+  not duplicate the run's launch time or engine version (those stay on
+  `config.createdAt` and the authoritative `result.qreVersion`), so no copy can
+  drift.
+- **`RunStore`** — the persistence/query API Team 1's Run History UI consumes
+  and Team 2's SQLite store implements: `save` (write-once — a duplicate id is
+  rejected; records are immutable), `list`/`query` (newest-first), `get`,
+  `delete`. `InMemoryRunStore` in `app/src/shared/runStore.ts` is the reference
+  behaviour (the MockEngine of this boundary); the SQLite store must reproduce
+  it. `queryRunRecords`/`matchesRunFilter` in `types.ts` single-source the
+  filter/sort semantics.
+- **`reconstructConfig(record, stamp)`** — the Rerun path: reconstructs a
+  `RunConfig` (fresh `id`/`createdAt`, everything else carried) that pre-fills
+  the form and is re-runnable through `EstimatorService`.
+
+Mock run records for Team 1 live in `fixtures/runrecord.*.json` (exported typed
+as `MOCK_RUN_RECORDS` from `app/src/shared/runRecordFixtures.ts`).
 
 ## Validation notes
 

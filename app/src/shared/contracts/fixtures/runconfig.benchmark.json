@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "acaf1c0e-a716-41bc-9774-598cacee033f",
+  "name": "Quantum Dynamics - GateBased 1e-4 - Surface - PSSPC",
+  "createdAt": "2026-07-09T18:22:00Z",
+  "application": {
+    "type": "benchmark",
+    "benchmarkId": "quantum-dynamics"
+  },
+  "architecture": {
+    "type": "gateBased",
+    "errorRate": 0.0001,
+    "gateTime": 50,
+    "measurementTime": 100,
+    "twoQubitGateTime": null
+  },
+  "qecCode": "surface_code",
+  "magicStateFactory": "round_based",
+  "traceTransform": {
+    "type": "psspc",
+    "tStatesPerRotation": 20,
+    "ccxMagicStates": false
+  },
+  "maxError": 1,
+  "qreVersion": "qdk-qre-v1-fixture"
+}

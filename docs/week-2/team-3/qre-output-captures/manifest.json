@@ -27,6 +27,22 @@
       "verbatimOutput": "real-compile-failure.output.json"
     },
     {
+      "name": "real-estimation-failure",
+      "status": "failed",
+      "errorCode": "ESTIMATION_FAILED",
+      "frontierRows": 0,
+      "input": "real-estimation-failure.input.json",
+      "verbatimOutput": "real-estimation-failure.output.json"
+    },
+    {
+      "name": "litinski19",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 1,
+      "input": "litinski19.input.json",
+      "verbatimOutput": "litinski19.output.json"
+    },
+    {
       "name": "majorana-three-aux",
       "status": "success",
       "errorCode": null,

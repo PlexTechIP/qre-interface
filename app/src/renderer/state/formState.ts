@@ -1,0 +1,166 @@
+/**
+ * Editable form state — the single source of truth for a draft run.
+ *
+ * FormState is a superset of RunConfig: it keeps both architecture and both
+ * transform variants' drafts so toggling type never loses the other side's
+ * input, and it allows `null` for numeric fields the user hasn't filled yet.
+ * `toRunConfig` (see toRunConfig.ts) serializes it to a contract RunConfig.
+ *
+ * `id`/`createdAt` are NOT stored here — they're stamped at Run-click.
+ */
+
+import {
+  BENCHMARK_IDS,
+  expectedQecCode,
+  isLitinski19Allowed,
+  type ArchitectureType,
+  type MagicStateFactoryId,
+  type MajoranaArchitecture,
+  type QecCodeId,
+  type TraceTransformType,
+  type UploadedProgramFormat,
+} from "../../shared/types";
+
+export interface GateBasedForm {
+  /** Default 1e-4. Valid: 0 < x < 0.01. null until entered. */
+  errorRate: number | null;
+  /** Required, > 0, no default (null until entered). */
+  gateTime: number | null;
+  /** Required, > 0, no default (null until entered). */
+  measurementTime: number | null;
+  /** Optional; null means use the engine default. */
+  twoQubitGateTime: number | null;
+}
+
+export interface MajoranaForm {
+  /** Select-only: 1e-4 / 1e-5 / 1e-6. Default 1e-5. */
+  errorRate: MajoranaArchitecture["errorRate"];
+  /** Default 1000 ns; > 0. null until entered. */
+  operationTime: number | null;
+}
+
+export interface ArchitectureForm {
+  type: ArchitectureType;
+  gateBased: GateBasedForm;
+  majorana: MajoranaForm;
+}
+
+export type ApplicationFormType = "benchmark" | "uploaded";
+
+export interface UploadForm {
+  filePath: string;
+  format: UploadedProgramFormat;
+  addToLibrary: boolean;
+}
+
+export interface ApplicationForm {
+  type: ApplicationFormType;
+  benchmarkId: string;
+  upload: UploadForm;
+}
+
+export interface PsspcForm {
+  /** Default 20. Valid: 5 <= x <= 20. */
+  tStatesPerRotation: number;
+  ccxMagicStates: boolean;
+}
+
+export interface TraceTransformForm {
+  type: TraceTransformType;
+  psspc: PsspcForm;
+}
+
+export interface FormState {
+  /** Blank => auto-generated at serialization time (see generateName). */
+  name: string;
+  application: ApplicationForm;
+  architecture: ArchitectureForm;
+  magicStateFactory: MagicStateFactoryId;
+  traceTransform: TraceTransformForm;
+  /** Default 1.0 (unconstrained). Valid: 0 < x <= 1. null => unset. */
+  maxError: number | null;
+}
+
+/** First benchmark in contract order, used as the default selection. */
+const DEFAULT_BENCHMARK_ID = BENCHMARK_IDS[0];
+
+/** A fresh draft: everything defaulted except the two required GateBased times. */
+export function createInitialFormState(): FormState {
+  return {
+    name: "",
+    application: {
+      type: "benchmark",
+      benchmarkId: DEFAULT_BENCHMARK_ID,
+      upload: { filePath: "", format: "qsharp", addToLibrary: false },
+    },
+    architecture: {
+      type: "gateBased",
+      gateBased: {
+        errorRate: 0.0001,
+        gateTime: null,
+        measurementTime: null,
+        twoQubitGateTime: null,
+      },
+      majorana: { errorRate: 0.00001, operationTime: 1000 },
+    },
+    magicStateFactory: "round_based",
+    traceTransform: {
+      type: "psspc",
+      psspc: { tStatesPerRotation: 20, ccxMagicStates: false },
+    },
+    maxError: 1.0,
+  };
+}
+
+/**
+ * QEC code derived from the architecture type only, via the contract helper.
+ * Works before the required times are entered (fills probes that the helper
+ * ignores), so the UI can display the derived code and auto-name at any time.
+ */
+export function deriveQecCode(arch: ArchitectureForm): QecCodeId {
+  return expectedQecCode(
+    arch.type === "gateBased"
+      ? {
+          type: "gateBased",
+          errorRate: arch.gateBased.errorRate ?? 0.0001,
+          gateTime: arch.gateBased.gateTime ?? 1,
+          measurementTime: arch.gateBased.measurementTime ?? 1,
+          twoQubitGateTime: arch.gateBased.twoQubitGateTime,
+        }
+      : {
+          type: "majorana",
+          errorRate: arch.majorana.errorRate,
+          operationTime: arch.majorana.operationTime ?? 1000,
+        },
+  );
+}
+
+/**
+ * Whether Litinski19 is selectable given the current draft — GateBased with a
+ * present error rate <= 1e-3. Delegates the threshold to the contract helper.
+ */
+export function isLitinski19AllowedInForm(arch: ArchitectureForm): boolean {
+  if (arch.type !== "gateBased" || arch.gateBased.errorRate === null) return false;
+  return isLitinski19Allowed({
+    type: "gateBased",
+    errorRate: arch.gateBased.errorRate,
+    gateTime: arch.gateBased.gateTime ?? 1,
+    measurementTime: arch.gateBased.measurementTime ?? 1,
+    twoQubitGateTime: arch.gateBased.twoQubitGateTime,
+  });
+}
+
+/**
+ * Enforce cross-field coupling the schema requires, so the UI state is never
+ * internally inconsistent: Litinski19 falls back to Round-Based whenever it is
+ * no longer allowed (Majorana, or GateBased error rate raised above 1e-3).
+ */
+export function normalizeFormState(state: FormState): FormState {
+  if (
+    state.magicStateFactory === "litinski19" &&
+    !isLitinski19AllowedInForm(state.architecture)
+  ) {
+    return { ...state, magicStateFactory: "round_based" };
+  }
+  return state;
+}

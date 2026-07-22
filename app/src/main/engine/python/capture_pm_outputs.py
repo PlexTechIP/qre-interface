@@ -51,6 +51,19 @@ def cases() -> dict[str, dict]:
     failure = base_invocation()
     failure["program"] = {**failure["program"], "entryExpr": "MissingProgram.Run()"}
 
+    estimation_failure = base_invocation()
+    estimation_failure["architecture"] = {
+        "type": "gateBased",
+        "errorRate": 0.0001,
+        "gateTime": 100000,
+        "measurementTime": 100000,
+        "twoQubitGateTime": None,
+    }
+    estimation_failure["maxError"] = 1e-12
+
+    litinski19 = base_invocation()
+    litinski19["magicStateFactory"] = "litinski_19"
+
     majorana = base_invocation()
     majorana["architecture"] = {
         "type": "majorana",
@@ -81,6 +94,8 @@ def cases() -> dict[str, dict]:
         "multi-row-gatebased-psspc": multi_row,
         "single-row-gatebased-psspc": single_row,
         "real-compile-failure": failure,
+        "real-estimation-failure": estimation_failure,
+        "litinski19": litinski19,
         "majorana-three-aux": majorana,
         "lattice-surgery": lattice_surgery,
         "formatting-stress-wide-frontier": formatting_stress,

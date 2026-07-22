@@ -25,8 +25,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Typecheck renderer and shared contracts
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Typecheck Electron main and shared contracts
+        run: npx tsc --noEmit -p tsconfig.node.json
 
       - name: Unit tests
         run: npm run test

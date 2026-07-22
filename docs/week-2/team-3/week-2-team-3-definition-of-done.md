@@ -30,8 +30,8 @@ The bar for Wednesday Jul 15 EOD.
       executes a **real QRE estimation locally** (no cloud, no network) and
       resolves with a `RunResult` — including the failing fixture, which
       resolves with a schema-valid **failed** result, not a hang or rejection;
-      the approved sparse fixture now uses the QDK-feasible
-      `tStatesPerRotation: 20`
+      the interim sparse proposal uses the QDK-feasible
+      `tStatesPerRotation: 20` pending PM ratification
 - [x] Emitted `RunResult` **validates against the frozen
       `contracts/runresult.schema.json`** for every fixture input — proven by
       the strengthened conformance harness, runnable on POSIX and Windows via

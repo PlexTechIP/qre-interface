@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "CANONICAL v1.0.0 starter benchmark list, PM-owned, frozen with the contract. Team 1's UI options and Team 3's engine registry MUST use exactly these ids. Uploaded programs can be added to the user's local benchmark library at runtime; additions to this starter list require the contract-change process.",
+  "benchmarks": [
+    {
+      "id": "shors-factoring",
+      "name": "Shor's Factoring",
+      "description": "Factoring-oriented benchmark for estimating resources of Shor-style modular arithmetic workloads.",
+      "keywords": ["factoring", "cryptography", "shor", "period finding"],
+      "source": {
+        "kind": "engine-benchmark",
+        "ref": "qdk/qre/starter-benchmarks/shors-factoring"
+      },
+      "entryExpr": "",
+      "category": "benchmark"
+    },
+    {
+      "id": "ekera-hastad-factoring",
+      "name": "Ekerå-Håstad Factoring",
+      "description": "Factoring benchmark based on the Ekerå-Håstad variant, useful for contrasting factoring resource estimates against Shor's algorithm.",
+      "keywords": ["factoring", "cryptography", "ekera-hastad"],
+      "source": {
+        "kind": "engine-benchmark",
+        "ref": "qdk/qre/starter-benchmarks/ekera-hastad-factoring"
+      },
+      "entryExpr": "",
+      "category": "benchmark"
+    },
+    {
+      "id": "quantum-dynamics",
+      "name": "Quantum Dynamics",
+      "description": "Simulation-style benchmark for quantum dynamics workloads and the default baseline for week-2 contract fixtures.",
+      "keywords": ["dynamics", "simulation", "physics", "hamiltonian"],
+      "source": {
+        "kind": "engine-benchmark",
+        "ref": "qdk/qre/starter-benchmarks/quantum-dynamics"
+      },
+      "entryExpr": "",
+      "category": "benchmark"
+    },
+    {
+      "id": "grovers-search",
+      "name": "Grover's Search",
+      "description": "Search benchmark for Grover-style amplitude amplification workloads.",
+      "keywords": ["grover", "search", "amplitude amplification"],
+      "source": {
+        "kind": "engine-benchmark",
+        "ref": "qdk/qre/starter-benchmarks/grovers-search"
+      },
+      "entryExpr": "",
+      "category": "benchmark"
+    },
+    {
+      "id": "phase-estimation",
+      "name": "Phase Estimation",
+      "description": "Phase-estimation benchmark for algorithms dominated by controlled unitary applications and precision trade-offs.",
+      "keywords": ["phase estimation", "precision", "chemistry", "simulation"],
+      "source": {
+        "kind": "engine-benchmark",
+        "ref": "qdk/qre/starter-benchmarks/phase-estimation"
+      },
+      "entryExpr": "",
+      "category": "benchmark"
+    }
+  ],
+  "uploadedProgramFormats": ["qsharp", "openqasm", "qir"]
+}

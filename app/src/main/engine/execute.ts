@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { QreInvocation } from "./invocation.js";
@@ -6,6 +6,12 @@ import type { QreInvocation } from "./invocation.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WRAPPER_SCRIPT = path.join(__dirname, "python", "estimate.py");
 const MATPLOTLIB_CONFIG = path.join(__dirname, "python", ".matplotlib");
+const liveEngineProcesses = new Set<ChildProcess>();
+
+export function killLiveEngineProcesses(): void {
+  for (const child of liveEngineProcesses) child.kill("SIGKILL");
+  liveEngineProcesses.clear();
+}
 
 export type ExecuteResult =
   | { ok: true; raw: Record<string, unknown> }
@@ -117,6 +123,7 @@ export function execute(
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
+    liveEngineProcesses.add(child);
 
     let stdout = "";
     let stderr = "";
@@ -126,6 +133,7 @@ export function execute(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      liveEngineProcesses.delete(child);
       resolve(result);
     };
 

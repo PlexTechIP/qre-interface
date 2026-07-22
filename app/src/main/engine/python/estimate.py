@@ -18,6 +18,7 @@ from typing import Any
 
 import qdk
 import qdk.qre as qre
+from qsharp import QSharpError
 from qdk.qre import LatticeSurgery, PSSPC, instruction_name
 from qdk.qre.application import OpenQASMApplication, QIRApplication, QSharpApplication
 from qdk.qre.models import (
@@ -39,6 +40,11 @@ PROPERTY_IDS = {
 }
 PROPERTY_NAMES = {value: name for name, value in PROPERTY_IDS.items()}
 ROUND_BASED_CACHE = Path(__file__).parent / ".qre-cache" / "round-based"
+
+
+def failure_code_for(exc: Exception) -> str:
+    """Classify compiler failures by QDK's structured exception type."""
+    return "COMPILE_ERROR" if isinstance(exc, QSharpError) else "ESTIMATION_FAILED"
 
 
 def _public_slots(value: Any) -> list[str]:
@@ -268,12 +274,8 @@ def main() -> int:
     except Exception as exc:  # The subprocess boundary must fail soft.
         diagnostic = str(exc)
         exc_type = type(exc).__name__
-        compile_error = (
-            "compil" in diagnostic.lower()
-            or "resolve" in exc_type.lower()
-            or "qsharp" in exc_type.lower()
-            or "openqasm" in diagnostic.lower()
-        )
+        error_code = failure_code_for(exc)
+        compile_error = error_code == "COMPILE_ERROR"
         detail = diagnostic or exc_type
         message = (
             f"{detail} Check the program source and entry point, then retry."
@@ -281,7 +283,7 @@ def main() -> int:
             else f"{detail} Review the raw diagnostics, adjust the configuration, and retry."
         )
         print(json.dumps(failure(
-            "COMPILE_ERROR" if compile_error else "ESTIMATION_FAILED",
+            error_code,
             message,
             {"error": {"type": exc_type, "message": diagnostic}},
         )))

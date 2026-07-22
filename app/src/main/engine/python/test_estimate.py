@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from estimate import failure_code_for
+
 SCRIPT = Path(__file__).parent / "estimate.py"
 PROJECT_ROOT = Path(__file__).parents[1] / "benchmarks" / "qsharp-project"
 
@@ -49,6 +51,11 @@ def run_wrapper(value):
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
+
+
+def test_failure_classifier_does_not_match_message_substrings():
+    error = RuntimeError("compiler resolve openqasm qsharp")
+    assert failure_code_for(error) == "ESTIMATION_FAILED"
 
 
 def test_gate_based_psspc_success_preserves_complete_output():

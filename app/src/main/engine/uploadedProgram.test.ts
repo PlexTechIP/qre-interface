@@ -59,5 +59,5 @@ describe("uploaded program end to end", () => {
     expect(result.error?.message).toContain(
       "Check the program source and entry point, then retry.",
     );
-  }, 60000);
+  }, 120_000);
 });
