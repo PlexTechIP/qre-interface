@@ -10,6 +10,7 @@ import {
   type RunStore,
 } from "../../shared/types";
 import { RunHistoryList } from "./RunHistoryList";
+import { RunHistoryFilters } from "./RunHistoryFilters";
  
 /**
  * Phase 1 container for the Run History + Comparison surfaces.
@@ -40,8 +41,12 @@ export function RunHistoryContainer() {
   const [store] = useState<RunStore>(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
  
   const [records, setRecords] = useState<RunRecord[]>([]);
+  // The full, unfiltered record set — used only to derive the filter bar's
+  // option lists ("what values exist at all"), so dropdowns don't shrink as
+  // filters combine. Loaded once; refreshed after a delete so a removed run's
+  // now-absent value can drop out of the options.
+  const [allRecords, setAllRecords] = useState<RunRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  {isLoading ? <p className="muted">Loading runs…</p> : null}
   const [loadError, setLoadError] = useState<string | null>(null);
  
   const [filter, setFilter] = useState<RunFilter>({});
@@ -62,11 +67,14 @@ export function RunHistoryContainer() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const next = await store.query(filter);
-      setRecords(next);
+      // Filtered set feeds the table; full set feeds the filter-bar options.
+      const [filtered, all] = await Promise.all([store.query(filter), store.list()]);
+      setRecords(filtered);
+      setAllRecords(all);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Failed to load runs.");
       setRecords([]);
+      setAllRecords([]);
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +155,6 @@ export function RunHistoryContainer() {
   void rerunRequest;
   void comparisonRecords;
   void clearComparison;
-  void setFilter;
  
   // Total count is needed to distinguish "no runs yet" from "no matches":
   // records.length reflects the active filter, so an unfiltered empty store is
@@ -173,13 +180,21 @@ export function RunHistoryContainer() {
       </header>
  
       {loadError ? <p role="alert">{loadError}</p> : null}
+      {isLoading ? <p className="muted">Loading runs…</p> : null}
  
       {/*
-        Phase 2 (this commit): the History list. Phase 3 adds the search/filter
-        bar (driving `filter` via setFilter). Phase 5 adds <ComparisonView
-        records={comparisonRecords} onClear={clearComparison} />. The Rerun
-        payload (`rerunRequest`) surfaces in the Phase 4 actions pass.
+        Phase 3 (this commit): the search + filter bar, driving `filter` via
+        setFilter; options derive from the full record set (allRecords).
+        Phase 5 adds <ComparisonView records={comparisonRecords}
+        onClear={clearComparison} />. The Rerun payload (`rerunRequest`)
+        surfaces in the Phase 4 actions pass.
       */}
+      <RunHistoryFilters
+        allRecords={allRecords}
+        filter={filter}
+        onFilterChange={setFilter}
+      />
+ 
       <RunHistoryList
         records={records}
         selectedId={selectedId}
