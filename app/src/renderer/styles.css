@@ -1580,3 +1580,336 @@ input[type="range"]:focus-visible,
     position: static;
   }
 }
+
+/* ==========================================================================
+   Run History + Comparison surfaces (Team 1, week 3)
+   ========================================================================== */
+
+.run-history-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.surface-header h1 {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.surface-header p {
+  margin: 6px 0 0;
+  color: var(--color-body);
+  font-size: 14px;
+}
+
+/* --- Search + filter bar --------------------------------------------------- */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  min-height: 0;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+  flex: 1 1 150px;
+}
+
+.filter-field label {
+  color: var(--color-label);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.filter-field input,
+.filter-field select {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.filter-field input:focus-visible,
+.filter-field select:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+/* --- History list ---------------------------------------------------------- */
+
+.history-panel {
+  min-height: 0;
+}
+
+.history-table-scroll {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.history-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-table-head-bg);
+  color: var(--color-label);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: left;
+  padding: 10px 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history-table th.num,
+.history-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.history-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-hairline);
+  vertical-align: top;
+}
+
+.history-table tbody tr {
+  cursor: pointer;
+}
+
+.history-table tbody tr:hover {
+  background: var(--color-row-hover);
+}
+
+.history-table tbody tr.selected {
+  background: var(--color-accent-bg);
+}
+
+.history-table tbody tr:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+.col-compare {
+  width: 34px;
+  text-align: center;
+}
+
+.run-name {
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.status-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.status-pill.failed {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  border: 1px solid var(--color-danger-border);
+}
+
+.config-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.row-actions button,
+.detail-actions button {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.row-actions button:hover,
+.detail-actions button:hover {
+  border-color: var(--color-accent-border);
+}
+
+button.danger {
+  color: var(--color-danger-text) !important;
+  border-color: var(--color-danger-border) !important;
+}
+
+button.danger:hover {
+  background: var(--color-danger-bg) !important;
+}
+
+/* --- View Details (master-detail) ----------------------------------------- */
+
+.run-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.back-button {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.back-button:hover {
+  border-color: var(--color-accent-border);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- Modal (Delete confirm / Export stub / Rerun preview) ------------------ */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(9 12 22 / 55%);
+}
+
+.modal-card {
+  width: min(680px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: 0 12px 40px var(--color-shadow-soft);
+}
+
+.modal-card.modal-narrow {
+  width: min(440px, 100%);
+}
+
+.modal-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: 16px;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.modal-close:hover {
+  color: var(--color-text);
+}
+
+.modal-body {
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.modal-body p {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.modal-footer button {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.code-block {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--color-hairline);
+  border-radius: 8px;
+  background: var(--color-well-bg);
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}

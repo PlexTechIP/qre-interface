@@ -11,6 +11,10 @@ import {
 } from "../../shared/types";
 import { RunHistoryList } from "./RunHistoryList";
 import { RunHistoryFilters } from "./RunHistoryFilters";
+import { RunDetailPanel } from "./RunDetailPanel";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { ExportStubDialog } from "./ExportStubDialog";
+import { RerunDialog } from "./RerunDialog";
  
 /**
  * Phase 1 container for the Run History + Comparison surfaces.
@@ -57,6 +61,11 @@ export function RunHistoryContainer() {
  
   // The Rerun handoff payload, surfaced this week instead of navigated (week-4).
   const [rerunRequest, setRerunRequest] = useState<RerunRequest | null>(null);
+
+  // The record awaiting delete confirmation (null = no pending delete).
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // The record whose Export-Markdown stub preview is open (null = closed).
+  const [exportRecord, setExportRecord] = useState<RunRecord | null>(null);
  
   /**
    * Re-read the store through the query API so the view always reflects stored
@@ -101,14 +110,20 @@ export function RunHistoryContainer() {
     setSelectedId(id);
   }, []);
  
-  const onDelete = useCallback(
-    async (id: string) => {
-      await store.delete(id);
-      setComparisonIds((ids) => ids.filter((existing) => existing !== id));
-      await refresh();
-    },
-    [store, refresh],
-  );
+  // Delete is destructive and records are immutable, so it goes behind an
+  // explicit confirm: the list/detail request it, the dialog's onConfirm runs it.
+  const requestDelete = useCallback((id: string) => setPendingDeleteId(id), []);
+  const cancelDelete = useCallback(() => setPendingDeleteId(null), []);
+  const confirmDelete = useCallback(async () => {
+    if (pendingDeleteId === null) return;
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    await store.delete(id);
+    setComparisonIds((ids) => ids.filter((existing) => existing !== id));
+    // Close the detail view if we were viewing the run we just removed.
+    setSelectedId((current) => (current === id ? null : current));
+    await refresh();
+  }, [pendingDeleteId, store, refresh]);
  
   const onRerun = useCallback((record: RunRecord) => {
     // reconstructConfig is PROVIDED — call it, never re-implement. It carries
@@ -120,9 +135,9 @@ export function RunHistoryContainer() {
   }, []);
  
   const onExport = useCallback((record: RunRecord) => {
-    // Seam only — the real Markdown generator is Part 3 (week 6). The stub UI
-    // renders a preview from this record; nothing is generated here.
-    return record;
+    // Seam only — the real Markdown generator is Part 3 (week 6). Opens the stub
+    // preview dialog; nothing is generated here.
+    setExportRecord(record);
   }, []);
  
   // ---- Comparison selection helpers ---------------------------------------
@@ -147,12 +162,15 @@ export function RunHistoryContainer() {
     [selectedId, records],
   );
  
-  // Computed now, consumed in later phases: `selectedRecord` + `rerunRequest`
-  // drive the Phase 4 detail/rerun panels; `comparisonRecords` + `clearComparison`
-  // + `setFilter` feed the Phase 5 Comparison surface and Phase 3 filter bar.
-  // Referenced here so strict noUnusedLocals stays green until then.
-  void selectedRecord;
-  void rerunRequest;
+  // The record awaiting delete confirmation, resolved from its id for the dialog.
+  const pendingDeleteRecord = useMemo(
+    () => (pendingDeleteId == null ? null : records.find((r) => r.id === pendingDeleteId) ?? null),
+    [pendingDeleteId, records],
+  );
+
+  // Consumed in Phase 5 (Comparison): `comparisonRecords` + `clearComparison`
+  // feed the Comparison surface. Referenced here so strict noUnusedLocals stays
+  // green until then.
   void comparisonRecords;
   void clearComparison;
  
@@ -183,29 +201,49 @@ export function RunHistoryContainer() {
       {isLoading ? <p className="muted">Loading runs…</p> : null}
  
       {/*
-        Phase 3 (this commit): the search + filter bar, driving `filter` via
-        setFilter; options derive from the full record set (allRecords).
+        Master-detail: a selected record swaps the list for the detail view
+        (View Details, Phase 4). Otherwise the search + filter bar + list show.
         Phase 5 adds <ComparisonView records={comparisonRecords}
-        onClear={clearComparison} />. The Rerun payload (`rerunRequest`)
-        surfaces in the Phase 4 actions pass.
+        onClear={clearComparison} />.
       */}
-      <RunHistoryFilters
-        allRecords={allRecords}
-        filter={filter}
-        onFilterChange={setFilter}
-      />
- 
-      <RunHistoryList
-        records={records}
-        selectedId={selectedId}
-        comparisonIds={comparisonIds}
-        hasActiveFilter={hasActiveFilter}
-        onViewDetails={onViewDetails}
-        onRerun={onRerun}
-        onDelete={onDelete}
-        onExport={onExport}
-        onToggleComparison={toggleComparison}
-      />
+      {selectedRecord ? (
+        <RunDetailPanel
+          record={selectedRecord}
+          onClose={() => setSelectedId(null)}
+          onRerun={onRerun}
+          onExport={onExport}
+          onDelete={requestDelete}
+        />
+      ) : (
+        <>
+          <RunHistoryFilters allRecords={allRecords} filter={filter} onFilterChange={setFilter} />
+          <RunHistoryList
+            records={records}
+            selectedId={selectedId}
+            comparisonIds={comparisonIds}
+            hasActiveFilter={hasActiveFilter}
+            onViewDetails={onViewDetails}
+            onRerun={onRerun}
+            onDelete={requestDelete}
+            onExport={onExport}
+            onToggleComparison={toggleComparison}
+          />
+        </>
+      )}
+
+      {pendingDeleteRecord ? (
+        <DeleteConfirmDialog
+          record={pendingDeleteRecord}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
+        />
+      ) : null}
+      {exportRecord ? (
+        <ExportStubDialog record={exportRecord} onClose={() => setExportRecord(null)} />
+      ) : null}
+      {rerunRequest ? (
+        <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
+      ) : null}
     </div>
   );
 }
