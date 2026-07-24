@@ -16,7 +16,7 @@
   "magicStateFactory": "round_based",
   "traceTransform": {
     "type": "psspc",
-    "tStatesPerRotation": 5,
+    "tStatesPerRotation": 20,
     "ccxMagicStates": false
   },
   "maxError": 1,

@@ -30,7 +30,7 @@ import { isConfigValid, validateForm } from "./state/validation";
 /** The Run Configuration surface — the seven inputs + summary + validation. */
 export function RunConfiguration(): React.JSX.Element {
   const [state, setState] = useState<FormState>(createInitialFormState);
-  const { runState, engineMode, setEngineMode, start, retry, edit } = useRunFlow();
+  const { runState, start, retry, edit } = useRunFlow();
 
   // Every update is normalized so cross-field coupling (Litinski19 fallback)
   // can never leave the draft internally inconsistent.
@@ -127,28 +127,6 @@ export function RunConfiguration(): React.JSX.Element {
           >
             Run estimate
           </button>
-
-          <fieldset className="engine-mode">
-            <legend className="engine-mode__legend">Engine (dev)</legend>
-            <label className="engine-mode__option">
-              <input
-                type="radio"
-                name="engine-mode"
-                checked={engineMode === "success"}
-                onChange={() => setEngineMode("success")}
-              />
-              Success
-            </label>
-            <label className="engine-mode__option">
-              <input
-                type="radio"
-                name="engine-mode"
-                checked={engineMode === "failed"}
-                onChange={() => setEngineMode("failed")}
-              />
-              Simulate failure
-            </label>
-          </fieldset>
 
           <RunConfigInspector
             config={previewConfig}

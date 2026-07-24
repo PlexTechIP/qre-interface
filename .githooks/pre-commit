@@ -1,0 +1,17 @@
+#!/bin/sh
+# Team 3 pre-commit: fast checks only (typecheck + unit tests).
+# Slow real-engine / conformance tests are intentionally NOT run here — see
+# .github/workflows/ci.yml and the *.conformance.test.ts convention.
+#
+# Activate once per clone:  git config core.hooksPath .githooks
+set -e
+
+cd "$(git rev-parse --show-toplevel)/app"
+
+echo "[pre-commit] typecheck…"
+npm run --silent typecheck
+
+echo "[pre-commit] unit tests…"
+npm run --silent test
+
+echo "[pre-commit] ok"
