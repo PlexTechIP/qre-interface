@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
  
-import { InMemoryRunStore } from "../../shared/runStore";
-import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
 import {
   reconstructConfig,
   type RunConfig,
@@ -19,16 +17,14 @@ import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
  
 /**
- * Phase 1 container for the Run History + Comparison surfaces.
+ * Container for the Run History + Comparison surfaces.
  *
- * This is the ONLY place that knows a store exists. It instantiates the
- * InMemoryRunStore (seeded with the committed mock records), talks to it
- * exclusively through the `RunStore` interface, and hands its children plain
- * data + callbacks. When the real SQLite store swaps in at week-4 integration,
- * only this file changes — the History list and Comparison view are pure
- * functions of `records` + callbacks and never learn where the records came
- * from. Placement of this container into the app shell (App.tsx tabs) is itself
- * week-4 work; this file is the seam, not the wiring.
+ * The record store is INJECTED (see props). Everything below talks to it only
+ * through the `RunStore` interface, so this surface is a pure function of the
+ * store + callbacks and never learns whether it's the in-memory mock or the real
+ * SQLite store reached over IPC. `view` (History vs Comparison) is controlled by
+ * the app shell so the sidebar and the in-surface tab strip stay in sync and the
+ * comparison selection survives switching between the two.
  */
  
 /** A Rerun handoff payload: the reconstructed pre-fill config for a new run. */
@@ -41,11 +37,21 @@ function makeStamp(): { id: string; createdAt: string } {
   return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
 }
  
-export function RunHistoryContainer() {
-  // The store is created once and never recreated across renders. Kept behind
-  // the RunStore type so nothing here depends on it being in-memory.
-  const [store] = useState<RunStore>(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
- 
+export interface RunHistoryContainerProps {
+  /** The record store, injected — the surface is a pure function of it. */
+  store: RunStore;
+  /** Which sub-tab is showing (controlled by the app shell). */
+  view: "history" | "comparison";
+  /** Raise a request to switch sub-tab (History <-> Comparison). */
+  onViewChange: (view: "history" | "comparison") => void;
+}
+
+export function RunHistoryContainer({
+  store,
+  view,
+  onViewChange,
+}: RunHistoryContainerProps) {
+
   const [records, setRecords] = useState<RunRecord[]>([]);
   // The full, unfiltered record set — used only to derive the filter bar's
   // option lists ("what values exist at all"), so dropdowns don't shrink as
@@ -69,9 +75,9 @@ export function RunHistoryContainer() {
   // The record whose Export-Markdown stub preview is open (null = closed).
   const [exportRecord, setExportRecord] = useState<RunRecord | null>(null);
 
-  // Which of Team 1's two tabs is showing. Real app-shell tab placement is
-  // week-4 integration; this local toggle keeps both surfaces demonstrable here.
-  const [view, setView] = useState<"history" | "comparison">("history");
+  // `view` (History vs Comparison) is controlled by the app shell (props), so the
+  // sidebar and this surface's in-tab strip stay in sync and the comparison
+  // selection survives switching between the two.
   // Whether the comparison-set export stub preview is open.
   const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
  
@@ -211,7 +217,7 @@ export function RunHistoryContainer() {
           role="tab"
           aria-selected={view === "history"}
           className={view === "history" ? "surface-tab active" : "surface-tab"}
-          onClick={() => setView("history")}
+          onClick={() => onViewChange("history")}
         >
           History
         </button>
@@ -220,7 +226,7 @@ export function RunHistoryContainer() {
           role="tab"
           aria-selected={view === "comparison"}
           className={view === "comparison" ? "surface-tab active" : "surface-tab"}
-          onClick={() => setView("comparison")}
+          onClick={() => onViewChange("comparison")}
         >
           Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
         </button>

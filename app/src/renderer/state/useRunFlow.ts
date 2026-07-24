@@ -11,7 +11,13 @@
 
 import { useCallback, useState } from "react";
 
-import type { EstimatorService, RunConfig, RunResult } from "../../shared/types";
+import type {
+  EstimatorService,
+  RunConfig,
+  RunResult,
+  RunStore,
+} from "../../shared/types";
+import { makeRunRecord } from "../../shared/types";
 import type { FormState } from "./formState";
 import { toRunConfig, type RunStamp } from "./toRunConfig";
 
@@ -39,8 +45,13 @@ function getEstimator(): Pick<EstimatorService, "run"> {
   return window.estimator;
 }
 
+function getRunStore(): RunStore {
+  return window.store;
+}
+
 export function useRunFlow(
   estimator: Pick<EstimatorService, "run"> = getEstimator(),
+  store: RunStore = getRunStore(),
 ): RunFlow {
   const [runState, setRunState] = useState<RunState>({ phase: "idle" });
 
@@ -50,6 +61,15 @@ export function useRunFlow(
       try {
         const result = await estimator.run(config);
         setRunState({ phase: "done", config, result });
+        // Save-after-run: persist every completed run (succeeded OR failed) as an
+        // immutable record, so it appears in Run History. `makeRunRecord` keys the
+        // record by config.id and requires result.runId === config.id (both engines
+        // guarantee this). A persistence failure must never break the results view.
+        try {
+          await store.save(makeRunRecord(config, result, new Date().toISOString()));
+        } catch (saveErr) {
+          console.error("Failed to save run to history:", saveErr);
+        }
       } catch (err) {
         setRunState({
           phase: "rejected",
@@ -58,7 +78,7 @@ export function useRunFlow(
         });
       }
     },
-    [estimator],
+    [estimator, store],
   );
 
   const start = useCallback(

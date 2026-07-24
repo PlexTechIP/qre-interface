@@ -3,12 +3,27 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { useState } from "react";
+
 import { RunHistoryContainer } from "./RunHistoryContainer";
+import { InMemoryRunStore } from "../../shared/runStore";
+import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
 
 const RUN_A = "Shor's Factoring - Litinski19";
 const RUN_B = "Shor's Factoring - Majorana Three-Aux";
 
 afterEach(cleanup);
+
+/**
+ * Mirrors the app shell: holds the controlled `view` so clicking the container's
+ * internal Comparison tab (which raises onViewChange) actually switches views,
+ * while the mock-seeded store persists across re-renders.
+ */
+function Harness() {
+  const [view, setView] = useState<"history" | "comparison">("history");
+  const [store] = useState(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
+  return <RunHistoryContainer store={store} view={view} onViewChange={setView} />;
+}
 
 /** The <tr> for a run in the History list (waits for the async store load). */
 async function rowByName(name: string): Promise<HTMLElement> {
@@ -20,7 +35,7 @@ async function rowByName(name: string): Promise<HTMLElement> {
 
 describe("History → Comparison hand-off (Part E)", () => {
   it("checking runs in History drives the Comparison tab's table", async () => {
-    render(<RunHistoryContainer />);
+    render(<Harness />);
 
     // Check two runs for comparison from the History list.
     await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));

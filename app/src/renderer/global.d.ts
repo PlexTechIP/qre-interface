@@ -1,8 +1,9 @@
-import type { EstimatorService } from "../shared/types";
+import type { EstimatorService, RunStore } from "../shared/types";
 
 declare global {
   interface Window {
     estimator: Pick<EstimatorService, "run">;
+    store: RunStore;
   }
 }
 

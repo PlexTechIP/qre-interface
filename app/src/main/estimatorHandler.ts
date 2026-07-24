@@ -1,5 +1,5 @@
 import type { IpcMain } from "electron";
-import type { RunConfig, RunResult } from "../shared/types.js";
+import type { EstimatorService, RunConfig, RunResult } from "../shared/types.js";
 import { QreEngine } from "./engine/qreEngine.js";
 import { resolvePythonBin } from "./engine/pythonBin.js";
 import { ESTIMATOR_RUN_CHANNEL } from "./ipcChannels.js";
@@ -25,7 +25,7 @@ export function failedBoundaryResult(config: RunConfig, error: unknown): RunResu
 
 export function registerEstimatorHandler(
   ipcMain: Pick<IpcMain, "handle">,
-  engine = new QreEngine(resolvePythonBin()),
+  engine: Pick<EstimatorService, "run"> = new QreEngine(resolvePythonBin()),
 ): void {
   ipcMain.handle(ESTIMATOR_RUN_CHANNEL, async (_event, config: RunConfig): Promise<RunResult> => {
     try {
