@@ -108,8 +108,25 @@ export function RunHistoryList({
                   <tr
                     key={record.id}
                     className={isSelected ? "selected" : undefined}
-                    aria-selected={isSelected}
+                    // Row click is a pointer convenience; keyboard users reach the
+                    // same action via Enter/Space on the focused row and the per-row
+                    // "View" button. `aria-current` marks the open row and is valid on
+                    // any element — `aria-selected` is only meaningful on a grid/listbox
+                    // row, which this plain table row is not.
+                    aria-current={isSelected || undefined}
+                    tabIndex={0}
                     onClick={() => onViewDetails(record.id)}
+                    onKeyDown={(event) => {
+                      // Only when the row itself is focused — inner controls (the
+                      // compare checkbox and the action buttons) own their own keys.
+                      if (
+                        event.target === event.currentTarget &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
+                        event.preventDefault();
+                        onViewDetails(record.id);
+                      }
+                    }}
                   >
                     <td className="col-compare" onClick={(e) => e.stopPropagation()}>
                       <input
