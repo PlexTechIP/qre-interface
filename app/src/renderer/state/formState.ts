@@ -20,6 +20,10 @@ import {
   type TraceTransformType,
   type UploadedProgramFormat,
 } from "../../shared/types";
+import {
+  defaultAllHyperparams,
+  type HyperparamValues,
+} from "../constants/hyperparameters";
 
 export interface GateBasedForm {
   /** Default 1e-4. Valid: 0 < x < 0.01. null until entered. */
@@ -45,18 +49,36 @@ export interface ArchitectureForm {
   majorana: MajoranaForm;
 }
 
-export type ApplicationFormType = "benchmark" | "uploaded";
+export type ApplicationFormType = "benchmark" | "saved" | "uploaded";
 
 export interface UploadForm {
   filePath: string;
   format: UploadedProgramFormat;
+  /** "Save to my programs" — mirrors the contract's addToLibrary and, when set,
+   *  keeps the uploaded file in `savedPrograms` so it can be re-run later. */
   addToLibrary: boolean;
+}
+
+/** One program the user kept in their session library (an earlier upload). */
+export interface SavedProgram {
+  id: string;
+  /** Display name, defaulting to the file's basename. */
+  name: string;
+  filePath: string;
+  format: UploadedProgramFormat;
 }
 
 export interface ApplicationForm {
   type: ApplicationFormType;
   benchmarkId: string;
+  /** Per-benchmark hyperparameter values, keyed by benchmark id. Every benchmark
+   *  is seeded to its spec defaults so switching benchmarks never loses entries. */
+  hyperparams: Record<string, HyperparamValues>;
   upload: UploadForm;
+  /** Session library of saved uploads, surfaced under the "Saved Programs" type. */
+  savedPrograms: SavedProgram[];
+  /** The selected saved program's id (empty until one is picked). */
+  selectedSavedId: string;
 }
 
 export interface PsspcForm {
@@ -91,7 +113,10 @@ export function createInitialFormState(): FormState {
     application: {
       type: "benchmark",
       benchmarkId: DEFAULT_BENCHMARK_ID,
+      hyperparams: defaultAllHyperparams(),
       upload: { filePath: "", format: "qsharp", addToLibrary: false },
+      savedPrograms: [],
+      selectedSavedId: "",
     },
     architecture: {
       type: "gateBased",

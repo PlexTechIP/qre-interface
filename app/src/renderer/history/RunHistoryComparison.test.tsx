@@ -15,14 +15,13 @@ const RUN_B = "Shor's Factoring - Majorana Three-Aux";
 afterEach(cleanup);
 
 /**
- * Mirrors the app shell: holds the controlled `view` so clicking the container's
- * internal Comparison tab (which raises onViewChange) actually switches views,
- * while the mock-seeded store persists across re-renders.
+ * Renders the container in its self-managed (uncontrolled) mode so its internal
+ * History/Comparison tab strip is present — this test drives the hand-off by
+ * clicking that Comparison tab. The mock-seeded store persists across re-renders.
  */
 function Harness() {
-  const [view, setView] = useState<"history" | "comparison">("history");
   const [store] = useState(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
-  return <RunHistoryContainer store={store} view={view} onViewChange={setView} />;
+  return <RunHistoryContainer store={store} />;
 }
 
 /** The <tr> for a run in the History list (waits for the async store load). */

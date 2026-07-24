@@ -12,23 +12,22 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildFailedResult, buildSuccessResult, fakeEstimator } from "../shared/testing";
 import { RunConfiguration } from "./RunConfiguration";
 
-beforeEach(() => {
-  window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 50 });
-});
-
-// Radios are matched on the START of their accessible name: a disabled
-// Litinski19 radio's reason text mentions both "Superconducting" and
-// "Round-Based", so only anchored names disambiguate the toggles.
 const runButton = () => screen.getByRole("button", { name: /run estimate/i });
-const litinski19Radio = () =>
-  screen.getByRole("radio", { name: /^litinski19/i });
-const roundBasedRadio = () =>
-  screen.getByRole("radio", { name: /^round-based/i });
+
+// The Magic State Factory is a dropdown; Litinski19 availability is expressed by
+// enabling/disabling its <option> and by the selected value falling back.
+const factorySelect = () =>
+  screen.getByRole("combobox", { name: /magic state factory/i });
+const litinski19Option = () =>
+  within(factorySelect()).getByRole("option", { name: /litinski19/i });
+
+// Architecture is a segmented control whose buttons expose role="radio".
 const superconductingRadio = () =>
   screen.getByRole("radio", { name: /^superconducting/i });
 const majoranaRadio = () => screen.getByRole("radio", { name: /^majorana/i });
 
-const gateTimeInput = () => screen.getByRole("textbox", { name: /^gate time/i });
+const gateTimeInput = () =>
+  screen.getByRole("textbox", { name: /single-qubit gate time/i });
 const measurementTimeInput = () =>
   screen.getByRole("textbox", { name: /^measurement time/i });
 const errorRateInput = () =>
@@ -39,6 +38,13 @@ async function fillRequiredTimes(user: ReturnType<typeof userEvent.setup>) {
   await user.type(gateTimeInput(), "50");
   await user.type(measurementTimeInput(), "100");
 }
+
+// Post-swap the run flow drives the real engine over `window.estimator`. Give
+// every test a success estimator by default; the failure-path tests override it.
+// The small delay keeps the "running" phase observable before it resolves.
+beforeEach(() => {
+  window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 50 });
+});
 
 describe("Run-button validation gating", () => {
   it("starts disabled because gate/measurement times have no defaults", () => {
@@ -92,7 +98,7 @@ describe("Run-button validation gating", () => {
 describe("Litinski19 availability rule", () => {
   it("is selectable on GateBased with the default error rate (1e-4)", () => {
     render(<RunConfiguration />);
-    expect(litinski19Radio()).toBeEnabled();
+    expect(litinski19Option()).toBeEnabled();
   });
 
   it("auto-disables with a visible reason when switching to Majorana", async () => {
@@ -100,7 +106,7 @@ describe("Litinski19 availability rule", () => {
     render(<RunConfiguration />);
     await user.click(majoranaRadio());
 
-    expect(litinski19Radio()).toBeDisabled();
+    expect(litinski19Option()).toBeDisabled();
     expect(
       screen.getByText(/needs superconducting hardware with error rate/i),
     ).toBeInTheDocument();
@@ -111,34 +117,33 @@ describe("Litinski19 availability rule", () => {
     render(<RunConfiguration />);
 
     // Select Litinski19 while it's allowed…
-    await user.click(litinski19Radio());
-    expect(litinski19Radio()).toBeChecked();
+    await user.selectOptions(factorySelect(), "litinski19");
+    expect(factorySelect()).toHaveValue("litinski19");
 
     // …then break the condition; selection must revert to Round-Based.
     await user.click(majoranaRadio());
-    expect(roundBasedRadio()).toBeChecked();
-    expect(litinski19Radio()).not.toBeChecked();
+    expect(factorySelect()).toHaveValue("round_based");
   });
 
   it("re-disables Litinski19 when the GateBased error rate is raised above 1e-3", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
-    expect(litinski19Radio()).toBeEnabled();
+    expect(litinski19Option()).toBeEnabled();
 
     const errorRate = errorRateInput();
     await user.clear(errorRate);
     await user.type(errorRate, "0.005"); // > 1e-3, still within (0, 0.01)
 
-    expect(litinski19Radio()).toBeDisabled();
+    expect(litinski19Option()).toBeDisabled();
   });
 
   it("re-enables Litinski19 after switching back to Superconducting", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
     await user.click(majoranaRadio());
-    expect(litinski19Radio()).toBeDisabled();
+    expect(litinski19Option()).toBeDisabled();
     await user.click(superconductingRadio());
-    expect(litinski19Radio()).toBeEnabled();
+    expect(litinski19Option()).toBeEnabled();
   });
 });
 
@@ -225,11 +230,11 @@ describe("Configuration summary reflects the draft", () => {
       .getByRole("heading", { name: /configuration summary/i })
       .closest("section")!;
 
-    // Scope to the QEC row — the auto-generated Name row also contains the code.
+    // Scope to the QEC cell in the summary grid.
     const qecValue = () =>
       within(summary)
-        .getByText("QEC code")
-        .closest(".summary-panel__row") as HTMLElement;
+        .getByText("QEC Code")
+        .closest(".summary-grid__cell") as HTMLElement;
     expect(within(qecValue()).getByText("Surface Code")).toBeInTheDocument();
 
     await user.click(majoranaRadio());
