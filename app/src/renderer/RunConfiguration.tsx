@@ -147,28 +147,6 @@ export function RunConfiguration({
         </section>
 
         <div className="run-config__dev">
-          <fieldset className="engine-mode">
-            <legend className="engine-mode__legend">Engine (dev)</legend>
-            <label className="engine-mode__option">
-              <input
-                type="radio"
-                name="engine-mode"
-                checked={engineMode === "success"}
-                onChange={() => setEngineMode("success")}
-              />
-              Success
-            </label>
-            <label className="engine-mode__option">
-              <input
-                type="radio"
-                name="engine-mode"
-                checked={engineMode === "failed"}
-                onChange={() => setEngineMode("failed")}
-              />
-              Simulate failure
-            </label>
-          </fieldset>
-
           <RunConfigInspector
             config={previewConfig}
             valid={previewValid}

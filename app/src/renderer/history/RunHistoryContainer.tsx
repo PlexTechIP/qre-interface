@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
  
+import { InMemoryRunStore } from "../../shared/runStore";
 import {
   reconstructConfig,
   type RunConfig,
@@ -38,9 +39,9 @@ function makeStamp(): { id: string; createdAt: string } {
 }
  
 interface RunHistoryContainerProps {
-  /** The run store to read from. Defaults to a mock-seeded in-memory store so
-   *  the surface is demonstrable standalone; the app shell injects a shared,
-   *  initially-empty store that its Run flow saves into. */
+  /** The run store to read from. Defaults to an empty in-memory store; the app
+   *  shell injects the shared store its Run flow saves into, and tests inject a
+   *  seeded one. */
   store?: RunStore;
   /** Controlled view. When provided, the internal History/Comparison tab strip
    *  is replaced by shell-level navigation (sidebar + header cross-nav). */
@@ -59,7 +60,7 @@ export function RunHistoryContainer({
   // The store is created once and never recreated across renders. Kept behind
   // the RunStore type so nothing here depends on it being in-memory.
   const [store] = useState<RunStore>(
-    () => providedStore ?? new InMemoryRunStore(MOCK_RUN_RECORDS),
+    () => providedStore ?? new InMemoryRunStore(),
   );
  
   const [records, setRecords] = useState<RunRecord[]>([]);

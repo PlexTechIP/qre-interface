@@ -39,6 +39,13 @@ async function fillRequiredTimes(user: ReturnType<typeof userEvent.setup>) {
   await user.type(measurementTimeInput(), "100");
 }
 
+// Post-swap the run flow drives the real engine over `window.estimator`. Give
+// every test a success estimator by default; the failure-path tests override it.
+// The small delay keeps the "running" phase observable before it resolves.
+beforeEach(() => {
+  window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 50 });
+});
+
 describe("Run-button validation gating", () => {
   it("starts disabled because gate/measurement times have no defaults", () => {
     render(<RunConfiguration />);
