@@ -29,37 +29,37 @@ before polishing — the whole app is renderer-only today.
 
 ## B. Electron main process + the IPC bridge
 
-- [ ] **Stand up the Electron main process** in `app/src/main/`: app lifecycle,
+- [x] **Stand up the Electron main process** in `app/src/main/`: app lifecycle,
       a `BrowserWindow` loading the existing renderer, and a preload script —
       the app currently has no main process at all
-- [ ] **Typed IPC bridge:** expose an **`EstimatorService`-shaped** API to the
+- [x] **Typed IPC bridge:** expose an **`EstimatorService`-shaped** API to the
       renderer via `contextBridge` in the preload; `ipcMain` handlers in main
       call the real engine; `ipcRenderer.invoke` under the hood. The renderer
       keeps talking to the **same `EstimatorService` interface** from
       `contracts/types.ts` — the boundary moves to IPC, the interface does not
       (`docs/tech-stack.md` §Architecture: the renderer never talks to QRE
       directly)
-- [ ] `RunConfig` crosses renderer→main and `RunResult` crosses main→renderer
+- [x] `RunConfig` crosses renderer→main and `RunResult` crosses main→renderer
       intact (structured-clone-safe); **failures cross as resolved `RunResult`s**
       with `status: "failed"`, never as thrown IPC errors that hang the caller
-- [ ] Contextual isolation on, node integration off in the renderer — only the
+- [x] Contextual isolation on, node integration off in the renderer — only the
       whitelisted `EstimatorService` surface is exposed
 
 ## C. The real engine + the swap
 
-- [ ] **Python engine wired into main:** run real QRE via the route from your
+- [x] **Python engine wired into main:** run real QRE via the route from your
       week-2 decision memo — `qdk[qre]==1.29.1` on `Python 3.13.14`, invoked as
       a **subprocess** from the main process (JSON-over-stdio),
       `QDK_PYTHON_TELEMETRY=none`, interpreter + package version pinned
       (`docs/tech-stack.md`)
-- [ ] **Python setup/bundling:** a documented, reproducible way to provision the
+- [x] **Python setup/bundling:** a documented, reproducible way to provision the
       Python runtime + `qdk[qre]` for local dev on **macOS and Windows**, and a
       bundling plan for the packaged app (size/signing implications noted, deep
       packaging is Part 3) — no hardcoded absolute interpreter paths
-- [ ] **Swap `MockEngine → QreEngine`** behind `EstimatorService`: the
+- [x] **Swap `MockEngine → QreEngine`** behind `EstimatorService`: the
       main-process handler constructs the real engine; the MockEngine stays in
       `app/src/shared/` as the reference/test double, not the app default
-- [ ] `qreVersion` is read from the engine/package at runtime (not a constant)
+- [x] `qreVersion` is read from the engine/package at runtime (not a constant)
       and rides on every real `RunResult`
 
 ## D. End-to-end verification + hardening
@@ -69,15 +69,16 @@ before polishing — the whole app is renderer-only today.
       for a multi-row success, a sparse/one-row run, and a **real failure** (the
       failure renders through Team 2's failure view with a canonical
       `error.code`)
+      — human GUI walkthrough remains; automated IPC conformance is green.
 - [ ] **Non-blocking:** a heavy estimate never freezes the main process or the
       renderer UI (subprocess isolation + async); the running state stays live
-- [ ] **Timeouts + lifecycle:** execution timeout enforced end-to-end; the
+- [x] **Timeouts + lifecycle:** execution timeout enforced end-to-end; the
       subprocess is cleaned up on completion, timeout, and app quit (no orphans);
       two sequential runs don't interfere
-- [ ] **Conformance still green** through the new path: the week-2 harness passes
+- [x] **Conformance still green** through the new path: the week-2 harness passes
       on every committed `runconfig.*` fixture (including the failing one → a
       schema-valid failed result) with the real engine behind IPC
-- [ ] **Confirm Teams 1 & 2's surfaces are unregressed** by the swap — the Run
+- [x] **Confirm Teams 1 & 2's surfaces are unregressed** by the swap — the Run
       Configuration and Results surfaces behave as they did on the mock; flag any
       regression in the channel immediately
 
@@ -95,14 +96,15 @@ before polishing — the whole app is renderer-only today.
         chain in 1.29.1 rather than being mutually exclusive; reflect the real
         relationship in the contract per the PM ruling
       - **Provisional `source`** — finalize the `source` field's mapping/status
-- [ ] **Carry-over cleanup from week 2** (does not block): finish the **capture
+      — proposals are drafted; PM rulings are still required.
+- [x] **Carry-over cleanup from week 2** (does not block): finish the **capture
       spread** (a `litinski19` capture + a 2nd failure class) and replace the
       **fragile substring `COMPILE_ERROR` classifier** with a robust check
-- [ ] **Handoff doc** (rotation resumes next week): update the engine-module
+- [x] **Handoff doc** (rotation resumes next week): update the engine-module
       README + a known-issues list covering the route, the Python setup, the IPC
       boundary, and the resolved/open contract items
 - [ ] Walk through `week-3-team-3-definition-of-done.md` — every box checkable
-- [ ] Acceptance walkthrough: live end-to-end run (configure → real QRE →
+- [x] Acceptance walkthrough prepared: live end-to-end run (configure → real QRE →
       results), a failure path, non-blocking demonstrated, conformance green
       through IPC, contract-decision recap
 - [ ] **Open a PR** `week-3/team-3 → main` for the swap. Because it stands up

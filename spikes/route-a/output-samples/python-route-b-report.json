@@ -1,0 +1,409 @@
+{
+  "qdkVersion": "1.29.1",
+  "qsharpVersion": "1.29.1",
+  "python": "3.11.13 (main, Sep  2 2025, 14:14:37) [MSC v.1944 64 bit (AMD64)]",
+  "exports": {
+    "GateBased": {
+      "present": true,
+      "signature": "(*, error_rate: float = 0.0001, gate_time: int, measurement_time: int, two_qubit_gate_time: Optional[int] = None) -> None"
+    },
+    "Majorana": {
+      "present": true,
+      "signature": "(*, error_rate: float = 1e-05) -> None"
+    },
+    "SurfaceCode": {
+      "present": true,
+      "signature": "(crossing_prefactor: 'float' = 0.03, error_correction_threshold: 'float' = 0.01, one_qubit_gate_depth: 'int' = 1, two_qubit_gate_depth: 'int' = 4, code_cycle_override: 'Optional[int]' = None, code_cycle_offset: 'int' = 0, *, distance: 'int' = 3) -> None"
+    },
+    "ThreeAux": {
+      "present": true,
+      "signature": "(*, distance: 'int' = 3, single_rail: 'bool' = False) -> None"
+    },
+    "RoundBasedFactory": {
+      "present": true,
+      "signature": "(code_query: 'ISAQuery' = <factory>, physical_qubit_calculation: 'Callable[[Iterable], int]' = <built-in function sum>, cache_dir: 'Path' = WindowsPath('C:/Users/neilj/.cache/re3/round_based'), use_cache: 'bool' = True) -> None"
+    },
+    "Litinski19Factory": {
+      "present": true,
+      "signature": "() -> None"
+    },
+    "PSSPC": {
+      "present": true,
+      "signature": "(*, num_ts_per_rotation: 'int' = 20, ccx_magic_states: 'bool' = False) -> None"
+    },
+    "LatticeSurgery": {
+      "present": true,
+      "signature": "(*, slow_down_factor: 'float' = 1.0) -> None"
+    },
+    "QIRApplication": {
+      "present": true,
+      "signature": "(input: 'str | bytes') -> None"
+    }
+  },
+  "qir": {
+    "compiledFromOpenQasm": true,
+    "characters": 76254,
+    "startsWith": "%Result = type opaque\n%Qubit = type opaque\n\n@0 = internal constant [4 x i8] c\"0_a\\00\"\n@1 = internal "
+  },
+  "contractFieldCoverage": {
+    "contractFieldCount": 37,
+    "nativeFieldCount": 29,
+    "nativeFields": [
+      "ACCELERATION",
+      "ALGORITHM_COMPUTE_QUBITS",
+      "ALGORITHM_MEMORY_QUBITS",
+      "ASSUMPTIONS",
+      "ATOM_SPACING",
+      "CODE_CYCLE_TIME",
+      "DISTANCE",
+      "EVALUATION_TIME",
+      "EXPECTED_SHOTS",
+      "FEASIBILITY",
+      "LOGICAL_COMPUTE_QUBITS",
+      "LOGICAL_CYCLE_TIME",
+      "LOGICAL_MEMORY_QUBITS",
+      "LOSS",
+      "MOLECULE",
+      "NAME",
+      "NUM_TS_PER_ROTATION",
+      "PHYSICAL_COMPUTE_QUBITS",
+      "PHYSICAL_FACTORY_QUBITS",
+      "PHYSICAL_MEMORY_QUBITS",
+      "RUNTIME_SINGLE_SHOT",
+      "SURFACE_CODE_ONE_QUBIT_TIME_FACTOR",
+      "SURFACE_CODE_TWO_QUBIT_TIME_FACTOR",
+      "TARGET_YEAR",
+      "VELOCITY",
+      "factories",
+      "physicalQubits",
+      "runtime",
+      "totalError"
+    ],
+    "missingNativeFields": [
+      "BASE_SYSTEM_COST",
+      "BLOCK_SIZE",
+      "COST_PER_HOUR",
+      "COST_PER_QUBIT",
+      "COST_PER_QUBIT_PER_HOUR",
+      "DATA_QUBIT_SPACING",
+      "SHOT_COST",
+      "source"
+    ]
+  },
+  "cases": [
+    {
+      "name": "openqasm-gate-surface-round-psspc-lattice-surgery",
+      "ok": true,
+      "elapsedSeconds": 0.09321630001068115,
+      "maxError": 1.0,
+      "frontierRows": 1,
+      "rows": [
+        {
+          "qubits": 205,
+          "runtime": 528150,
+          "error": 0.068108,
+          "factories": {
+            "1028": {
+              "copies": 1,
+              "runs": 10563,
+              "errorRate": 0.0001,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 204,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 1,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 0,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openqasm-gate-surface-litinski19-lattice-surgery",
+      "ok": true,
+      "elapsedSeconds": 0.02652799990028143,
+      "maxError": 1.0,
+      "frontierRows": 1,
+      "rows": [
+        {
+          "qubits": 205,
+          "runtime": 528150,
+          "error": 0.068108,
+          "factories": {
+            "1028": {
+              "copies": 1,
+              "runs": 10563,
+              "errorRate": 0.0001,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 204,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 1,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 8778800,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openqasm-majorana-three-aux-round-psspc-lattice-surgery",
+      "ok": true,
+      "elapsedSeconds": 0.026837199926376343,
+      "maxError": 1.0,
+      "frontierRows": 1,
+      "rows": [
+        {
+          "qubits": 504,
+          "runtime": 8048000,
+          "error": 0.021056928374655646,
+          "factories": {
+            "1028": {
+              "copies": 3,
+              "runs": 178,
+              "errorRate": 4.21e-05,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 396,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 108,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 0,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "ThreeAux",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 12000,
+                "DISTANCE": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "qir-gate-surface-round-psspc-lattice-surgery",
+      "ok": true,
+      "elapsedSeconds": 0.01938359998166561,
+      "maxError": 1.0,
+      "frontierRows": 1,
+      "rows": [
+        {
+          "qubits": 205,
+          "runtime": 528150,
+          "error": 0.068108,
+          "factories": {
+            "1028": {
+              "copies": 1,
+              "runs": 10563,
+              "errorRate": 0.0001,
+              "states": 500
+            }
+          },
+          "properties": {
+            "NUM_TS_PER_ROTATION": 20,
+            "PHYSICAL_COMPUTE_QUBITS": 204,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 1
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openqasm-gate-surface-round-psspc-lattice-surgery-tight-max-error",
+      "ok": true,
+      "elapsedSeconds": 0.026557600125670433,
+      "maxError": 0.01,
+      "frontierRows": 4,
+      "rows": [
+        {
+          "qubits": 8772,
+          "runtime": 1936550,
+          "error": 0.00010651768108000003,
+          "factories": {
+            "1028": {
+              "copies": 6,
+              "runs": 85,
+              "errorRate": 2.1303500000000005e-07,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 2892,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 5880,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 2008600,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 11
+              }
+            }
+          ]
+        },
+        {
+          "qubits": 9772,
+          "runtime": 1584450,
+          "error": 0.00010653560800000003,
+          "factories": {
+            "1028": {
+              "copies": 8,
+              "runs": 69,
+              "errorRate": 2.1303500000000005e-07,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 1932,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 7840,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 2008600,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 9
+              }
+            }
+          ]
+        },
+        {
+          "qubits": 10964,
+          "runtime": 1232350,
+          "error": 0.00010832830000000003,
+          "factories": {
+            "1028": {
+              "copies": 10,
+              "runs": 54,
+              "errorRate": 2.1303500000000005e-07,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 1164,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 9800,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 2008600,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 7
+              }
+            }
+          ]
+        },
+        {
+          "qubits": 14308,
+          "runtime": 880250,
+          "error": 0.00028759750000000007,
+          "factories": {
+            "1028": {
+              "copies": 14,
+              "runs": 38,
+              "errorRate": 2.1303500000000005e-07,
+              "states": 500
+            }
+          },
+          "properties": {
+            "ALGORITHM_COMPUTE_QUBITS": 3,
+            "PHYSICAL_COMPUTE_QUBITS": 588,
+            "ALGORITHM_MEMORY_QUBITS": 0,
+            "LOGICAL_COMPUTE_QUBITS": 12,
+            "PHYSICAL_FACTORY_QUBITS": 13720,
+            "LOGICAL_MEMORY_QUBITS": 0,
+            "EVALUATION_TIME": 2008600,
+            "NUM_TS_PER_ROTATION": 20
+          },
+          "sourcePropertyNodes": [
+            {
+              "transform": "SurfaceCode",
+              "instructionId": 4352,
+              "instructionName": "LATTICE_SURGERY",
+              "properties": {
+                "CODE_CYCLE_TIME": 350,
+                "DISTANCE": 5
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

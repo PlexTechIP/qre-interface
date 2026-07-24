@@ -7,9 +7,14 @@
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
+import { MockEngine } from "../shared/mockEngine";
 import { RunConfiguration } from "./RunConfiguration";
+
+beforeEach(() => {
+  window.estimator = new MockEngine({ delayMs: 50 });
+});
 
 // Radios are matched on the START of their accessible name: a disabled
 // Litinski19 radio's reason text mentions both "Superconducting" and
@@ -160,15 +165,14 @@ describe("Run flow", () => {
 });
 
 describe("Failure path (Retry / Edit configuration)", () => {
-  const simulateFailureRadio = () =>
-    screen.getByRole("radio", { name: /simulate failure/i });
-
   it("delivers a failed result at the seam with a way forward, and Retry re-runs", async () => {
     const user = userEvent.setup();
+    // Post-swap the app runs the real engine, which reports failures itself —
+    // there is no "simulate failure" dev toggle anymore. Drive a failure by
+    // injecting the failed-mode mock behind the same EstimatorService the swap consumes.
+    window.estimator = new MockEngine({ mode: "failed", delayMs: 50 });
     render(<RunConfiguration />);
 
-    // Point the dev engine at the committed failure fixture, then run a valid config.
-    await user.click(simulateFailureRadio());
     await fillRequiredTimes(user);
     await user.click(runButton());
 
@@ -187,8 +191,8 @@ describe("Failure path (Retry / Edit configuration)", () => {
       screen.getByRole("button", { name: /edit configuration/i }),
     ).toBeEnabled();
 
-    // Retry re-runs the same config: back to the running state (engine mode is
-    // still "failed", so it resolves to the failure again — the point is it re-ran).
+    // Retry re-runs the same config: back to the running state (the injected
+    // engine still fails, so it resolves to the failure again — the point is it re-ran).
     await user.click(retry);
     expect(screen.getByText(/running your estimate/i)).toBeInTheDocument();
     expect(
@@ -198,9 +202,9 @@ describe("Failure path (Retry / Edit configuration)", () => {
 
   it("Edit configuration returns to the form from the failed state", async () => {
     const user = userEvent.setup();
+    window.estimator = new MockEngine({ mode: "failed", delayMs: 50 });
     render(<RunConfiguration />);
 
-    await user.click(simulateFailureRadio());
     await fillRequiredTimes(user);
     await user.click(runButton());
     await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 });

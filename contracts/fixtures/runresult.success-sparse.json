@@ -52,9 +52,9 @@
           "display": "1"
         },
         "numTsPerRotation": {
-          "value": 5,
+          "value": 20,
           "unit": "T states",
-          "display": "5"
+          "display": "20"
         },
         "source": {
           "value": "qsharp",
@@ -91,7 +91,7 @@
         "RUNTIME_SINGLE_SHOT": 880000,
         "EXPECTED_SHOTS": 1,
         "DISTANCE": 9,
-        "NUM_TS_PER_ROTATION": 5,
+        "NUM_TS_PER_ROTATION": 20,
         "source": "qsharp",
         "FEASIBILITY": "feasible"
       }

@@ -9,10 +9,4 @@ export default defineConfig({
       allow: [searchForWorkspaceRoot(process.cwd())],
     },
   },
-  test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/renderer/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
-  },
 });
