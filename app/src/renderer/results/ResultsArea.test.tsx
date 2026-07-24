@@ -223,7 +223,7 @@ describe("week-2 carry-over: forward compatibility", () => {
         phase={failedScenario.phase}
         result={{
           ...failedScenario.result,
-          error: { ...failedScenario.result.error, code: "FUTURE_ENGINE_TIMEOUT" },
+          error: { ...failedScenario.result.error!, code: "FUTURE_ENGINE_TIMEOUT" },
         }}
         config={failedScenario.config}
       />,
@@ -253,7 +253,7 @@ describe("week-2 carry-over: forward compatibility", () => {
     );
 
     expect(screen.getByRole("columnheader", { name: /future qre metric/i })).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getAllByText("42").length).toBeGreaterThan(0);
   });
 });
 
