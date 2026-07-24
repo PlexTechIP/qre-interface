@@ -145,6 +145,13 @@ select {
 }
 
 .sidebar {
+  /* Pinned to the viewport top so the nav stays visible and usable while the
+     workspace scrolls; its own contents scroll if the rail ever overflows. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
   border-right: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-muted);
@@ -185,6 +192,19 @@ select {
   background: #ffb900;
 }
 
+.brand-version {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+  background: var(--color-well-bg);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -212,20 +232,98 @@ select {
 .nav-list {
   display: grid;
   gap: 6px;
-  padding: 22px 8px;
+  padding: 18px 12px;
   font-size: 15px;
   font-weight: 700;
 }
 
-.nav-list span {
-  padding: 12px 16px;
-  border-radius: 8px;
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-body);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.nav-list .active {
-  border: 1px solid var(--color-accent-border);
+.nav-item:hover:not(.nav-item--active) {
+  background: var(--color-well-bg);
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.nav-item__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-muted);
+}
+
+.nav-item--active {
+  border-color: var(--color-accent-border);
   background: var(--color-accent-bg);
   color: var(--color-accent);
+}
+
+.nav-item--active .nav-item__icon {
+  color: var(--color-accent);
+}
+
+/* Hamburger toggle in the header. */
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.nav-toggle:hover {
+  background: var(--color-well-bg);
+  color: var(--color-accent);
+}
+
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.top-header__left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Collapsed: sidebar narrows to an icon rail; labels are hidden. */
+.app-shell--collapsed {
+  grid-template-columns: 64px 1fr;
+}
+
+.app-shell--collapsed .nav-item__label {
+  display: none;
+}
+
+.app-shell--collapsed .nav-item {
+  justify-content: center;
+  padding: 10px;
 }
 
 .workspace {
@@ -401,6 +499,12 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+/* Embedded comparison view: no inner heading, so the actions sit alone at the
+   right (the shell's surface header carries the title). */
+.panel-header--actions-only {
+  justify-content: flex-end;
 }
 
 .panel-header p {
@@ -2253,6 +2357,13 @@ input[type="range"]:focus-visible,
   gap: 16px;
 }
 
+.surface-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .surface-header h1 {
   margin: 0;
   color: var(--color-heading);
@@ -2264,6 +2375,68 @@ input[type="range"]:focus-visible,
   margin: 6px 0 0;
   color: var(--color-body);
   font-size: 14px;
+}
+
+.surface-header__actions {
+  flex: none;
+}
+
+/* Secondary action button in a surface header (Compare Selected / Back). */
+.surface-action {
+  border: 1px solid var(--color-input-border);
+  border-radius: 10px;
+  padding: 9px 16px;
+  background: var(--color-surface);
+  color: var(--color-body);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.surface-action:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.surface-action:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* CTA button inside an empty state (Run an Estimation / Go to Run History). */
+.empty-state__cta {
+  margin-top: 8px;
+}
+
+/* Inline empty state (inside a panel) drops the full-page centering. */
+.empty-state--inline {
+  width: auto;
+  margin: 0;
+  border: 0;
+  padding: 40px 16px;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Text-style link button (empty-state "Run a configuration"). */
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 /* --- Search + filter bar --------------------------------------------------- */

@@ -96,7 +96,7 @@ export const FORMAT_LABELS: Record<UploadedProgramFormat, string> = {
 
 /**
  * Shown read-only at configuration time and stamped into RunConfig.qreVersion
- * (informational — RunResult.qreVersion is authoritative). Week 3+: read from
- * the engine at runtime instead of this constant.
+ * (informational — RunResult.qreVersion is authoritative). Tracks the bundled
+ * QDK QRE build (`qdk[qre]==1.29.1`); update in lockstep when the engine bumps.
  */
-export const QRE_VERSION = "1.0.0-week2-placeholder";
+export const QRE_VERSION = "qdk-qre-1.29.1";

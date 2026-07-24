@@ -41,10 +41,30 @@ function makeStamp(): { id: string; createdAt: string } {
   return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
 }
  
-export function RunHistoryContainer() {
+interface RunHistoryContainerProps {
+  /** The run store to read from. Defaults to a mock-seeded in-memory store so
+   *  the surface is demonstrable standalone; the app shell injects a shared,
+   *  initially-empty store that its Run flow saves into. */
+  store?: RunStore;
+  /** Controlled view. When provided, the internal History/Comparison tab strip
+   *  is replaced by shell-level navigation (sidebar + header cross-nav). */
+  view?: "history" | "comparison";
+  onViewChange?: (view: "history" | "comparison") => void;
+  /** Navigate to the Run Configuration surface (empty-state / CTA hand-off). */
+  onNavigateToConfig?: () => void;
+}
+
+export function RunHistoryContainer({
+  store: providedStore,
+  view: controlledView,
+  onViewChange,
+  onNavigateToConfig,
+}: RunHistoryContainerProps = {}) {
   // The store is created once and never recreated across renders. Kept behind
   // the RunStore type so nothing here depends on it being in-memory.
-  const [store] = useState<RunStore>(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
+  const [store] = useState<RunStore>(
+    () => providedStore ?? new InMemoryRunStore(MOCK_RUN_RECORDS),
+  );
  
   const [records, setRecords] = useState<RunRecord[]>([]);
   // The full, unfiltered record set — used only to derive the filter bar's
@@ -69,9 +89,13 @@ export function RunHistoryContainer() {
   // The record whose Export-Markdown stub preview is open (null = closed).
   const [exportRecord, setExportRecord] = useState<RunRecord | null>(null);
 
-  // Which of Team 1's two tabs is showing. Real app-shell tab placement is
-  // week-4 integration; this local toggle keeps both surfaces demonstrable here.
-  const [view, setView] = useState<"history" | "comparison">("history");
+  // Which of Team 1's two surfaces is showing. Standalone, a local tab strip
+  // drives it; inside the app shell it's controlled by the sidebar (via the
+  // `view`/`onViewChange` props), which hides the tab strip.
+  const [internalView, setInternalView] = useState<"history" | "comparison">("history");
+  const isControlled = controlledView !== undefined;
+  const view = controlledView ?? internalView;
+  const setView = onViewChange ?? setInternalView;
   // Whether the comparison-set export stub preview is open.
   const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
  
@@ -196,35 +220,64 @@ export function RunHistoryContainer() {
   return (
     <div className="run-history-container">
       <header className="surface-header">
-        <h1>{view === "history" ? "Run History" : "Comparison"}</h1>
-        <p>Search, filter, rerun, export, or select runs for comparison.</p>
+        <div>
+          <h1>{view === "history" ? "Run History" : "Comparison"}</h1>
+          <p>
+            {view === "history"
+              ? "Search, filter, rerun, export, or select runs for comparison."
+              : "Compare runs across result fields, configurations, timestamps, and QRE engine versions."}
+          </p>
+        </div>
+        {isControlled ? (
+          <div className="surface-header__actions">
+            {view === "history" ? (
+              <button
+                type="button"
+                className="surface-action"
+                onClick={() => setView("comparison")}
+              >
+                Compare Selected{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="surface-action"
+                onClick={() => setView("history")}
+              >
+                ← Back to History
+              </button>
+            )}
+          </div>
+        ) : null}
       </header>
 
       {/*
-        Team 1 owns two tabs (History + Comparison). Wiring them into the app
-        shell is week-4 integration; this local tab strip keeps both surfaces
-        reachable and demonstrable in the meantime.
+        Standalone, a local tab strip keeps both surfaces reachable. Inside the
+        app shell the sidebar drives the view (isControlled), so the tab strip is
+        hidden in favour of the header cross-nav above.
       */}
-      <div className="surface-tabs" role="tablist" aria-label="Run surfaces">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "history"}
-          className={view === "history" ? "surface-tab active" : "surface-tab"}
-          onClick={() => setView("history")}
-        >
-          History
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "comparison"}
-          className={view === "comparison" ? "surface-tab active" : "surface-tab"}
-          onClick={() => setView("comparison")}
-        >
-          Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
-        </button>
-      </div>
+      {isControlled ? null : (
+        <div className="surface-tabs" role="tablist" aria-label="Run surfaces">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "history"}
+            className={view === "history" ? "surface-tab active" : "surface-tab"}
+            onClick={() => setView("history")}
+          >
+            History
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "comparison"}
+            className={view === "comparison" ? "surface-tab active" : "surface-tab"}
+            onClick={() => setView("comparison")}
+          >
+            Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+          </button>
+        </div>
+      )}
 
       {loadError ? <p role="alert">{loadError}</p> : null}
       {isLoading ? <p className="muted">Loading runs…</p> : null}
@@ -240,6 +293,8 @@ export function RunHistoryContainer() {
           onClear={clearComparison}
           onRemove={toggleComparison}
           onExport={() => setIsComparisonExportOpen(true)}
+          embedded={isControlled}
+          {...(isControlled ? { onGoToHistory: () => setView("history") } : {})}
         />
       ) : selectedRecord ? (
         <RunDetailPanel
@@ -262,6 +317,7 @@ export function RunHistoryContainer() {
             onDelete={requestDelete}
             onExport={onExport}
             onToggleComparison={toggleComparison}
+            {...(onNavigateToConfig ? { onNavigateToConfig } : {})}
           />
         </>
       )}

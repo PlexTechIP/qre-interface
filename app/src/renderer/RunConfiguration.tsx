@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import type { RunConfig, RunResult } from "../shared/types";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
 import { ConfigurationSummary } from "./components/ConfigurationSummary";
@@ -24,10 +25,28 @@ import {
 import { useRunFlow } from "./state/useRunFlow";
 import { isConfigValid, validateForm } from "./state/validation";
 
+interface RunConfigurationProps {
+  /** Fired once when a run finishes, so the shell can persist it to History
+   *  and surface it on the Results page. Optional — omitted in unit tests. */
+  onRunComplete?: (config: RunConfig, result: RunResult) => void;
+}
+
 /** The Run Configuration surface — the seven inputs + summary + validation. */
-export function RunConfiguration(): React.JSX.Element {
+export function RunConfiguration({
+  onRunComplete,
+}: RunConfigurationProps = {}): React.JSX.Element {
   const [state, setState] = useState<FormState>(createInitialFormState);
   const { runState, engineMode, setEngineMode, start, retry, edit } = useRunFlow();
+
+  // Notify the shell exactly once per finished run (keyed on the stamped id, so
+  // Retry — which mints a fresh id — reports as a distinct run).
+  const reportedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (runState.phase !== "done") return;
+    if (reportedIdRef.current === runState.config.id) return;
+    reportedIdRef.current = runState.config.id;
+    onRunComplete?.(runState.config, runState.result);
+  }, [runState, onRunComplete]);
 
   // Every update is normalized so cross-field coupling (Litinski19 fallback)
   // can never leave the draft internally inconsistent.
