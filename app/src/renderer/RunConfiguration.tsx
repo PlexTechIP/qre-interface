@@ -3,13 +3,10 @@ import { useState } from "react";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
 import { ConfigurationSummary } from "./components/ConfigurationSummary";
-import { MagicStateFactorySection } from "./components/MagicStateFactorySection";
-import { MaxErrorSection } from "./components/MaxErrorSection";
-import { QecSection } from "./components/QecSection";
+import { MicroArchitectureSection } from "./components/MicroArchitectureSection";
 import { RunConfigInspector } from "./components/RunConfigInspector";
 import { RunFlowPanel } from "./components/RunFlowPanel";
 import { RunNameSection } from "./components/RunNameSection";
-import { TraceTransformSection } from "./components/TraceTransformSection";
 import { ValidationSummary } from "./components/ValidationSummary";
 import { QRE_VERSION } from "./constants/staticOptions";
 import {
@@ -70,8 +67,7 @@ export function RunConfiguration(): React.JSX.Element {
       <header className="run-config__header">
         <h1>Run Configuration</h1>
         <p className="run-config__subtitle">
-          Configure an estimate, then run it against the engine. The fastest valid
-          run is: pick a benchmark, enter gate time and measurement time, Run.
+          Configure an estimate, then run it against the engine.
         </p>
       </header>
 
@@ -87,47 +83,51 @@ export function RunConfiguration(): React.JSX.Element {
             errors={errors}
             onChange={(architecture) => update((s) => ({ ...s, architecture }))}
           />
-          <QecSection architecture={state.architecture} />
-          <MagicStateFactorySection
-            value={state.magicStateFactory}
-            allowed={litinski19Allowed}
-            onChange={(magicStateFactory) =>
+          <MicroArchitectureSection
+            architecture={state.architecture}
+            magicStateFactory={state.magicStateFactory}
+            magicStateFactoryAllowed={litinski19Allowed}
+            onMagicStateFactoryChange={(magicStateFactory) =>
               update((s) => ({ ...s, magicStateFactory }))
             }
-          />
-          <TraceTransformSection
-            value={state.traceTransform}
-            onChange={(traceTransform) => update((s) => ({ ...s, traceTransform }))}
-          />
-          <MaxErrorSection
-            value={state.maxError}
-            error={errors.maxError}
-            onChange={(maxError) => update((s) => ({ ...s, maxError }))}
-          />
-          <RunNameSection
-            name={state.name}
-            generatedName={generatedName}
-            qreVersion={QRE_VERSION}
-            onChange={(name) => update((s) => ({ ...s, name }))}
+            traceTransform={state.traceTransform}
+            onTraceTransformChange={(traceTransform) =>
+              update((s) => ({ ...s, traceTransform }))
+            }
+            maxError={state.maxError}
+            maxErrorError={errors.maxError}
+            onMaxErrorChange={(maxError) => update((s) => ({ ...s, maxError }))}
           />
         </div>
 
-        <aside className="run-config__side">
+        {/* Summary, run name, and the primary CTA live full-width at the bottom. */}
+        <section
+          className="config-summary-card"
+          aria-labelledby="summary-heading"
+        >
           <ConfigurationSummary
             state={state}
             generatedName={generatedName}
             qreVersion={QRE_VERSION}
           />
+          <hr className="micro-divider" />
+          <RunNameSection
+            name={state.name}
+            generatedName={generatedName}
+            onChange={(name) => update((s) => ({ ...s, name }))}
+          />
           <ValidationSummary errors={errors} />
           <button
             type="button"
-            className="run-button"
+            className="run-button run-button--full"
             disabled={!valid}
             onClick={() => start(state)}
           >
             Run estimate
           </button>
+        </section>
 
+        <div className="run-config__dev">
           <fieldset className="engine-mode">
             <legend className="engine-mode__legend">Engine (dev)</legend>
             <label className="engine-mode__option">
@@ -156,7 +156,7 @@ export function RunConfiguration(): React.JSX.Element {
             title="Serialized RunConfig (dev)"
             note="Live preview with a placeholder id/timestamp; real values are stamped at Run."
           />
-        </aside>
+        </div>
       </div>
     </div>
   );

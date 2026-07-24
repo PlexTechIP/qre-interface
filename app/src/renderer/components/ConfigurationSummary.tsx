@@ -17,65 +17,62 @@ function applicationSummary(app: FormState["application"]): string {
   if (app.type === "benchmark") {
     return findBenchmark(app.benchmarkId)?.name ?? app.benchmarkId ?? "—";
   }
+  if (app.type === "saved") {
+    const chosen = app.savedPrograms.find((p) => p.id === app.selectedSavedId);
+    if (!chosen) return "no saved program chosen";
+    return `${chosen.name} (${FORMAT_LABELS[chosen.format]})`;
+  }
   const file = app.upload.filePath || "no file chosen";
   return `${file} (${FORMAT_LABELS[app.upload.format]})`;
 }
 
-function architectureSummary(arch: FormState["architecture"]): string {
-  const label = ARCHITECTURE_LABELS[arch.type];
-  if (arch.type === "gateBased") {
-    const rate = arch.gateBased.errorRate;
-    return `${label} · error rate ${rate ?? "—"}`;
-  }
-  return `${label} · error rate ${arch.majorana.errorRate}`;
+function errorRateSummary(arch: FormState["architecture"]): string {
+  const rate =
+    arch.type === "gateBased" ? arch.gateBased.errorRate : arch.majorana.errorRate;
+  return rate === null ? "—" : String(rate);
 }
 
-function transformSummary(tt: FormState["traceTransform"]): string {
-  const label = TRANSFORM_LABELS[tt.type];
-  if (tt.type === "psspc") {
-    return `${label} · ${tt.psspc.tStatesPerRotation} T/rotation${
-      tt.psspc.ccxMagicStates ? " · CCX" : ""
-    }`;
-  }
-  return `${label} · slowdown 1.0`;
-}
-
-/** Read-only configuration summary panel mirroring the current draft. */
+/**
+ * Read-only configuration summary — a horizontal grid of the draft's key facts,
+ * rendered at the bottom of the form. The run name lives in its own control
+ * beneath this (see RunNameSection), so it is not repeated here.
+ */
 export function ConfigurationSummary({
   state,
-  generatedName,
   qreVersion,
 }: ConfigurationSummaryProps): React.JSX.Element {
-  const displayName =
-    state.name.trim().length > 0 ? state.name.trim() : generatedName;
-
-  const rows: readonly { label: string; value: string }[] = [
-    { label: "Name", value: displayName },
+  const cells: readonly { label: string; value: string }[] = [
     { label: "Application", value: applicationSummary(state.application) },
-    { label: "Architecture", value: architectureSummary(state.architecture) },
-    { label: "QEC code", value: QEC_LABELS[deriveQecCode(state.architecture)] },
+    { label: "Architecture", value: ARCHITECTURE_LABELS[state.architecture.type] },
+    { label: "QEC Code", value: QEC_LABELS[deriveQecCode(state.architecture)] },
     {
-      label: "Magic factory",
-      value: MAGIC_STATE_FACTORY_LABELS[state.magicStateFactory],
+      label: "Factory",
+      value: `${MAGIC_STATE_FACTORY_LABELS[state.magicStateFactory]} Factory`,
     },
-    { label: "Transform", value: transformSummary(state.traceTransform) },
-    { label: "Max error", value: state.maxError === null ? "—" : String(state.maxError) },
-    { label: "QRE version", value: qreVersion },
+    {
+      label: "Trace Transform",
+      value: TRANSFORM_LABELS[state.traceTransform.type],
+    },
+    { label: "Error Rate", value: errorRateSummary(state.architecture) },
+    { label: "Max Error", value: state.maxError === null ? "—" : String(state.maxError) },
+    { label: "QRE Version", value: qreVersion },
   ];
 
   return (
-    <section className="summary-panel" aria-labelledby="summary-heading">
-      <h2 id="summary-heading" className="summary-panel__title">
-        Configuration Summary
-      </h2>
-      <dl className="summary-panel__list">
-        {rows.map((row) => (
-          <div key={row.label} className="summary-panel__row">
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
+    <div className="summary-block">
+      <header className="form-section__head">
+        <h2 id="summary-heading" className="form-section__title">
+          Configuration Summary
+        </h2>
+      </header>
+      <dl className="summary-grid">
+        {cells.map((cell) => (
+          <div key={cell.label} className="summary-grid__cell">
+            <dt>{cell.label}</dt>
+            <dd>{cell.value}</dd>
           </div>
         ))}
       </dl>
-    </section>
+    </div>
   );
 }

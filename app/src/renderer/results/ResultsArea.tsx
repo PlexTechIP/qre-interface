@@ -20,18 +20,9 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
     setSelectedIndex(0);
   }, [result?.runId]);
 
-  if (phase === "idle" || result === null) {
-    return (
-      <section className="empty-state" aria-labelledby="results-empty-title">
-        <div className="empty-icon" aria-hidden="true">
-          ∿
-        </div>
-        <h1 id="results-empty-title">No results yet</h1>
-        <p>Please run an estimation to see results here.</p>
-      </section>
-    );
-  }
-
+  // Check the running phase first: while running, `result` is null by design,
+  // so the empty-state guard below must not swallow it (otherwise the results
+  // surface flashes "No results yet" for the whole run).
   if (phase === "running") {
     return (
       <section className="results-page" aria-labelledby="results-running-title">
@@ -46,6 +37,18 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
             <span />
           </div>
         </div>
+      </section>
+    );
+  }
+
+  if (phase === "idle" || result === null) {
+    return (
+      <section className="empty-state" aria-labelledby="results-empty-title">
+        <div className="empty-icon" aria-hidden="true">
+          ∿
+        </div>
+        <h1 id="results-empty-title">No results yet</h1>
+        <p>Please run an estimation to see results here.</p>
       </section>
     );
   }
