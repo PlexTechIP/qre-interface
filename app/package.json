@@ -12,7 +12,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "harness": "tsx src/main/harness.ts"
   },
   "dependencies": {
     "ajv": "8.20.0",
