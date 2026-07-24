@@ -49,6 +49,9 @@ interface RunHistoryContainerProps {
   onViewChange?: (view: "history" | "comparison") => void;
   /** Navigate to the Run Configuration surface (empty-state / CTA hand-off). */
   onNavigateToConfig?: () => void;
+  /** App-shell handoff: open a saved run on the Results page (moves the sidebar
+   *  there). When omitted, View Details shows the in-surface detail panel. */
+  onViewRun?: (record: RunRecord) => void;
   /** App-shell handoff: load a reconstructed config into the live form (Rerun).
    *  When omitted, Rerun falls back to the read-only preview dialog. */
   onRerunRequest?: (request: RerunRequest) => void;
@@ -61,6 +64,7 @@ export function RunHistoryContainer({
   view: controlledView,
   onViewChange,
   onNavigateToConfig,
+  onViewRun,
   onRerunRequest,
   exportMode = "preview",
 }: RunHistoryContainerProps = {}) {
@@ -147,9 +151,19 @@ export function RunHistoryContainer({
 
   // ---- Per-run action callbacks handed down to the History list -----------
 
-  const onViewDetails = useCallback((id: string) => {
-    setSelectedId(id);
-  }, []);
+  const onViewDetails = useCallback(
+    (id: string) => {
+      // App-shell handoff opens the run on the Results page; standalone/tests
+      // fall back to the in-surface detail panel.
+      if (onViewRun) {
+        const record = records.find((r) => r.id === id);
+        if (record) onViewRun(record);
+      } else {
+        setSelectedId(id);
+      }
+    },
+    [onViewRun, records],
+  );
 
   // Delete is destructive and records are immutable, so it goes behind an
   // explicit confirm: the list/detail request it, the dialog's onConfirm runs it.

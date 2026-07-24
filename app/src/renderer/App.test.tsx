@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -52,5 +52,47 @@ describe("App shell wiring", () => {
       name: /optional/i,
     }) as HTMLInputElement;
     expect(nameInput.value.length).toBeGreaterThan(0);
+  });
+
+  it("switches the sidebar to Results when a run completes", async () => {
+    render(<App />);
+
+    // The default config only needs gate + measurement times to become valid.
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /single-qubit gate time/i }),
+      "50",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /^measurement time/i }),
+      "100",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+
+    // On completion the sidebar moves to Results and the result shows there.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Results" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      ),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Estimation Results" }),
+    ).toBeVisible();
+  });
+
+  it("opening a run from Run History shows it on the Results page and moves the sidebar", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+
+    const viewButtons = await screen.findAllByRole("button", { name: "View" });
+    await userEvent.click(viewButtons[0]!);
+
+    expect(
+      await screen.findByRole("heading", { name: "Estimation Results" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Results" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });

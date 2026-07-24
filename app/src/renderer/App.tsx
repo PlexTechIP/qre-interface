@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { RunConfig, RunResult } from "../shared/types";
+import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import { ResultsPage } from "./results/ResultsPage";
@@ -57,6 +57,15 @@ export function App() {
 
   const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
     setLatestRun({ config, result });
+    // Surface the finished run on the Results page (and move the sidebar there).
+    setActivePage("results");
+  }, []);
+
+  // Opening a saved run from History shows it on the Results page too, so the
+  // sidebar always reflects where the run detail is displayed.
+  const handleViewRun = useCallback((record: RunRecord): void => {
+    setLatestRun({ config: record.config, result: record.result });
+    setActivePage("results");
   }, []);
 
   // History and Comparison are two views of the same store, so a selection made
@@ -129,6 +138,7 @@ export function App() {
               view={activePage === "comparison" ? "comparison" : "history"}
               onViewChange={setActivePage}
               onNavigateToConfig={() => setActivePage("config")}
+              onViewRun={handleViewRun}
               onRerunRequest={({ sourceRecord, config }) => {
                 setRerunConfig({
                   ...config,
