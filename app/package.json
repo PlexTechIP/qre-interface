@@ -18,7 +18,8 @@
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "recharts": "^3.10.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.9.1",

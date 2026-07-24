@@ -1,0 +1,290 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+ 
+import { InMemoryRunStore } from "../../shared/runStore";
+import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
+import {
+  reconstructConfig,
+  type RunConfig,
+  type RunFilter,
+  type RunRecord,
+  type RunStore,
+} from "../../shared/types";
+import { RunHistoryList } from "./RunHistoryList";
+import { RunHistoryFilters } from "./RunHistoryFilters";
+import { RunDetailPanel } from "./RunDetailPanel";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { ExportStubDialog } from "./ExportStubDialog";
+import { RerunDialog } from "./RerunDialog";
+import { ComparisonView } from "./ComparisonView";
+import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
+ 
+/**
+ * Phase 1 container for the Run History + Comparison surfaces.
+ *
+ * This is the ONLY place that knows a store exists. It instantiates the
+ * InMemoryRunStore (seeded with the committed mock records), talks to it
+ * exclusively through the `RunStore` interface, and hands its children plain
+ * data + callbacks. When the real SQLite store swaps in at week-4 integration,
+ * only this file changes — the History list and Comparison view are pure
+ * functions of `records` + callbacks and never learn where the records came
+ * from. Placement of this container into the app shell (App.tsx tabs) is itself
+ * week-4 work; this file is the seam, not the wiring.
+ */
+ 
+/** A Rerun handoff payload: the reconstructed pre-fill config for a new run. */
+export interface RerunRequest {
+  sourceRecord: RunRecord;
+  config: RunConfig;
+}
+ 
+function makeStamp(): { id: string; createdAt: string } {
+  return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+}
+ 
+export function RunHistoryContainer() {
+  // The store is created once and never recreated across renders. Kept behind
+  // the RunStore type so nothing here depends on it being in-memory.
+  const [store] = useState<RunStore>(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
+ 
+  const [records, setRecords] = useState<RunRecord[]>([]);
+  // The full, unfiltered record set — used only to derive the filter bar's
+  // option lists ("what values exist at all"), so dropdowns don't shrink as
+  // filters combine. Loaded once; refreshed after a delete so a removed run's
+  // now-absent value can drop out of the options.
+  const [allRecords, setAllRecords] = useState<RunRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+ 
+  const [filter, setFilter] = useState<RunFilter>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+ 
+  // Multi-select for Comparison: the set of record ids checked in History.
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+ 
+  // The Rerun handoff payload, surfaced this week instead of navigated (week-4).
+  const [rerunRequest, setRerunRequest] = useState<RerunRequest | null>(null);
+
+  // The record awaiting delete confirmation (null = no pending delete).
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // The record whose Export-Markdown stub preview is open (null = closed).
+  const [exportRecord, setExportRecord] = useState<RunRecord | null>(null);
+
+  // Which of Team 1's two tabs is showing. Real app-shell tab placement is
+  // week-4 integration; this local toggle keeps both surfaces demonstrable here.
+  const [view, setView] = useState<"history" | "comparison">("history");
+  // Whether the comparison-set export stub preview is open.
+  const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
+ 
+  /**
+   * Re-read the store through the query API so the view always reflects stored
+   * state (post-delete especially). Runs the active filter server-side, exactly
+   * as the real SQLite store will.
+   */
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      // Filtered set feeds the table; full set feeds the filter-bar options.
+      const [filtered, all] = await Promise.all([store.query(filter), store.list()]);
+      setRecords(filtered);
+      setAllRecords(all);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Failed to load runs.");
+      setRecords([]);
+      setAllRecords([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [store, filter]);
+ 
+  // Reload whenever the filter changes (initial load included).
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+ 
+  // Drop the open selection if its record leaves the visible set (deleted, or
+  // hidden by a filter). The comparison set self-heals separately: comparisonRecords
+  // resolves ids against the present records, and delete prunes comparisonIds.
+  const visibleIds = useMemo(() => new Set(records.map((r) => r.id)), [records]);
+ 
+  useEffect(() => {
+    if (selectedId !== null && !visibleIds.has(selectedId)) {
+      setSelectedId(null);
+    }
+  }, [selectedId, visibleIds]);
+ 
+  // ---- Per-run action callbacks handed down to the History list -----------
+ 
+  const onViewDetails = useCallback((id: string) => {
+    setSelectedId(id);
+  }, []);
+ 
+  // Delete is destructive and records are immutable, so it goes behind an
+  // explicit confirm: the list/detail request it, the dialog's onConfirm runs it.
+  const requestDelete = useCallback((id: string) => setPendingDeleteId(id), []);
+  const cancelDelete = useCallback(() => setPendingDeleteId(null), []);
+  const confirmDelete = useCallback(async () => {
+    if (pendingDeleteId === null) return;
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    await store.delete(id);
+    setComparisonIds((ids) => ids.filter((existing) => existing !== id));
+    // Close the detail view if we were viewing the run we just removed.
+    setSelectedId((current) => (current === id ? null : current));
+    await refresh();
+  }, [pendingDeleteId, store, refresh]);
+ 
+  const onRerun = useCallback((record: RunRecord) => {
+    // reconstructConfig is PROVIDED — call it, never re-implement. It carries
+    // the saved config forward with a fresh id + createdAt for the new run.
+    const config = reconstructConfig(record, makeStamp());
+    // This week we surface the reconstructed payload; wiring it into the live
+    // Run Configuration form is week-4 integration.
+    setRerunRequest({ sourceRecord: record, config });
+  }, []);
+ 
+  const onExport = useCallback((record: RunRecord) => {
+    // Seam only — the real Markdown generator is Part 3 (week 6). Opens the stub
+    // preview dialog; nothing is generated here.
+    setExportRecord(record);
+  }, []);
+ 
+  // ---- Comparison selection helpers ---------------------------------------
+ 
+  const toggleComparison = useCallback((id: string) => {
+    setComparisonIds((ids) =>
+      ids.includes(id) ? ids.filter((existing) => existing !== id) : [...ids, id],
+    );
+  }, []);
+ 
+  const clearComparison = useCallback(() => setComparisonIds([]), []);
+ 
+  // The records currently chosen for comparison, in selection order, filtered
+  // to those still present (a deleted record drops out of the set).
+  const comparisonRecords = useMemo(
+    () => comparisonIds.map((id) => records.find((r) => r.id === id)).filter((r): r is RunRecord => r != null),
+    [comparisonIds, records],
+  );
+ 
+  const selectedRecord = useMemo(
+    () => (selectedId == null ? null : records.find((r) => r.id === selectedId) ?? null),
+    [selectedId, records],
+  );
+ 
+  // The record awaiting delete confirmation, resolved from its id for the dialog.
+  const pendingDeleteRecord = useMemo(
+    () => (pendingDeleteId == null ? null : records.find((r) => r.id === pendingDeleteId) ?? null),
+    [pendingDeleteId, records],
+  );
+
+  // Total count is needed to distinguish "no runs yet" from "no matches":
+  // records.length reflects the active filter, so an unfiltered empty store is
+  // the true empty state. Children receive both signals.
+  const hasActiveFilter = useMemo(
+    () =>
+      Boolean(
+        filter.nameSearch?.trim() ||
+          filter.application ||
+          filter.architecture ||
+          filter.qecCode ||
+          filter.magicStateFactory ||
+          filter.qreVersion,
+      ),
+    [filter],
+  );
+ 
+  return (
+    <div className="run-history-container">
+      <header className="surface-header">
+        <h1>{view === "history" ? "Run History" : "Comparison"}</h1>
+        <p>Search, filter, rerun, export, or select runs for comparison.</p>
+      </header>
+
+      {/*
+        Team 1 owns two tabs (History + Comparison). Wiring them into the app
+        shell is week-4 integration; this local tab strip keeps both surfaces
+        reachable and demonstrable in the meantime.
+      */}
+      <div className="surface-tabs" role="tablist" aria-label="Run surfaces">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "history"}
+          className={view === "history" ? "surface-tab active" : "surface-tab"}
+          onClick={() => setView("history")}
+        >
+          History
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "comparison"}
+          className={view === "comparison" ? "surface-tab active" : "surface-tab"}
+          onClick={() => setView("comparison")}
+        >
+          Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+        </button>
+      </div>
+
+      {loadError ? <p role="alert">{loadError}</p> : null}
+      {isLoading ? <p className="muted">Loading runs…</p> : null}
+
+      {/*
+        Master-detail (History tab): a selected record swaps the list for the
+        detail view (View Details). Otherwise the search + filter bar + list show.
+        The Comparison tab is a pure function of the checked records.
+      */}
+      {view === "comparison" ? (
+        <ComparisonView
+          records={comparisonRecords}
+          onClear={clearComparison}
+          onRemove={toggleComparison}
+          onExport={() => setIsComparisonExportOpen(true)}
+        />
+      ) : selectedRecord ? (
+        <RunDetailPanel
+          record={selectedRecord}
+          onClose={() => setSelectedId(null)}
+          onRerun={onRerun}
+          onExport={onExport}
+          onDelete={requestDelete}
+        />
+      ) : (
+        <>
+          <RunHistoryFilters allRecords={allRecords} filter={filter} onFilterChange={setFilter} />
+          <RunHistoryList
+            records={records}
+            selectedId={selectedId}
+            comparisonIds={comparisonIds}
+            hasActiveFilter={hasActiveFilter}
+            onViewDetails={onViewDetails}
+            onRerun={onRerun}
+            onDelete={requestDelete}
+            onExport={onExport}
+            onToggleComparison={toggleComparison}
+          />
+        </>
+      )}
+
+      {pendingDeleteRecord ? (
+        <DeleteConfirmDialog
+          record={pendingDeleteRecord}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
+        />
+      ) : null}
+      {exportRecord ? (
+        <ExportStubDialog record={exportRecord} onClose={() => setExportRecord(null)} />
+      ) : null}
+      {rerunRequest ? (
+        <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
+      ) : null}
+      {isComparisonExportOpen ? (
+        <ComparisonExportStubDialog
+          records={comparisonRecords}
+          onClose={() => setIsComparisonExportOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
