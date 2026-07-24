@@ -17,6 +17,7 @@ import {
   type MagicStateFactoryId,
   type MajoranaArchitecture,
   type QecCodeId,
+  type RunConfig,
   type TraceTransformType,
   type UploadedProgramFormat,
 } from "../../shared/types";
@@ -135,6 +136,66 @@ export function createInitialFormState(): FormState {
     },
     maxError: 1.0,
   };
+}
+
+/** Rehydrate an immutable saved config into the editable form used by Rerun. */
+export function formStateFromRunConfig(config: RunConfig): FormState {
+  const initial = createInitialFormState();
+  const application: ApplicationForm =
+    config.application.type === "benchmark"
+      ? {
+          ...initial.application,
+          type: "benchmark",
+          benchmarkId: config.application.benchmarkId,
+        }
+      : {
+          ...initial.application,
+          type: "uploaded",
+          upload: {
+            filePath: config.application.filePath,
+            format: config.application.format,
+            addToLibrary: config.application.addToLibrary,
+          },
+        };
+
+  const architecture: ArchitectureForm =
+    config.architecture.type === "gateBased"
+      ? {
+          ...initial.architecture,
+          type: "gateBased",
+          gateBased: {
+            errorRate: config.architecture.errorRate,
+            gateTime: config.architecture.gateTime,
+            measurementTime: config.architecture.measurementTime,
+            twoQubitGateTime: config.architecture.twoQubitGateTime ?? null,
+          },
+        }
+      : {
+          ...initial.architecture,
+          type: "majorana",
+          majorana: {
+            errorRate: config.architecture.errorRate,
+            operationTime: config.architecture.operationTime,
+          },
+        };
+
+  return normalizeFormState({
+    name: config.name,
+    application,
+    architecture,
+    magicStateFactory: config.magicStateFactory,
+    traceTransform: {
+      type: config.traceTransform.type,
+      psspc:
+        config.traceTransform.type === "psspc"
+          ? {
+              tStatesPerRotation: config.traceTransform.tStatesPerRotation,
+              ccxMagicStates: config.traceTransform.ccxMagicStates,
+            }
+          : initial.traceTransform.psspc,
+    },
+    maxError: config.maxError,
+  });
 }
 
 /**

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { InMemoryRunStore } from "../shared/runStore";
-import { makeRunRecord, type RunConfig, type RunResult, type RunStore } from "../shared/types";
+import type { RunConfig, RunResult } from "../shared/types";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import { ResultsPage } from "./results/ResultsPage";
@@ -44,33 +43,24 @@ export function App() {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState<Page>("config");
 
-  // The single shared run store: created empty, populated as runs finish. The
-  // History/Comparison surfaces read from it; the Run flow saves into it.
-  const [store] = useState<RunStore>(() => new InMemoryRunStore());
+  // The most recent finished run, surfaced on the Results page. The Run flow
+  // (useRunFlow) already persists every finished run to the real SQLite store
+  // over IPC (window.store); here we only capture it for the Results page.
   const [latestRun, setLatestRun] = useState<{ config: RunConfig; result: RunResult } | null>(null);
+  // A reconstructed config queued by a Rerun, pre-filled into the form.
+  const [rerunConfig, setRerunConfig] = useState<RunConfig | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
-  const handleRunComplete = useCallback(
-    (config: RunConfig, result: RunResult): void => {
-      setLatestRun({ config, result });
-      try {
-        const record = makeRunRecord(config, result, new Date().toISOString());
-        // Fire-and-forget; a duplicate id (same run re-reported) is harmless.
-        void store.save(record).catch(() => undefined);
-      } catch {
-        // Mismatched (config, result) pair — defensive; not expected in practice.
-      }
-    },
-    [store],
-  );
+  const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
+    setLatestRun({ config, result });
+  }, []);
 
-  // History and Comparison are two views of the same store instance, so a
-  // selection made in History carries into Comparison. Remounting on view
-  // change is avoided by keying on "history-comparison" (stable).
+  // History and Comparison are two views of the same store, so a selection made
+  // in History carries into Comparison.
   const showHistorySurface = activePage === "history" || activePage === "comparison";
 
   return (
@@ -128,17 +118,25 @@ export function App() {
 
         <section className="workspace">
           {activePage === "config" ? (
-            <RunConfiguration onRunComplete={handleRunComplete} />
+            <RunConfiguration onRunComplete={handleRunComplete} initialConfig={rerunConfig} />
           ) : null}
           {activePage === "results" ? (
             <ResultsPage latestRun={latestRun} onRunEstimation={() => setActivePage("config")} />
           ) : null}
           {showHistorySurface ? (
             <RunHistoryContainer
-              store={store}
+              store={window.store}
               view={activePage === "comparison" ? "comparison" : "history"}
               onViewChange={setActivePage}
               onNavigateToConfig={() => setActivePage("config")}
+              onRerunRequest={({ sourceRecord, config }) => {
+                setRerunConfig({
+                  ...config,
+                  name: `${sourceRecord.config.name} · rerun`,
+                });
+                setActivePage("config");
+              }}
+              exportMode="complete"
             />
           ) : null}
         </section>

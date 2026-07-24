@@ -12,10 +12,12 @@
   --color-shadow-soft: rgb(15 23 42 / 10%);
   --color-muted: #64748b;
   --color-muted-strong: #475569;
-  --color-label: #94a3b8;
-  --color-label-soft: #94a3b8;
+  /* Label tokens darkened from #94a3b8 to clear WCAG AA (4.5:1) on white for
+     small uppercase labels/units, while staying lighter than --color-body. */
+  --color-label: #5f6d82;
+  --color-label-soft: #5f6d82;
   --color-faint: #cbd5e1;
-  --color-faint-label: #94a3b8;
+  --color-faint-label: #5f6d82;
   --color-body: #334155;
   --color-button-text: #475569;
   --color-row-index: #94a3b8;
@@ -94,6 +96,8 @@
 
 body {
   margin: 0;
+  min-width: 320px;
+  overflow-x: hidden;
 }
 
 button,
@@ -327,7 +331,16 @@ select {
 }
 
 .workspace {
+  min-width: 0;
   padding: 16px 32px 40px;
+}
+
+.workspace > div,
+.results-page,
+.run-history-container,
+.run-detail,
+.comparison-view {
+  min-width: 0;
 }
 
 .fixture-toolbar {
@@ -383,6 +396,10 @@ select {
 .placeholder-copy,
 .muted {
   color: var(--color-muted);
+}
+
+.empty-state .run-button {
+  margin-top: 8px;
 }
 
 .results-page {
@@ -483,6 +500,7 @@ select {
 }
 
 .panel {
+  min-width: 0;
   min-height: 220px;
   padding: 18px;
 }
@@ -854,6 +872,18 @@ select {
   padding: 24px;
 }
 
+.state-card > strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-heading);
+  font-size: 15px;
+}
+
+.state-card > p {
+  margin: 0 0 22px;
+  line-height: 1.45;
+}
+
 .alert-card {
   border-color: var(--color-danger-border);
   background: var(--color-danger-bg);
@@ -1005,7 +1035,19 @@ select {
   }
 
   .sidebar {
-    display: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .nav-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px 16px;
+  }
+
+  .nav-list button {
+    padding: 9px 10px;
+    text-align: center;
   }
 
   .metric-grid {
@@ -2137,6 +2179,16 @@ input[type="range"]:focus-visible,
   color: var(--color-accent);
 }
 
+.validation-box--pending {
+  border: 1px solid var(--color-input-border);
+  background: var(--color-well-bg);
+  color: var(--color-body);
+}
+
+.validation-box--pending strong {
+  color: var(--color-heading);
+}
+
 .validation-box--error {
   border: 1px solid var(--color-danger-border);
   background: var(--color-danger-bg);
@@ -2355,6 +2407,7 @@ input[type="range"]:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .surface-header {
@@ -2488,12 +2541,16 @@ input[type="range"]:focus-visible,
 }
 
 .history-table-scroll {
+  width: 100%;
+  max-width: 100%;
   margin-top: 14px;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
 }
 
 .history-table {
   width: 100%;
+  min-width: 1180px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -2841,7 +2898,10 @@ button.danger:hover {
 }
 
 .comparison-table-scroll {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
 }
 
 .comparison-table {
@@ -2895,6 +2955,7 @@ button.danger:hover {
 }
 
 .comparison-chart {
+  min-width: 0;
   margin: 0;
   border: 1px solid var(--color-hairline);
   border-radius: 10px;
@@ -2928,4 +2989,67 @@ button.danger:hover {
 .comparison-tooltip span {
   color: var(--color-body);
   font-variant-numeric: tabular-nums;
+}
+
+.history-panel .empty-state,
+.comparison-view .empty-state {
+  margin: 16px auto 0;
+  padding: 32px 28px;
+  box-shadow: none;
+}
+
+@media (max-width: 700px) {
+  .top-header {
+    height: 60px;
+    padding: 0 16px;
+  }
+
+  .brand {
+    font-size: 14px;
+  }
+
+  .workspace {
+    padding: 16px 16px 32px;
+  }
+
+  .nav-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .results-header,
+  .panel-header,
+  .detail-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .solution-pill {
+    align-self: flex-start;
+  }
+
+  .metric-grid,
+  .detail-grid,
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-actions,
+  .detail-actions,
+  .run-flow__actions {
+    flex-wrap: wrap;
+  }
+
+  .filter-toggle {
+    width: 100%;
+    justify-content: space-between;
+    white-space: normal;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal-card {
+    max-height: 90vh;
+  }
 }

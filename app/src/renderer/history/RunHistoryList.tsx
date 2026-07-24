@@ -67,7 +67,7 @@ export function RunHistoryList({
       <div className="panel-header">
         <div>
           <h2 id="history-list-title">Completed Runs</h2>
-          <p>Selected row opens in Details; check runs to compare.</p>
+          <p>Select a run to open details; check two or more to compare.</p>
         </div>
         <span className="muted">
           {records.length} run{records.length === 1 ? "" : "s"}

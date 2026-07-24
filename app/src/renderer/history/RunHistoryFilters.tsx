@@ -5,6 +5,7 @@ import {
   type RunFilter,
   type RunRecord,
 } from "../../shared/types";
+import { findBenchmark } from "../constants/staticOptions";
 import { ARCHITECTURE_LABELS, FACTORY_LABELS, QEC_LABELS } from "./historyLabels";
  
 /**
@@ -45,9 +46,10 @@ function distinct(
 }
  
 function applicationLabel(key: string): string {
-  return key.startsWith("uploaded:")
-    ? `Uploaded: ${key.slice("uploaded:".length).split("/").pop()}`
-    : key;
+  if (key.startsWith("uploaded:")) {
+    return `Uploaded: ${key.slice("uploaded:".length).split(/[\\/]/).pop()}`;
+  }
+  return findBenchmark(key)?.name ?? key;
 }
  
 export function RunHistoryFilters({ allRecords, filter, onFilterChange }: RunHistoryFiltersProps) {

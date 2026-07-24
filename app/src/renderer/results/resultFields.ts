@@ -1,4 +1,10 @@
 import type { FieldMetric, FrontierRow, RunConfig } from "../../shared/types";
+import {
+  ARCHITECTURE_LABELS,
+  MAGIC_STATE_FACTORY_LABELS,
+  QEC_LABELS,
+} from "../constants/labels";
+import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
 
 export interface ResultFieldDefinition {
   key: string;
@@ -206,8 +212,16 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
   return [
     { label: "Application", value: summarizeApplication(config.application) },
     { label: "Architecture", value: summarizeArchitecture(config.architecture) },
-    { label: "QEC Code", value: humanizeIdentifier(config.qecCode) },
-    { label: "Factory", value: humanizeIdentifier(config.magicStateFactory) },
+    {
+      label: "QEC Code",
+      value: QEC_LABELS[config.qecCode] ?? humanizeIdentifier(config.qecCode),
+    },
+    {
+      label: "Factory",
+      value:
+        MAGIC_STATE_FACTORY_LABELS[config.magicStateFactory] ??
+        humanizeIdentifier(config.magicStateFactory),
+    },
     { label: "Trace Transform", value: summarizeTransform(config.traceTransform) },
     { label: "Max Error", value: String(config.maxError) },
     { label: "QRE Version", value: qreVersion },
@@ -216,18 +230,19 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
 
 function summarizeApplication(application: RunConfig["application"]): string {
   if (application.type === "uploaded") {
-    return `${application.format.toUpperCase()} upload`;
+    const fileName =
+      application.filePath.split(/[\\/]/).pop() ?? application.filePath;
+    return `${fileName} (${FORMAT_LABELS[application.format]})`;
   }
 
-  return humanizeIdentifier(application.benchmarkId);
+  return (
+    findBenchmark(application.benchmarkId)?.name ??
+    humanizeIdentifier(application.benchmarkId)
+  );
 }
 
 function summarizeArchitecture(architecture: RunConfig["architecture"]): string {
-  if (architecture.type === "majorana") {
-    return `Majorana, error ${architecture.errorRate}`;
-  }
-
-  return `Gate-based, error ${architecture.errorRate}`;
+  return `${ARCHITECTURE_LABELS[architecture.type]}, error ${architecture.errorRate}`;
 }
 
 function summarizeTransform(transform: RunConfig["traceTransform"]): string {

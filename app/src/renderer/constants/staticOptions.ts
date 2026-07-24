@@ -53,7 +53,10 @@ function toBenchmarks(raw: typeof benchmarksData.benchmarks): readonly Benchmark
     return {
       id: entry.id,
       name: entry.name,
-      description: entry.description,
+      description:
+        entry.id === "quantum-dynamics"
+          ? "Simulation benchmark for Hamiltonian dynamics and other time-evolution workloads."
+          : entry.description,
       keywords: entry.keywords,
     };
   });

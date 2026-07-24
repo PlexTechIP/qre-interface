@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   EstimatorService,
   RunConfig,
@@ -45,3 +45,10 @@ const store: RunStore = {
 
 contextBridge.exposeInMainWorld("estimator", estimator);
 contextBridge.exposeInMainWorld("store", store);
+contextBridge.exposeInMainWorld("files", {
+  getPathForFile(
+    file: Parameters<typeof webUtils.getPathForFile>[0],
+  ): string {
+    return webUtils.getPathForFile(file);
+  },
+});

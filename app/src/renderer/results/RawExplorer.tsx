@@ -12,7 +12,7 @@ export function RawExplorer({ raw }: RawExplorerProps) {
       <div className="panel-header">
         <div>
           <h2 id="raw-explorer-title">Full Engine Output</h2>
-          <p>Everything the QRE engine reported for this run, verbatim — nothing here is filtered.</p>
+          <p>Inspect the complete engine response when you need diagnostic detail.</p>
         </div>
       </div>
       {raw === null ? (
@@ -25,7 +25,7 @@ export function RawExplorer({ raw }: RawExplorerProps) {
       ) : (
         <div className="raw-groups">
           {groups.map(([key, value]) => (
-            <details key={key} className="raw-group" open>
+            <details key={key} className="raw-group">
               <summary>{humanizeKey(key)}</summary>
               <div className="raw-group-body">
                 <JsonNode value={value} />

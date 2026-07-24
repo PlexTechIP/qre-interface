@@ -2,6 +2,7 @@ import type { FieldErrors } from "../state/validation";
 
 interface ValidationSummaryProps {
   errors: FieldErrors;
+  pending?: boolean;
 }
 
 const LABELS: Record<Exclude<keyof FieldErrors, "hyperparams">, string> = {
@@ -20,6 +21,7 @@ const LABELS: Record<Exclude<keyof FieldErrors, "hyperparams">, string> = {
 /** Inline error box — lists every unresolved field so there's no dead end. */
 export function ValidationSummary({
   errors,
+  pending = false,
 }: ValidationSummaryProps): React.JSX.Element {
   const { hyperparams, ...scalarErrors } = errors;
   const entries: { key: string; label: string; message: string }[] = [];
@@ -42,10 +44,20 @@ export function ValidationSummary({
   }
 
   return (
-    <div className="validation-box validation-box--error" role="alert">
+    <div
+      className={`validation-box ${
+        pending ? "validation-box--pending" : "validation-box--error"
+      }`}
+      role={pending ? "status" : "alert"}
+    >
       <strong>
-        Resolve {entries.length} {entries.length === 1 ? "issue" : "issues"} to
-        run:
+        {pending
+          ? `Complete ${entries.length} required ${
+              entries.length === 1 ? "field" : "fields"
+            } to run:`
+          : `Resolve ${entries.length} ${
+              entries.length === 1 ? "issue" : "issues"
+            } to run:`}
       </strong>
       <ul>
         {entries.map((entry) => (
