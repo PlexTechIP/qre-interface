@@ -15,6 +15,8 @@ import { RunDetailPanel } from "./RunDetailPanel";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { ExportStubDialog } from "./ExportStubDialog";
 import { RerunDialog } from "./RerunDialog";
+import { ComparisonView } from "./ComparisonView";
+import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
  
 /**
  * Phase 1 container for the Run History + Comparison surfaces.
@@ -66,6 +68,12 @@ export function RunHistoryContainer() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // The record whose Export-Markdown stub preview is open (null = closed).
   const [exportRecord, setExportRecord] = useState<RunRecord | null>(null);
+
+  // Which of Team 1's two tabs is showing. Real app-shell tab placement is
+  // week-4 integration; this local toggle keeps both surfaces demonstrable here.
+  const [view, setView] = useState<"history" | "comparison">("history");
+  // Whether the comparison-set export stub preview is open.
+  const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
  
   /**
    * Re-read the store through the query API so the view always reflects stored
@@ -168,12 +176,6 @@ export function RunHistoryContainer() {
     [pendingDeleteId, records],
   );
 
-  // Consumed in Phase 5 (Comparison): `comparisonRecords` + `clearComparison`
-  // feed the Comparison surface. Referenced here so strict noUnusedLocals stays
-  // green until then.
-  void comparisonRecords;
-  void clearComparison;
- 
   // Total count is needed to distinguish "no runs yet" from "no matches":
   // records.length reflects the active filter, so an unfiltered empty store is
   // the true empty state. Children receive both signals.
@@ -193,20 +195,52 @@ export function RunHistoryContainer() {
   return (
     <div className="run-history-container">
       <header className="surface-header">
-        <h1>Run History</h1>
+        <h1>{view === "history" ? "Run History" : "Comparison"}</h1>
         <p>Search, filter, rerun, export, or select runs for comparison.</p>
       </header>
- 
+
+      {/*
+        Team 1 owns two tabs (History + Comparison). Wiring them into the app
+        shell is week-4 integration; this local tab strip keeps both surfaces
+        reachable and demonstrable in the meantime.
+      */}
+      <div className="surface-tabs" role="tablist" aria-label="Run surfaces">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "history"}
+          className={view === "history" ? "surface-tab active" : "surface-tab"}
+          onClick={() => setView("history")}
+        >
+          History
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "comparison"}
+          className={view === "comparison" ? "surface-tab active" : "surface-tab"}
+          onClick={() => setView("comparison")}
+        >
+          Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+        </button>
+      </div>
+
       {loadError ? <p role="alert">{loadError}</p> : null}
       {isLoading ? <p className="muted">Loading runs…</p> : null}
- 
+
       {/*
-        Master-detail: a selected record swaps the list for the detail view
-        (View Details, Phase 4). Otherwise the search + filter bar + list show.
-        Phase 5 adds <ComparisonView records={comparisonRecords}
-        onClear={clearComparison} />.
+        Master-detail (History tab): a selected record swaps the list for the
+        detail view (View Details). Otherwise the search + filter bar + list show.
+        The Comparison tab is a pure function of the checked records.
       */}
-      {selectedRecord ? (
+      {view === "comparison" ? (
+        <ComparisonView
+          records={comparisonRecords}
+          onClear={clearComparison}
+          onRemove={toggleComparison}
+          onExport={() => setIsComparisonExportOpen(true)}
+        />
+      ) : selectedRecord ? (
         <RunDetailPanel
           record={selectedRecord}
           onClose={() => setSelectedId(null)}
@@ -243,6 +277,12 @@ export function RunHistoryContainer() {
       ) : null}
       {rerunRequest ? (
         <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
+      ) : null}
+      {isComparisonExportOpen ? (
+        <ComparisonExportStubDialog
+          records={comparisonRecords}
+          onClose={() => setIsComparisonExportOpen(false)}
+        />
       ) : null}
     </div>
   );

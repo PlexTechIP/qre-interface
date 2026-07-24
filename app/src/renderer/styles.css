@@ -1913,3 +1913,184 @@ button.danger:hover {
   word-break: break-word;
   overflow-x: auto;
 }
+
+/* ---- Surface tab strip (History / Comparison) --------------------------- */
+
+.surface-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.surface-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.surface-tab:hover {
+  color: var(--color-text);
+}
+
+.surface-tab.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ---- Comparison surface ------------------------------------------------- */
+
+.comparison-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.comparison-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.comparison-actions button {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.comparison-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.comparison-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.comparison-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 999px;
+  background: var(--color-accent-bg);
+  color: var(--color-text);
+  padding: 4px 6px 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.chip-remove:hover {
+  color: var(--color-danger-text);
+}
+
+.comparison-table-scroll {
+  overflow-x: auto;
+}
+
+.comparison-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.comparison-table th,
+.comparison-table td {
+  border: 1px solid var(--color-hairline);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.comparison-table thead th {
+  background: var(--color-table-head-bg);
+  position: sticky;
+  top: 0;
+}
+
+.comparison-table .field-col {
+  background: var(--color-well-bg);
+  white-space: nowrap;
+}
+
+.comparison-table td.num,
+.comparison-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-run-name {
+  display: block;
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.comparison-run-meta {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.comparison-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.comparison-chart {
+  margin: 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: 10px;
+  padding: 12px 12px 4px;
+  background: var(--color-surface);
+}
+
+.comparison-chart figcaption {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-heading);
+  margin-bottom: 6px;
+}
+
+.comparison-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: 0 4px 14px var(--color-shadow-soft);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.comparison-tooltip strong {
+  color: var(--color-heading);
+}
+
+.comparison-tooltip span {
+  color: var(--color-body);
+  font-variant-numeric: tabular-nums;
+}
