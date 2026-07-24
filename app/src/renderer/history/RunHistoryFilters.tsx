@@ -5,6 +5,7 @@ import {
   type RunFilter,
   type RunRecord,
 } from "../../shared/types";
+import { ARCHITECTURE_LABELS, FACTORY_LABELS, QEC_LABELS } from "./historyLabels";
  
 /**
  * The Run History search + filter bar — a PURE function of the full record set
@@ -24,20 +25,6 @@ export interface RunHistoryFiltersProps {
   filter: RunFilter;
   onFilterChange: (next: RunFilter) => void;
 }
- 
-/** Human labels, kept local (not contract types). Unknown ids fall back to the raw key. */
-const ARCHITECTURE_LABELS: Record<string, string> = {
-  gateBased: "Superconducting",
-  majorana: "Majorana",
-};
-const QEC_LABELS: Record<string, string> = {
-  surface_code: "Surface Code",
-  three_aux: "Three-Aux",
-};
-const FACTORY_LABELS: Record<string, string> = {
-  round_based: "Round-Based",
-  litinski19: "Litinski19",
-};
  
 interface Option {
   value: string;

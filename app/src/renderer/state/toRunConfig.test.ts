@@ -147,6 +147,83 @@ describe("toRunConfig — architecture variants", () => {
   });
 });
 
+describe("toRunConfig — Majorana cases", () => {
+  /** A Majorana draft (operationTime is defaulted, unlike GateBased's times). */
+  function majoranaDraft(): FormState {
+    const s = createInitialFormState();
+    s.architecture.type = "majorana";
+    return s;
+  }
+
+  // The three error rates the contract allows for Majorana hardware.
+  const MAJORANA_ERROR_RATES = [0.0001, 0.00001, 0.000001] as const;
+  for (const errorRate of MAJORANA_ERROR_RATES) {
+    it(`serializes a schema-valid config at errorRate ${errorRate}`, () => {
+      const s = majoranaDraft();
+      s.architecture.majorana.errorRate = errorRate;
+      const config = expectSchemaValid(s);
+      expect(config.architecture).toEqual({
+        type: "majorana",
+        errorRate,
+        operationTime: 1000,
+      });
+    });
+  }
+
+  it("carries a changed operationTime", () => {
+    const s = majoranaDraft();
+    s.architecture.majorana.operationTime = 250;
+    expect(expectSchemaValid(s).architecture).toMatchObject({
+      operationTime: 250,
+    });
+  });
+
+  it("never carries a GateBased-only field (no twoQubitGateTime key)", () => {
+    const config = expectSchemaValid(majoranaDraft());
+    expect(config.architecture).not.toHaveProperty("twoQubitGateTime");
+  });
+
+  it("derives Three-Aux QEC regardless of factory selection", () => {
+    const s = majoranaDraft();
+    s.magicStateFactory = "litinski19"; // not allowed on Majorana
+    const config = expectSchemaValid(s);
+    expect(config.qecCode).toBe("three_aux");
+    expect(config.magicStateFactory).toBe("round_based");
+  });
+
+  it("auto-names a Majorana run with its derived architecture + QEC", () => {
+    expect(serialize(majoranaDraft())?.name).toBe(
+      "Shor's Factoring · Majorana · Three-Aux · PSSPC",
+    );
+  });
+
+  it("serializes Majorana with the Lattice Surgery transform", () => {
+    const s = majoranaDraft();
+    s.traceTransform.type = "latticeSurgery";
+    const config = expectSchemaValid(s);
+    expect(config.architecture.type).toBe("majorana");
+    expect(config.traceTransform).toEqual({
+      type: "latticeSurgery",
+      slowDownFactor: 1.0,
+    });
+  });
+
+  it("returns null when operationTime is missing", () => {
+    const s = majoranaDraft();
+    s.architecture.majorana.operationTime = null;
+    expect(serialize(s)).toBeNull();
+  });
+
+  it("serializes an out-of-range Majorana errorRate but the schema rejects it", () => {
+    const s = majoranaDraft();
+    // Structurally complete but not one of the allowed 1e-4/1e-5/1e-6 rates.
+    (s.architecture.majorana as { errorRate: number }).errorRate = 0.5;
+    const config = serialize(s);
+    expect(config).not.toBeNull();
+    expect(validateRunConfigSchema(config!).valid).toBe(false);
+  });
+});
+
 describe("toRunConfig — transform variants", () => {
   it("serializes PSSPC (default)", () => {
     expect(expectSchemaValid(validGateBasedDraft()).traceTransform.type).toBe(

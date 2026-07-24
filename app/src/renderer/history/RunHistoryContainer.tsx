@@ -102,8 +102,9 @@ export function RunHistoryContainer() {
     void refresh();
   }, [refresh]);
  
-  // Keep selection and comparison sets honest if their records disappear
-  // (e.g. after a delete or a filter that hides them).
+  // Drop the open selection if its record leaves the visible set (deleted, or
+  // hidden by a filter). The comparison set self-heals separately: comparisonRecords
+  // resolves ids against the present records, and delete prunes comparisonIds.
   const visibleIds = useMemo(() => new Set(records.map((r) => r.id)), [records]);
  
   useEffect(() => {

@@ -1,5 +1,11 @@
-import type { RunConfig, RunRecord } from "../../shared/types";
+import type { RunRecord } from "../../shared/types";
 import { formatMetric } from "../results/formatMetric";
+import {
+  ARCHITECTURE_LABELS,
+  FACTORY_LABELS,
+  QEC_LABELS,
+  applicationLabel,
+} from "./historyLabels";
  
 /**
  * The Run History list — a PURE function of records + selection + callbacks.
@@ -26,28 +32,6 @@ export interface RunHistoryListProps {
   onDelete: (id: string) => void;
   onExport: (record: RunRecord) => void;
   onToggleComparison: (id: string) => void;
-}
- 
-/** Human labels for the derived config fields (kept local; not contract types). */
-const ARCHITECTURE_LABELS: Record<string, string> = {
-  gateBased: "Superconducting",
-  majorana: "Majorana",
-};
- 
-const QEC_LABELS: Record<string, string> = {
-  surface_code: "Surface Code",
-  three_aux: "Three-Aux",
-};
- 
-const FACTORY_LABELS: Record<string, string> = {
-  round_based: "Round-Based",
-  litinski19: "Litinski19",
-};
- 
-function applicationLabel(config: RunConfig): string {
-  return config.application.type === "benchmark"
-    ? config.application.benchmarkId
-    : `Uploaded: ${config.application.filePath.split("/").pop() ?? config.application.filePath}`;
 }
  
 function formatDateTime(iso: string): string {

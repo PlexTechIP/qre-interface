@@ -1,4 +1,4 @@
-import { applicationKey, type FieldMetric, type FrontierRow, type RunConfig, type RunRecord } from "../../shared/types";
+import { applicationKey, type FieldMetric, type FrontierRow, type RunRecord } from "../../shared/types";
 import {
   DEFAULT_FIELD_DEFINITIONS,
   getAdditionalFieldDefinitions,
@@ -6,6 +6,7 @@ import {
   type ResultFieldDefinition,
 } from "../results/resultFields";
 import { formatMetric } from "../results/formatMetric";
+import { ARCHITECTURE_LABELS, applicationLabel } from "./historyLabels";
 
 /**
  * Pure derivation layer for the Comparison surface. It turns a selected set of
@@ -19,18 +20,6 @@ import { formatMetric } from "../results/formatMetric";
  * A failed run has no frontier, so its row is null and its cells/bars read as
  * "no data" rather than crashing.
  */
-
-/** Architecture display labels — mirrors the History list (Superconducting = gateBased). */
-const ARCHITECTURE_LABELS: Record<string, string> = {
-  gateBased: "Superconducting",
-  majorana: "Majorana",
-};
-
-function applicationLabel(config: RunConfig): string {
-  return config.application.type === "benchmark"
-    ? config.application.benchmarkId
-    : `Uploaded: ${config.application.filePath.split("/").pop() ?? config.application.filePath}`;
-}
 
 /** Truncated run name for a chart's category axis; the tooltip/table carry the full name. */
 export function shortName(name: string): string {

@@ -159,6 +159,59 @@ describe("Run flow", () => {
   });
 });
 
+describe("Failure path (Retry / Edit configuration)", () => {
+  const simulateFailureRadio = () =>
+    screen.getByRole("radio", { name: /simulate failure/i });
+
+  it("delivers a failed result at the seam with a way forward, and Retry re-runs", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    // Point the dev engine at the committed failure fixture, then run a valid config.
+    await user.click(simulateFailureRadio());
+    await fillRequiredTimes(user);
+    await user.click(runButton());
+
+    // Running state first, then the failed result renders through Team 2's Results
+    // surface (the "Run failed" chrome + the fixture's error code).
+    expect(screen.getByText(/running your estimate/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/run failed/i)).toBeInTheDocument();
+
+    // The failure is never a dead end: both recovery affordances are offered.
+    const retry = screen.getByRole("button", { name: /^retry$/i });
+    expect(retry).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /edit configuration/i }),
+    ).toBeEnabled();
+
+    // Retry re-runs the same config: back to the running state (engine mode is
+    // still "failed", so it resolves to the failure again — the point is it re-ran).
+    await user.click(retry);
+    expect(screen.getByText(/running your estimate/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("Edit configuration returns to the form from the failed state", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(simulateFailureRadio());
+    await fillRequiredTimes(user);
+    await user.click(runButton());
+    await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 });
+
+    await user.click(screen.getByRole("button", { name: /edit configuration/i }));
+
+    // Back on the form: the Run button (absent in the flow panel) is present again.
+    expect(runButton()).toBeInTheDocument();
+  });
+});
+
 describe("Configuration summary reflects the draft", () => {
   it("shows the derived QEC code, and updates it when architecture changes", async () => {
     const user = userEvent.setup();
