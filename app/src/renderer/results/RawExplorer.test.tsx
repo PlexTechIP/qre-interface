@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { RawExplorer } from "./RawExplorer";
-import { FIXTURE_SCENARIOS } from "./fixtures";
+import { RESULT_SCENARIOS as FIXTURE_SCENARIOS } from "../../shared/testing";
 
 const successScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "success");
 const failedScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "failed");

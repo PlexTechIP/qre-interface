@@ -1,7 +1,7 @@
 # `app/src/main/` — Run persistence + Rerun (SOW Part 2)
 
 The main-process, SQLite-backed implementation of the committed `RunStore`
-boundary (`contracts/types.ts`, copied into `app/src/shared/types.ts`). No UI
+boundary (`app/src/shared/types.ts`). No UI
 lives here — this is the store, the Rerun load path, and a runnable harness.
 See `docs/week-3/team-2/week-3-team-2-technical-brief.md` for the full brief.
 
@@ -12,7 +12,7 @@ See `docs/week-3/team-2/week-3-team-2-technical-brief.md` for the full brief.
 | `sqliteRunStore.ts` | `SqliteRunStore implements RunStore` — `save`/`list`/`get`/`delete`/`query` over `node:sqlite` |
 | `sqliteRunStore.test.ts` | Schema/migration, round-trip fidelity, immutability, and query-parity tests against `InMemoryRunStore` |
 | `rerun.ts` | `loadForRerun(store, id, stamp)` — the Rerun load path: `get(id)` → the committed `reconstructConfig` |
-| `rerun.test.ts` | Proves the load path end to end, incl. one run captured live through `MockEngine` |
+| `rerun.test.ts` | Proves the load path end to end, incl. one run captured through a fake estimator (`shared/testing`) |
 | `dataDir.ts` | `resolveDefaultDatabasePath()` — computes the DB file location at runtime; never a hardcoded absolute path |
 | `harness.ts` | The runnable proof described below |
 
@@ -22,7 +22,7 @@ Each row stores the complete `RunRecord` as JSON (`record_json`) for
 full-fidelity round trips — nothing is reshaped or dropped, `raw` included.
 Alongside it, the columns the History filters need are denormalized and
 indexed for query speed; they are a storage detail, not a change to the
-record shape, which is owned by the PMs in `contracts/`:
+record shape, defined in `app/src/shared/types.ts`:
 
 ```
 run_records (

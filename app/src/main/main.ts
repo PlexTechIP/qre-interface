@@ -1,8 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { EstimatorService } from "../shared/types.js";
-import { MockEngine } from "../shared/mockEngine.js";
 import { killLiveEngineProcesses } from "./engine/execute.js";
 import { resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
@@ -35,14 +33,11 @@ function createWindow(): void {
 const engineDir = app.isPackaged
   ? currentDir
   : path.resolve(process.cwd(), "src/main/engine");
-// Engine selection: the real QRE engine by default; QRE_ENGINE=mock swaps in the
-// MockEngine so the app runs end-to-end without a provisioned Python runtime
-// (demos, or machines without the qdk[qre] venv). Both implement EstimatorService,
-// so nothing downstream — including save-after-run — changes.
-const engine: Pick<EstimatorService, "run"> =
-  process.env["QRE_ENGINE"] === "mock"
-    ? new MockEngine({ delayMs: 400 })
-    : new QreEngine(resolvePythonBin(process.env, process.platform, engineDir));
+// The real QRE engine (qdk[qre] Python subprocess) is the only estimator.
+// resolvePythonBin locates the venv interpreter under engineDir.
+const engine = new QreEngine(
+  resolvePythonBin(process.env, process.platform, engineDir),
+);
 registerEstimatorHandler(ipcMain, engine);
 
 // The run store is main-process only. Its DB file resolves under the app's

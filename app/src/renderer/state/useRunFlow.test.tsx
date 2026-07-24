@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
  * Save-after-run: a completed run must be persisted to the store so it appears in
- * Run History. These drive the real hook with an injected store + MockEngine.
+ * Run History. These drive the real hook with an injected store + fake estimator.
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MockEngine } from "../../shared/mockEngine";
+import { buildFailedResult, buildSuccessResult, fakeEstimator } from "../../shared/testing";
 import { InMemoryRunStore } from "../../shared/runStore";
 import { createInitialFormState, type FormState } from "./formState";
 import { useRunFlow } from "./useRunFlow";
@@ -34,7 +34,7 @@ describe("useRunFlow save-after-run", () => {
   it("persists a completed run to the store, keyed by the run's config id", async () => {
     const store = new InMemoryRunStore();
     const { result } = renderHook(() =>
-      useRunFlow(new MockEngine({ delayMs: 0 }), store),
+      useRunFlow(fakeEstimator(buildSuccessResult()), store),
     );
 
     act(() => result.current.start(filledForm()));
@@ -54,7 +54,7 @@ describe("useRunFlow save-after-run", () => {
   it("persists a failed run as well (a failure is a real history record)", async () => {
     const store = new InMemoryRunStore();
     const { result } = renderHook(() =>
-      useRunFlow(new MockEngine({ mode: "failed", delayMs: 0 }), store),
+      useRunFlow(fakeEstimator(buildFailedResult()), store),
     );
 
     act(() => result.current.start(filledForm()));
@@ -70,7 +70,7 @@ describe("useRunFlow save-after-run", () => {
     vi.spyOn(store, "save").mockRejectedValue(new Error("disk full"));
 
     const { result } = renderHook(() =>
-      useRunFlow(new MockEngine({ delayMs: 0 }), store),
+      useRunFlow(fakeEstimator(buildSuccessResult()), store),
     );
 
     act(() => result.current.start(filledForm()));

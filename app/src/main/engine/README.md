@@ -92,17 +92,16 @@ schema-validates their real results, and prints the concise evidence recorded
 in `docs/week-2/team-3/acceptance-walkthrough.md`.
 
 The conformance harness (`app/src/main/engine/conformance.test.ts`) runs the
-real engine against all 4 frozen `contracts/fixtures/runconfig.*.json`
-fixtures (`runconfig.benchmark.json`, `runconfig.large.json`,
-`runconfig.sparse.json`, `runconfig.failing.json`) and validates the emitted
-`RunResult` against `contracts/runresult.schema.json` with Ajv, including
+real engine against the 4 builder configs from `app/src/shared/testing`
+(benchmark, large, sparse, failing) and validates the emitted
+`RunResult` against `app/src/shared/contracts/runresult.schema.json` with Ajv, including
 requiring every expected-success fixture to return `status: "succeeded"`, a
 nonempty frontier, and all six default result fields. The failing fixture must
 resolve to a schema-valid `failed` result rather than a hang or rejection.
 
 ## Benchmark list
 
-All 5 starter ids from `contracts/benchmarks.json` (`shors-factoring`,
+All 5 starter ids from `app/src/shared/contracts/benchmarks.json` (`shors-factoring`,
 `ekera-hastad-factoring`, `quantum-dynamics`, `grovers-search`, and
 `phase-estimation`) resolve to runnable Q# sources under
 `app/src/main/engine/benchmarks/qsharp-project/src/`. The Shor and

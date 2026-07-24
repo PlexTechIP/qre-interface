@@ -1,11 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import benchmarksData from "../../shared/contracts/benchmarks.json";
 import { BENCHMARK_REGISTRY } from "./benchmarkRegistry.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../../..");
 
 interface ContractBenchmark {
   id: string;
@@ -15,12 +11,7 @@ interface ContractBenchmark {
 
 describe("benchmark registry", () => {
   it("mirrors every frozen benchmark id, name, and description", () => {
-    const contract = JSON.parse(
-      readFileSync(
-        path.join(REPO_ROOT, "contracts", "benchmarks.json"),
-        "utf8",
-      ),
-    ) as { benchmarks: ContractBenchmark[] };
+    const contract = benchmarksData as { benchmarks: ContractBenchmark[] };
     const expected = contract.benchmarks.map(({ id, name, description }) => ({
       id,
       name,

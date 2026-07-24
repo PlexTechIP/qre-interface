@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { RunHistoryContainer } from "./RunHistoryContainer";
 import { InMemoryRunStore } from "../../shared/runStore";
-import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
+import { SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS } from "../../shared/testing";
 
 const RUN_A = "Shor's Factoring - Litinski19";
 const RUN_B = "Shor's Factoring - Majorana Three-Aux";

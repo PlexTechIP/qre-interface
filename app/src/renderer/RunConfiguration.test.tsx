@@ -9,11 +9,11 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { MockEngine } from "../shared/mockEngine";
+import { buildFailedResult, buildSuccessResult, fakeEstimator } from "../shared/testing";
 import { RunConfiguration } from "./RunConfiguration";
 
 beforeEach(() => {
-  window.estimator = new MockEngine({ delayMs: 50 });
+  window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 50 });
 });
 
 // Radios are matched on the START of their accessible name: a disabled
@@ -170,7 +170,7 @@ describe("Failure path (Retry / Edit configuration)", () => {
     // Post-swap the app runs the real engine, which reports failures itself —
     // there is no "simulate failure" dev toggle anymore. Drive a failure by
     // injecting the failed-mode mock behind the same EstimatorService the swap consumes.
-    window.estimator = new MockEngine({ mode: "failed", delayMs: 50 });
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 50 });
     render(<RunConfiguration />);
 
     await fillRequiredTimes(user);
@@ -202,7 +202,7 @@ describe("Failure path (Retry / Edit configuration)", () => {
 
   it("Edit configuration returns to the form from the failed state", async () => {
     const user = userEvent.setup();
-    window.estimator = new MockEngine({ mode: "failed", delayMs: 50 });
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 50 });
     render(<RunConfiguration />);
 
     await fillRequiredTimes(user);

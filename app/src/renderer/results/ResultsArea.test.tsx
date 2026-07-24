@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { ResultsArea } from "./ResultsArea";
-import { FIXTURE_SCENARIOS } from "./fixtures";
+import { RESULT_SCENARIOS as FIXTURE_SCENARIOS } from "../../shared/testing";
 
 const successScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "success");
 const sparseScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "sparse");

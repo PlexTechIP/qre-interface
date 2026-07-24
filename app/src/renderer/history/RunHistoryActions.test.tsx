@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RunHistoryContainer } from "./RunHistoryContainer";
-import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
+import { SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS } from "../../shared/testing";
 import { InMemoryRunStore } from "../../shared/runStore";
 
 const SUCCESS_NAME = "Quantum Dynamics - GateBased 1e-4 - Surface - PSSPC";

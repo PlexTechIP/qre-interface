@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
 import { Ajv } from "ajv";
 import addFormatsRaw from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
 import { QreEngine } from "./qreEngine.js";
-import type { RunConfig } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
+import runResultSchema from "../../shared/contracts/runresult.schema.json";
+import {
+  buildBenchmarkConfig,
+  buildFailingConfig,
+  buildLargeConfig,
+  buildSparseConfig,
+} from "../../shared/testing/index.js";
 
 // ajv-formats' type declarations aren't written for TS's NodeNext/ESM CJS-interop
 // analysis, so the default import resolves to the raw CJS module namespace type
@@ -16,35 +19,21 @@ import { resolvePythonBin } from "./pythonBin.js";
 // type that ajv-formats' own .d.ts already declares (FormatsPlugin).
 const addFormats = addFormatsRaw as unknown as FormatsPlugin;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// app/src/main/engine -> app/src/main -> app/src -> app -> repo root (4 levels up).
-const REPO_ROOT = path.resolve(__dirname, "../../../..");
 const PYTHON_BIN = resolvePythonBin();
 
-function loadFixture<T>(name: string): T {
-  const p = path.join(REPO_ROOT, "contracts", "fixtures", name);
-  return JSON.parse(readFileSync(p, "utf-8")) as T;
-}
-
-const SUCCESS_FIXTURES = [
-  "runconfig.benchmark.json",
-  "runconfig.large.json",
-  "runconfig.sparse.json",
+const SUCCESS_CONFIGS = [
+  ["benchmark", buildBenchmarkConfig()],
+  ["large", buildLargeConfig()],
+  ["sparse", buildSparseConfig()],
 ] as const;
 
 describe("QreEngine conformance harness", () => {
   let validate: ReturnType<Ajv["compile"]>;
 
   beforeAll(() => {
-    const schema = JSON.parse(
-      readFileSync(
-        path.join(REPO_ROOT, "contracts", "runresult.schema.json"),
-        "utf-8",
-      ),
-    );
     const ajv = new Ajv({ allErrors: true, strict: false });
     addFormats(ajv);
-    validate = ajv.compile(schema);
+    validate = ajv.compile(runResultSchema);
   });
 
   function expectSchemaValid(result: unknown, fixtureName: string): void {
@@ -56,13 +45,12 @@ describe("QreEngine conformance harness", () => {
     }
   }
 
-  for (const fixtureName of SUCCESS_FIXTURES) {
-    it(`runs a real estimate and produces a schema-valid success for ${fixtureName}`, async () => {
-      const config = loadFixture<RunConfig>(fixtureName);
+  for (const [label, config] of SUCCESS_CONFIGS) {
+    it(`runs a real estimate and produces a schema-valid success for ${label}`, async () => {
       const engine = new QreEngine(PYTHON_BIN);
       const result = await engine.run(config);
 
-      expectSchemaValid(result, fixtureName);
+      expectSchemaValid(result, label);
       expect(result.runId).toBe(config.id);
       expect(result.status).toBe("succeeded");
       expect(result.error).toBeNull();
@@ -93,11 +81,11 @@ describe("QreEngine conformance harness", () => {
     }, 60000);
   }
 
-  it("resolves the failing fixture as a schema-valid FAILED result, not a hang or rejection", async () => {
-    const config = loadFixture<RunConfig>("runconfig.failing.json");
+  it("resolves the failing config as a schema-valid FAILED result, not a hang or rejection", async () => {
+    const config = buildFailingConfig();
     const engine = new QreEngine(PYTHON_BIN);
     const result = await engine.run(config);
-    expectSchemaValid(result, "runconfig.failing.json");
+    expectSchemaValid(result, "failing");
     expect(result.runId).toBe(config.id);
     expect(result.status).toBe("failed");
     expect(result.error).not.toBeNull();

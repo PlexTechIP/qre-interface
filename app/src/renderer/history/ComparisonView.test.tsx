@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ComparisonView } from "./ComparisonView";
-import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
+import { SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS } from "../../shared/testing";
 import type { RunRecord } from "../../shared/types";
 
 const SHOR_TRIO_NAMES = [

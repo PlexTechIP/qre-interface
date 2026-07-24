@@ -19,9 +19,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import startingConfigFixture from "../shared/contracts/fixtures/runconfig.benchmark.json";
-import { MockEngine } from "../shared/mockEngine.js";
-import { MOCK_RUN_RECORDS } from "../shared/runRecordFixtures.js";
+import {
+  SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS,
+  buildBenchmarkConfig,
+  buildSuccessResult,
+  fakeEstimator,
+} from "../shared/testing/index.js";
 import { RunRecordExistsError } from "../shared/runStore.js";
 import { makeRunRecord, type RunConfig } from "../shared/types.js";
 import { resolveDefaultDatabasePath } from "./dataDir.js";
@@ -64,9 +67,9 @@ async function main(): Promise<void> {
 
     // 2. save() — one run captured live through the EstimatorService boundary,
     //    not a static fixture (proves the whole pipeline, not just fixture replay).
-    const engine = new MockEngine({ delayMs: 0 });
+    const engine = fakeEstimator(buildSuccessResult());
     const capturedConfig: RunConfig = {
-      ...(startingConfigFixture as RunConfig),
+      ...buildBenchmarkConfig(),
       id: randomUUID(),
       createdAt: new Date().toISOString(),
     };

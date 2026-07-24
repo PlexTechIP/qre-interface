@@ -1,61 +1,52 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Ajv } from "ajv";
 import addFormatsRaw from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
-import type { RunConfig } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
+import runResultSchema from "../../shared/contracts/runresult.schema.json";
+import {
+  buildBenchmarkConfig,
+  buildFailingConfig,
+  buildLargeConfig,
+  buildSparseConfig,
+} from "../../shared/testing/index.js";
 
 const addFormats = addFormatsRaw as unknown as FormatsPlugin;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../../..");
-const FIXTURE_DIR = path.join(REPO_ROOT, "contracts", "fixtures");
-const SUCCESS_FIXTURES = [
-  "runconfig.benchmark.json",
-  "runconfig.large.json",
-  "runconfig.sparse.json",
+const SCENARIOS = [
+  ["benchmark", buildBenchmarkConfig(), true],
+  ["large", buildLargeConfig(), true],
+  ["sparse", buildSparseConfig(), true],
+  ["failing", buildFailingConfig(), false],
 ] as const;
-const FAILURE_FIXTURE = "runconfig.failing.json";
-
-function loadJson<T>(filePath: string): T {
-  return JSON.parse(readFileSync(filePath, "utf8")) as T;
-}
 
 async function main(): Promise<void> {
-  const schema = loadJson<Record<string, unknown>>(
-    path.join(REPO_ROOT, "contracts", "runresult.schema.json"),
-  );
   const ajv = new Ajv({ allErrors: true, strict: false });
   addFormats(ajv);
-  const validate = ajv.compile(schema);
+  const validate = ajv.compile(runResultSchema);
   const engine = new QreEngine(resolvePythonBin());
   const summaries: Record<string, unknown>[] = [];
 
-  for (const fixtureName of [...SUCCESS_FIXTURES, FAILURE_FIXTURE]) {
-    const config = loadJson<RunConfig>(path.join(FIXTURE_DIR, fixtureName));
+  for (const [label, config, expectsSuccess] of SCENARIOS) {
     const result = await engine.run(config);
     const schemaValid = validate(result);
     if (!schemaValid) {
       throw new Error(
-        `${fixtureName} failed RunResult schema validation: ${JSON.stringify(validate.errors)}`,
+        `${label} failed RunResult schema validation: ${JSON.stringify(validate.errors)}`,
       );
     }
 
-    const expectsSuccess = fixtureName !== FAILURE_FIXTURE;
     if (expectsSuccess && result.status !== "succeeded") {
       throw new Error(
-        `${fixtureName} expected success but returned ${result.error?.code ?? "unknown failure"}`,
+        `${label} expected success but returned ${result.error?.code ?? "unknown failure"}`,
       );
     }
     if (!expectsSuccess && result.status !== "failed") {
-      throw new Error(`${fixtureName} expected failure but returned success`);
+      throw new Error(`${label} expected failure but returned success`);
     }
 
     const firstRow = result.frontier?.[0];
     summaries.push({
-      fixture: fixtureName,
+      fixture: label,
       config: {
         application:
           config.application.type === "benchmark"

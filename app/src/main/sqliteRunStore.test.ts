@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { MOCK_RUN_RECORDS } from "../shared/runRecordFixtures.js";
+import { SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS } from "../shared/testing/index.js";
 import { InMemoryRunStore, RunRecordExistsError } from "../shared/runStore.js";
 import {
   makeRunRecord,

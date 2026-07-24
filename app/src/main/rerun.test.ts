@@ -18,9 +18,12 @@ import addFormats from "ajv-formats";
 import { afterEach, describe, expect, it } from "vitest";
 
 import runConfigSchema from "../shared/contracts/runconfig.schema.json";
-import startingConfigFixture from "../shared/contracts/fixtures/runconfig.benchmark.json";
-import { MockEngine } from "../shared/mockEngine.js";
-import { MOCK_RUN_RECORDS } from "../shared/runRecordFixtures.js";
+import {
+  SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS,
+  buildBenchmarkConfig,
+  buildSuccessResult,
+  fakeEstimator,
+} from "../shared/testing/index.js";
 import {
   makeRunRecord,
   type RunConfig,
@@ -61,7 +64,7 @@ describe("loadForRerun — the get(id) -> reconstructConfig load path", () => {
   it("reconstructs a valid, re-runnable RunConfig from every committed record", async () => {
     const store = openMemoryStore();
     await seed(store);
-    const engine = new MockEngine({ delayMs: 0 });
+    const engine = fakeEstimator(buildSuccessResult());
 
     for (const record of MOCK_RUN_RECORDS) {
       const stamp = { id: randomUUID(), createdAt: "2026-07-21T09:00:00Z" };
@@ -102,11 +105,11 @@ describe("loadForRerun — the get(id) -> reconstructConfig load path", () => {
 describe("end-to-end with a live capture: engine -> save -> get -> reconstruct -> re-run -> save", () => {
   it("reruns a record captured through MockEngine, not a static fixture, through the real SQLite store", async () => {
     const store = openMemoryStore();
-    const engine = new MockEngine({ delayMs: 0 });
+    const engine = fakeEstimator(buildSuccessResult());
 
     // 1. Capture a real run through the EstimatorService boundary.
     const startingConfig: RunConfig = {
-      ...(startingConfigFixture as RunConfig),
+      ...buildBenchmarkConfig(),
       id: randomUUID(),
       createdAt: "2026-07-21T08:00:00Z",
     };
