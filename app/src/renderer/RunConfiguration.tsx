@@ -12,6 +12,7 @@ import { ValidationSummary } from "./components/ValidationSummary";
 import { QRE_VERSION } from "./constants/staticOptions";
 import {
   createInitialFormState,
+  formStateFromRunConfig,
   isLitinski19AllowedInForm,
   normalizeFormState,
   type FormState,
@@ -29,14 +30,27 @@ interface RunConfigurationProps {
   /** Fired once when a run finishes, so the shell can persist it to History
    *  and surface it on the Results page. Optional — omitted in unit tests. */
   onRunComplete?: (config: RunConfig, result: RunResult) => void;
+  /** Saved configuration to load into the editable form for a Rerun. */
+  initialConfig?: RunConfig | null;
 }
 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
 export function RunConfiguration({
   onRunComplete,
+  initialConfig = null,
 }: RunConfigurationProps = {}): React.JSX.Element {
-  const [state, setState] = useState<FormState>(createInitialFormState);
+  const [state, setState] = useState<FormState>(() =>
+    initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState(),
+  );
   const { runState, start, retry, edit } = useRunFlow();
+
+  // A Rerun hands a reconstructed config down as `initialConfig`; load it into
+  // the editable form when it changes.
+  useEffect(() => {
+    if (initialConfig) {
+      setState(formStateFromRunConfig(initialConfig));
+    }
+  }, [initialConfig]);
 
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).

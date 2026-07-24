@@ -4,6 +4,9 @@ declare global {
   interface Window {
     estimator: Pick<EstimatorService, "run">;
     store: RunStore;
+    files?: {
+      getPathForFile(file: File): string;
+    };
   }
 }
 

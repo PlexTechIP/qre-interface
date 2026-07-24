@@ -7,6 +7,7 @@ interface RunFlowPanelProps {
   runState: RunState;
   onRetry: () => void;
   onEdit: () => void;
+  showDeveloperInspector?: boolean;
 }
 
 /**
@@ -19,6 +20,7 @@ export function RunFlowPanel({
   runState,
   onRetry,
   onEdit,
+  showDeveloperInspector = false,
 }: RunFlowPanelProps): React.JSX.Element {
   if (runState.phase === "idle") {
     // Parent only mounts this panel for non-idle states; render nothing otherwise.
@@ -39,12 +41,14 @@ export function RunFlowPanel({
             Edit configuration
           </button>
         </div>
-        <RunConfigInspector
-          config={runState.config}
-          valid={false}
-          title="Serialized RunConfig (dev)"
-          note="This config was rejected at the engine boundary."
-        />
+        {showDeveloperInspector ? (
+          <RunConfigInspector
+            config={runState.config}
+            valid={false}
+            title="Serialized RunConfig (dev)"
+            note="This config was rejected at the engine boundary."
+          />
+        ) : null}
       </section>
     );
   }
@@ -82,12 +86,14 @@ export function RunFlowPanel({
         </button>
       </div>
 
-      <RunConfigInspector
-        config={runState.config}
-        valid
-        title="Serialized RunConfig (dev)"
-        note="The exact config stamped at Run-click and sent to the engine."
-      />
+      {showDeveloperInspector ? (
+        <RunConfigInspector
+          config={runState.config}
+          valid
+          title="Serialized RunConfig (dev)"
+          note="The exact config stamped at Run-click and sent to the engine."
+        />
+      ) : null}
     </section>
   );
 }
