@@ -4,12 +4,24 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { RunHistoryContainer } from "./RunHistoryContainer";
-import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
+import { SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS } from "../../shared/testing";
+import { InMemoryRunStore } from "../../shared/runStore";
 
 const SUCCESS_NAME = "Quantum Dynamics - GateBased 1e-4 - Surface - PSSPC";
 const FAILED_NAME = "Ekera-Hastad - infeasible budget";
 
 afterEach(cleanup);
+
+/** Render the History surface with a fresh mock-seeded store, History view. */
+function renderHistory() {
+  return render(
+    <RunHistoryContainer
+      store={new InMemoryRunStore(MOCK_RUN_RECORDS)}
+      view="history"
+      onViewChange={() => {}}
+    />,
+  );
+}
 
 /** The <tr> containing a run with the given name (waits for the async load). */
 async function rowByName(name: string): Promise<HTMLElement> {
@@ -21,7 +33,7 @@ async function rowByName(name: string): Promise<HTMLElement> {
 
 describe("Run History — per-run actions (Part D)", () => {
   it("View Details renders a saved SUCCESS run by reusing ResultsArea + ConfigSummary", async () => {
-    render(<RunHistoryContainer />);
+    renderHistory();
     const row = await rowByName(SUCCESS_NAME);
 
     await userEvent.click(within(row).getByRole("button", { name: "View" }));
@@ -36,7 +48,7 @@ describe("Run History — per-run actions (Part D)", () => {
   });
 
   it("View Details renders a saved FAILED run through the failure view", async () => {
-    render(<RunHistoryContainer />);
+    renderHistory();
     const row = await rowByName(FAILED_NAME);
 
     await userEvent.click(within(row).getByRole("button", { name: "View" }));
@@ -46,7 +58,7 @@ describe("Run History — per-run actions (Part D)", () => {
   });
 
   it("Delete is gated by a confirm dialog; Cancel keeps the record, Confirm removes it", async () => {
-    render(<RunHistoryContainer />);
+    renderHistory();
     const row = await rowByName(SUCCESS_NAME);
 
     // Opening the confirm does NOT delete.
@@ -65,7 +77,7 @@ describe("Run History — per-run actions (Part D)", () => {
   });
 
   it("Export opens the Markdown stub preview (seam only, no real generator)", async () => {
-    render(<RunHistoryContainer />);
+    renderHistory();
     const row = await rowByName(SUCCESS_NAME);
 
     await userEvent.click(within(row).getByRole("button", { name: "Export" }));
@@ -77,7 +89,7 @@ describe("Run History — per-run actions (Part D)", () => {
   });
 
   it("Rerun surfaces a reconstructed config carrying the name but a fresh id", async () => {
-    render(<RunHistoryContainer />);
+    renderHistory();
     const row = await rowByName(SUCCESS_NAME);
 
     await userEvent.click(within(row).getByRole("button", { name: "Rerun" }));

@@ -1,0 +1,70 @@
+{
+  "qreVersion": "1.29.1",
+  "generatedBy": "app\\src\\main\\engine\\python\\capture_pm_outputs.py",
+  "captures": [
+    {
+      "name": "multi-row-gatebased-psspc",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 5,
+      "input": "multi-row-gatebased-psspc.input.json",
+      "verbatimOutput": "multi-row-gatebased-psspc.output.json"
+    },
+    {
+      "name": "single-row-gatebased-psspc",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 1,
+      "input": "single-row-gatebased-psspc.input.json",
+      "verbatimOutput": "single-row-gatebased-psspc.output.json"
+    },
+    {
+      "name": "real-compile-failure",
+      "status": "failed",
+      "errorCode": "COMPILE_ERROR",
+      "frontierRows": 0,
+      "input": "real-compile-failure.input.json",
+      "verbatimOutput": "real-compile-failure.output.json"
+    },
+    {
+      "name": "real-estimation-failure",
+      "status": "failed",
+      "errorCode": "ESTIMATION_FAILED",
+      "frontierRows": 0,
+      "input": "real-estimation-failure.input.json",
+      "verbatimOutput": "real-estimation-failure.output.json"
+    },
+    {
+      "name": "litinski19",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 1,
+      "input": "litinski19.input.json",
+      "verbatimOutput": "litinski19.output.json"
+    },
+    {
+      "name": "majorana-three-aux",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 2,
+      "input": "majorana-three-aux.input.json",
+      "verbatimOutput": "majorana-three-aux.output.json"
+    },
+    {
+      "name": "lattice-surgery",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 1,
+      "input": "lattice-surgery.input.json",
+      "verbatimOutput": "lattice-surgery.output.json"
+    },
+    {
+      "name": "formatting-stress-wide-frontier",
+      "status": "success",
+      "errorCode": null,
+      "frontierRows": 5,
+      "input": "formatting-stress-wide-frontier.input.json",
+      "verbatimOutput": "formatting-stress-wide-frontier.output.json"
+    }
+  ]
+}

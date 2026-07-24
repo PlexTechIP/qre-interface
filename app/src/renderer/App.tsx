@@ -6,6 +6,7 @@ import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import { ResultsPage } from "./results/ResultsPage";
 import { RunConfiguration } from "./RunConfiguration";
+import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import { ThemeToggle, type Theme } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";

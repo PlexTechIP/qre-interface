@@ -36,7 +36,7 @@ export function RunConfiguration({
   onRunComplete,
 }: RunConfigurationProps = {}): React.JSX.Element {
   const [state, setState] = useState<FormState>(createInitialFormState);
-  const { runState, engineMode, setEngineMode, start, retry, edit } = useRunFlow();
+  const { runState, start, retry, edit } = useRunFlow();
 
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).

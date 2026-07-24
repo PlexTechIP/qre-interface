@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
  
-import { InMemoryRunStore } from "../../shared/runStore";
-import { MOCK_RUN_RECORDS } from "../../shared/runRecordFixtures";
 import {
   reconstructConfig,
   type RunConfig,
@@ -19,16 +17,14 @@ import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
  
 /**
- * Phase 1 container for the Run History + Comparison surfaces.
+ * Container for the Run History + Comparison surfaces.
  *
- * This is the ONLY place that knows a store exists. It instantiates the
- * InMemoryRunStore (seeded with the committed mock records), talks to it
- * exclusively through the `RunStore` interface, and hands its children plain
- * data + callbacks. When the real SQLite store swaps in at week-4 integration,
- * only this file changes — the History list and Comparison view are pure
- * functions of `records` + callbacks and never learn where the records came
- * from. Placement of this container into the app shell (App.tsx tabs) is itself
- * week-4 work; this file is the seam, not the wiring.
+ * The record store is INJECTED (see props). Everything below talks to it only
+ * through the `RunStore` interface, so this surface is a pure function of the
+ * store + callbacks and never learns whether it's the in-memory mock or the real
+ * SQLite store reached over IPC. `view` (History vs Comparison) is controlled by
+ * the app shell so the sidebar and the in-surface tab strip stay in sync and the
+ * comparison selection survives switching between the two.
  */
  
 /** A Rerun handoff payload: the reconstructed pre-fill config for a new run. */

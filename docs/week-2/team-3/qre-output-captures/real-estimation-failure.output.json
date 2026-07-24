@@ -1,0 +1,1 @@
+{"status": "failed", "code": "ESTIMATION_FAILED", "message": "The estimator found no feasible Pareto frontier point; relax maxError or adjust the model.", "verbatim": {"entries": [], "stats": {"num_traces": 1, "num_isas": 1248, "total_jobs": 0, "successful_estimates": 0, "pareto_results": 0}, "name": null}, "qreVersion": "1.29.1"}

@@ -7,8 +7,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { MockEngine } from "./mockEngine";
-import { MOCK_RUN_RECORDS } from "./runRecordFixtures";
+import {
+  SAMPLE_RUN_RECORDS as MOCK_RUN_RECORDS,
+  buildSuccessResult,
+  fakeEstimator,
+} from "./testing";
 import { InMemoryRunStore, RunRecordExistsError } from "./runStore";
 import { validateRunRecord } from "./runRecordValidation";
 import {
@@ -200,7 +203,7 @@ describe("reconstructConfig (Rerun)", () => {
 describe("end-to-end: record -> reconstruct -> run -> record -> save -> query", () => {
   it("reruns a saved record through the engine boundary and persists the new run", async () => {
     const store = seededStore();
-    const engine = new MockEngine({ delayMs: 0 });
+    const engine = fakeEstimator(buildSuccessResult());
 
     // 1. Rerun: reconstruct a fresh config from a saved record.
     const cfg = reconstructConfig(byId(R1), {

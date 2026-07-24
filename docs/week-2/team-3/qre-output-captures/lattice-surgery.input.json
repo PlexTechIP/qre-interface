@@ -1,0 +1,22 @@
+{
+  "program": {
+    "sourcePath": "C:\\Users\\neilj\\OneDrive\\Desktop\\microsoft-qre-dashboard\\app\\src\\main\\engine\\benchmarks\\qsharp-project",
+    "format": "qsharp",
+    "entryExpr": "QuantumDynamics.Run()"
+  },
+  "architecture": {
+    "type": "gateBased",
+    "errorRate": 0.0001,
+    "gateTime": 50,
+    "measurementTime": 100,
+    "twoQubitGateTime": null
+  },
+  "qecCode": "surface_code",
+  "magicStateFactory": "round_based",
+  "traceTransform": {
+    "type": "latticeSurgery",
+    "slowDownFactor": 1.0
+  },
+  "maxError": 1.0,
+  "timeoutMs": 30000
+}
