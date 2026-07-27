@@ -1,4 +1,5 @@
 import type { RunConfig } from "../../shared/types";
+import { findBenchmark } from "../constants/staticOptions";
 
 /**
  * Human display labels for the derived config fields, shared across the History
@@ -23,7 +24,14 @@ export const FACTORY_LABELS: Record<string, string> = {
 
 /** A run's application as a label: the benchmark id, or `Uploaded: <filename>`. */
 export function applicationLabel(config: RunConfig): string {
-  return config.application.type === "benchmark"
-    ? config.application.benchmarkId
-    : `Uploaded: ${config.application.filePath.split("/").pop() ?? config.application.filePath}`;
+  if (config.application.type === "benchmark") {
+    return (
+      findBenchmark(config.application.benchmarkId)?.name ??
+      config.application.benchmarkId
+    );
+  }
+  return `Uploaded: ${
+    config.application.filePath.split(/[\\/]/).pop() ??
+    config.application.filePath
+  }`;
 }

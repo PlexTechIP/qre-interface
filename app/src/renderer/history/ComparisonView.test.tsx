@@ -29,7 +29,7 @@ describe("Comparison surface (Part E)", () => {
   it("shows a 'pick runs' empty state and disables its actions with no selection", () => {
     render(<ComparisonView records={[]} onClear={noop} onRemove={noop} onExport={noop} />);
 
-    expect(screen.getByText(/no runs selected for comparison/i)).toBeInTheDocument();
+    expect(screen.getByText(/select at least 2 runs to compare/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /export comparison/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /clear selection/i })).toBeDisabled();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();

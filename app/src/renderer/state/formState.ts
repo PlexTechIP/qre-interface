@@ -17,9 +17,14 @@ import {
   type MagicStateFactoryId,
   type MajoranaArchitecture,
   type QecCodeId,
+  type RunConfig,
   type TraceTransformType,
   type UploadedProgramFormat,
 } from "../../shared/types";
+import {
+  defaultAllHyperparams,
+  type HyperparamValues,
+} from "../constants/hyperparameters";
 
 export interface GateBasedForm {
   /** Default 1e-4. Valid: 0 < x < 0.01. null until entered. */
@@ -45,18 +50,36 @@ export interface ArchitectureForm {
   majorana: MajoranaForm;
 }
 
-export type ApplicationFormType = "benchmark" | "uploaded";
+export type ApplicationFormType = "benchmark" | "saved" | "uploaded";
 
 export interface UploadForm {
   filePath: string;
   format: UploadedProgramFormat;
+  /** "Save to my programs" — mirrors the contract's addToLibrary and, when set,
+   *  keeps the uploaded file in `savedPrograms` so it can be re-run later. */
   addToLibrary: boolean;
+}
+
+/** One program the user kept in their session library (an earlier upload). */
+export interface SavedProgram {
+  id: string;
+  /** Display name, defaulting to the file's basename. */
+  name: string;
+  filePath: string;
+  format: UploadedProgramFormat;
 }
 
 export interface ApplicationForm {
   type: ApplicationFormType;
   benchmarkId: string;
+  /** Per-benchmark hyperparameter values, keyed by benchmark id. Every benchmark
+   *  is seeded to its spec defaults so switching benchmarks never loses entries. */
+  hyperparams: Record<string, HyperparamValues>;
   upload: UploadForm;
+  /** Session library of saved uploads, surfaced under the "Saved Programs" type. */
+  savedPrograms: SavedProgram[];
+  /** The selected saved program's id (empty until one is picked). */
+  selectedSavedId: string;
 }
 
 export interface PsspcForm {
@@ -91,7 +114,10 @@ export function createInitialFormState(): FormState {
     application: {
       type: "benchmark",
       benchmarkId: DEFAULT_BENCHMARK_ID,
+      hyperparams: defaultAllHyperparams(),
       upload: { filePath: "", format: "qsharp", addToLibrary: false },
+      savedPrograms: [],
+      selectedSavedId: "",
     },
     architecture: {
       type: "gateBased",
@@ -110,6 +136,66 @@ export function createInitialFormState(): FormState {
     },
     maxError: 1.0,
   };
+}
+
+/** Rehydrate an immutable saved config into the editable form used by Rerun. */
+export function formStateFromRunConfig(config: RunConfig): FormState {
+  const initial = createInitialFormState();
+  const application: ApplicationForm =
+    config.application.type === "benchmark"
+      ? {
+          ...initial.application,
+          type: "benchmark",
+          benchmarkId: config.application.benchmarkId,
+        }
+      : {
+          ...initial.application,
+          type: "uploaded",
+          upload: {
+            filePath: config.application.filePath,
+            format: config.application.format,
+            addToLibrary: config.application.addToLibrary,
+          },
+        };
+
+  const architecture: ArchitectureForm =
+    config.architecture.type === "gateBased"
+      ? {
+          ...initial.architecture,
+          type: "gateBased",
+          gateBased: {
+            errorRate: config.architecture.errorRate,
+            gateTime: config.architecture.gateTime,
+            measurementTime: config.architecture.measurementTime,
+            twoQubitGateTime: config.architecture.twoQubitGateTime ?? null,
+          },
+        }
+      : {
+          ...initial.architecture,
+          type: "majorana",
+          majorana: {
+            errorRate: config.architecture.errorRate,
+            operationTime: config.architecture.operationTime,
+          },
+        };
+
+  return normalizeFormState({
+    name: config.name,
+    application,
+    architecture,
+    magicStateFactory: config.magicStateFactory,
+    traceTransform: {
+      type: config.traceTransform.type,
+      psspc:
+        config.traceTransform.type === "psspc"
+          ? {
+              tStatesPerRotation: config.traceTransform.tStatesPerRotation,
+              ccxMagicStates: config.traceTransform.ccxMagicStates,
+            }
+          : initial.traceTransform.psspc,
+    },
+    maxError: config.maxError,
+  });
 }
 
 /**

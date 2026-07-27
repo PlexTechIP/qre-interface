@@ -9,7 +9,16 @@ import { RawExplorer } from "./RawExplorer";
 import { getAdditionalFieldDefinitions } from "./resultFields";
 import { SelectedRowDetail } from "./SelectedRowDetail";
 
-export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) {
+interface ResultsAreaViewProps extends ResultsAreaProps {
+  onConfigure?: () => void;
+}
+
+export function ResultsArea({
+  result,
+  phase,
+  config = null,
+  onConfigure,
+}: ResultsAreaViewProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   // Field-filter selections deliberately persist across result switches this session (SOW Part 1.7)
@@ -20,24 +29,20 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
     setSelectedIndex(0);
   }, [result?.runId]);
 
-  if (phase === "idle" || result === null) {
-    return (
-      <section className="empty-state" aria-labelledby="results-empty-title">
-        <div className="empty-icon" aria-hidden="true">
-          ∿
-        </div>
-        <h1 id="results-empty-title">No results yet</h1>
-        <p>Please run an estimation to see results here.</p>
-      </section>
-    );
-  }
-
+  // Check the running phase first: while running, `result` is null by design,
+  // so the empty-state guard below must not swallow it (otherwise the results
+  // surface flashes "No results yet" for the whole run).
   if (phase === "running") {
     return (
       <section className="results-page" aria-labelledby="results-running-title">
         <p className="eyebrow">Results</p>
         <h1 id="results-running-title">Running estimation</h1>
         <div className="state-card" role="status" aria-live="polite">
+          <strong>Exploring candidate hardware configurations…</strong>
+          <p className="muted">
+            Complex benchmarks can take up to a minute. Results will appear here
+            automatically.
+          </p>
           <div className="skeleton-line wide" />
           <div className="skeleton-line" />
           <div className="skeleton-grid">
@@ -46,6 +51,23 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
             <span />
           </div>
         </div>
+      </section>
+    );
+  }
+
+  if (phase === "idle" || result === null) {
+    return (
+      <section className="empty-state" aria-labelledby="results-empty-title">
+        <div className="empty-icon" aria-hidden="true">
+          ∿
+        </div>
+        <h1 id="results-empty-title">No results yet</h1>
+        <p>Please run an estimation to see results here.</p>
+        {onConfigure ? (
+          <button type="button" className="run-button" onClick={onConfigure}>
+            Configure a run
+          </button>
+        ) : null}
       </section>
     );
   }
@@ -74,6 +96,26 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
   const selectedRow = frontierRows[safeSelectedIndex] ?? null;
   const selectedRowNumber = safeSelectedIndex + 1;
   const selectedRowAnnouncement = `Selected row ${selectedRowNumber} of ${frontierCount}`;
+
+  // A run can succeed yet report no feasible frontier points. Give that its own
+  // explicit state rather than rendering "0 solutions" over an empty table/chart.
+  if (frontierCount === 0) {
+    return (
+      <section className="results-page" aria-labelledby="results-empty-frontier-title">
+        <p className="eyebrow">Results</p>
+        <h1 id="results-empty-frontier-title">Estimation Results</h1>
+        <div className="state-card" role="status">
+          <strong>This run succeeded but produced no Pareto-frontier points.</strong>
+          <p className="muted">
+            The engine found no feasible configuration for these inputs. Try
+            relaxing the maximum error or adjusting the architecture, then rerun.
+          </p>
+        </div>
+        <ConfigSummary config={config} qreVersion={result.qreVersion} />
+        <RawExplorer raw={result.raw} />
+      </section>
+    );
+  }
 
   const additionalFieldDefinitions = getAdditionalFieldDefinitions(frontierRows);
   const visibleAdditionalFields = additionalFieldDefinitions.filter(
@@ -118,7 +160,9 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
             <strong>{config?.name ?? result.runId}</strong>
           </p>
         </div>
-        <span className="solution-pill">{frontierCount} Pareto-optimal solutions</span>
+        <span className="solution-pill">
+          {frontierCount} Pareto-optimal solution{frontierCount === 1 ? "" : "s"}
+        </span>
       </div>
 
       <div className="metric-grid" aria-label="Default result fields preview">
@@ -135,7 +179,10 @@ export function ResultsArea({ result, phase, config = null }: ResultsAreaProps) 
           <div className="panel-header">
             <div>
               <h2>Frontier Configurations</h2>
-              <p>Selected row represents this run in History & Comparison.</p>
+              <p>
+                Select a row to inspect its full resource profile. History and
+                comparison summarize the first Pareto point.
+              </p>
             </div>
             {additionalFieldDefinitions.length > 0 ? (
               <button

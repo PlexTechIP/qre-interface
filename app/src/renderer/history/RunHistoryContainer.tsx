@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
- 
+
+import { InMemoryRunStore } from "../../shared/runStore";
 import {
   reconstructConfig,
   type RunConfig,
@@ -15,7 +16,7 @@ import { ExportStubDialog } from "./ExportStubDialog";
 import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
- 
+
 /**
  * Container for the Run History + Comparison surfaces.
  *
@@ -26,31 +27,52 @@ import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
  * the app shell so the sidebar and the in-surface tab strip stay in sync and the
  * comparison selection survives switching between the two.
  */
- 
+
 /** A Rerun handoff payload: the reconstructed pre-fill config for a new run. */
 export interface RerunRequest {
   sourceRecord: RunRecord;
   config: RunConfig;
 }
- 
+
 function makeStamp(): { id: string; createdAt: string } {
   return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
 }
- 
-export interface RunHistoryContainerProps {
-  /** The record store, injected — the surface is a pure function of it. */
-  store: RunStore;
-  /** Which sub-tab is showing (controlled by the app shell). */
-  view: "history" | "comparison";
-  /** Raise a request to switch sub-tab (History <-> Comparison). */
-  onViewChange: (view: "history" | "comparison") => void;
+
+interface RunHistoryContainerProps {
+  /** The run store to read from. Defaults to an empty in-memory store; the app
+   *  shell injects the shared store its Run flow saves into, and tests inject a
+   *  seeded one. */
+  store?: RunStore;
+  /** Controlled view. When provided, the internal History/Comparison tab strip
+   *  is replaced by shell-level navigation (sidebar + header cross-nav). */
+  view?: "history" | "comparison";
+  onViewChange?: (view: "history" | "comparison") => void;
+  /** Navigate to the Run Configuration surface (empty-state / CTA hand-off). */
+  onNavigateToConfig?: () => void;
+  /** App-shell handoff: open a saved run on the Results page (moves the sidebar
+   *  there). When omitted, View Details shows the in-surface detail panel. */
+  onViewRun?: (record: RunRecord) => void;
+  /** App-shell handoff: load a reconstructed config into the live form (Rerun).
+   *  When omitted, Rerun falls back to the read-only preview dialog. */
+  onRerunRequest?: (request: RerunRequest) => void;
+  /** The app ships the complete Markdown export; isolated tests keep the stub. */
+  exportMode?: "preview" | "complete";
 }
 
 export function RunHistoryContainer({
-  store,
-  view,
+  store: providedStore,
+  view: controlledView,
   onViewChange,
-}: RunHistoryContainerProps) {
+  onNavigateToConfig,
+  onViewRun,
+  onRerunRequest,
+  exportMode = "preview",
+}: RunHistoryContainerProps = {}) {
+  // The store is created once and never recreated across renders. Kept behind
+  // the RunStore type so nothing here depends on it being in-memory.
+  const [store] = useState<RunStore>(
+    () => providedStore ?? new InMemoryRunStore(),
+  );
 
   const [records, setRecords] = useState<RunRecord[]>([]);
   // The full, unfiltered record set — used only to derive the filter bar's
@@ -59,28 +81,35 @@ export function RunHistoryContainer({
   // now-absent value can drop out of the options.
   const [allRecords, setAllRecords] = useState<RunRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // True once the first load settles. Gates the full-screen loading state so a
+  // background refresh (e.g. a filter change) never flashes it over existing rows.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
- 
+
   const [filter, setFilter] = useState<RunFilter>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
- 
+
   // Multi-select for Comparison: the set of record ids checked in History.
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
- 
-  // The Rerun handoff payload, surfaced this week instead of navigated (week-4).
+
+  // Fallback Rerun preview state, used only when no app-shell handoff is supplied.
   const [rerunRequest, setRerunRequest] = useState<RerunRequest | null>(null);
 
   // The record awaiting delete confirmation (null = no pending delete).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  // The record whose Export-Markdown stub preview is open (null = closed).
+  // The record whose Export-Markdown dialog is open (null = closed).
   const [exportRecord, setExportRecord] = useState<RunRecord | null>(null);
 
-  // `view` (History vs Comparison) is controlled by the app shell (props), so the
-  // sidebar and this surface's in-tab strip stay in sync and the comparison
-  // selection survives switching between the two.
-  // Whether the comparison-set export stub preview is open.
+  // Which of Team 1's two surfaces is showing. Standalone, a local tab strip
+  // drives it; inside the app shell it's controlled by the sidebar (via the
+  // `view`/`onViewChange` props), which hides the tab strip.
+  const [internalView, setInternalView] = useState<"history" | "comparison">("history");
+  const isControlled = controlledView !== undefined;
+  const view = controlledView ?? internalView;
+  const setView = onViewChange ?? setInternalView;
+  // Whether the comparison-set export dialog is open.
   const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
- 
+
   /**
    * Re-read the store through the query API so the view always reflects stored
    * state (post-delete especially). Runs the active filter server-side, exactly
@@ -100,31 +129,42 @@ export function RunHistoryContainer({
       setAllRecords([]);
     } finally {
       setIsLoading(false);
+      setHasLoaded(true);
     }
   }, [store, filter]);
- 
+
   // Reload whenever the filter changes (initial load included).
   useEffect(() => {
     void refresh();
   }, [refresh]);
- 
+
   // Drop the open selection if its record leaves the visible set (deleted, or
   // hidden by a filter). The comparison set self-heals separately: comparisonRecords
   // resolves ids against the present records, and delete prunes comparisonIds.
   const visibleIds = useMemo(() => new Set(records.map((r) => r.id)), [records]);
- 
+
   useEffect(() => {
     if (selectedId !== null && !visibleIds.has(selectedId)) {
       setSelectedId(null);
     }
   }, [selectedId, visibleIds]);
- 
+
   // ---- Per-run action callbacks handed down to the History list -----------
- 
-  const onViewDetails = useCallback((id: string) => {
-    setSelectedId(id);
-  }, []);
- 
+
+  const onViewDetails = useCallback(
+    (id: string) => {
+      // App-shell handoff opens the run on the Results page; standalone/tests
+      // fall back to the in-surface detail panel.
+      if (onViewRun) {
+        const record = records.find((r) => r.id === id);
+        if (record) onViewRun(record);
+      } else {
+        setSelectedId(id);
+      }
+    },
+    [onViewRun, records],
+  );
+
   // Delete is destructive and records are immutable, so it goes behind an
   // explicit confirm: the list/detail request it, the dialog's onConfirm runs it.
   const requestDelete = useCallback((id: string) => setPendingDeleteId(id), []);
@@ -139,44 +179,49 @@ export function RunHistoryContainer({
     setSelectedId((current) => (current === id ? null : current));
     await refresh();
   }, [pendingDeleteId, store, refresh]);
- 
-  const onRerun = useCallback((record: RunRecord) => {
-    // reconstructConfig is PROVIDED — call it, never re-implement. It carries
-    // the saved config forward with a fresh id + createdAt for the new run.
-    const config = reconstructConfig(record, makeStamp());
-    // This week we surface the reconstructed payload; wiring it into the live
-    // Run Configuration form is week-4 integration.
-    setRerunRequest({ sourceRecord: record, config });
-  }, []);
- 
+
+  const onRerun = useCallback(
+    (record: RunRecord) => {
+      // reconstructConfig is PROVIDED — call it, never re-implement. It carries
+      // the saved config forward with a fresh id + createdAt for the new run.
+      const config = reconstructConfig(record, makeStamp());
+      const request = { sourceRecord: record, config };
+      // App-shell handoff pre-fills the live form; otherwise show the preview.
+      if (onRerunRequest) {
+        onRerunRequest(request);
+      } else {
+        setRerunRequest(request);
+      }
+    },
+    [onRerunRequest],
+  );
+
   const onExport = useCallback((record: RunRecord) => {
-    // Seam only — the real Markdown generator is Part 3 (week 6). Opens the stub
-    // preview dialog; nothing is generated here.
     setExportRecord(record);
   }, []);
- 
+
   // ---- Comparison selection helpers ---------------------------------------
- 
+
   const toggleComparison = useCallback((id: string) => {
     setComparisonIds((ids) =>
       ids.includes(id) ? ids.filter((existing) => existing !== id) : [...ids, id],
     );
   }, []);
- 
+
   const clearComparison = useCallback(() => setComparisonIds([]), []);
- 
+
   // The records currently chosen for comparison, in selection order, filtered
   // to those still present (a deleted record drops out of the set).
   const comparisonRecords = useMemo(
     () => comparisonIds.map((id) => records.find((r) => r.id === id)).filter((r): r is RunRecord => r != null),
     [comparisonIds, records],
   );
- 
+
   const selectedRecord = useMemo(
     () => (selectedId == null ? null : records.find((r) => r.id === selectedId) ?? null),
     [selectedId, records],
   );
- 
+
   // The record awaiting delete confirmation, resolved from its id for the dialog.
   const pendingDeleteRecord = useMemo(
     () => (pendingDeleteId == null ? null : records.find((r) => r.id === pendingDeleteId) ?? null),
@@ -198,54 +243,93 @@ export function RunHistoryContainer({
       ),
     [filter],
   );
- 
+
   return (
     <div className="run-history-container">
       <header className="surface-header">
-        <h1>{view === "history" ? "Run History" : "Comparison"}</h1>
-        <p>Search, filter, rerun, export, or select runs for comparison.</p>
+        <div>
+          <h1>{view === "history" ? "Run History" : "Comparison"}</h1>
+          <p>
+            {view === "history"
+              ? "Search, filter, rerun, export, or select runs for comparison."
+              : "Compare runs across result fields, configurations, timestamps, and QRE engine versions."}
+          </p>
+        </div>
+        {isControlled ? (
+          <div className="surface-header__actions">
+            {view === "history" ? (
+              <button
+                type="button"
+                className="surface-action"
+                onClick={() => setView("comparison")}
+              >
+                Compare Selected{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="surface-action"
+                onClick={() => setView("history")}
+              >
+                ← Back to History
+              </button>
+            )}
+          </div>
+        ) : null}
       </header>
 
       {/*
-        Team 1 owns two tabs (History + Comparison). Wiring them into the app
-        shell is week-4 integration; this local tab strip keeps both surfaces
-        reachable and demonstrable in the meantime.
+        Standalone, a local tab strip keeps both surfaces reachable. Inside the
+        app shell the sidebar drives the view (isControlled), so the tab strip is
+        hidden in favour of the header cross-nav above.
       */}
-      <div className="surface-tabs" role="tablist" aria-label="Run surfaces">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "history"}
-          className={view === "history" ? "surface-tab active" : "surface-tab"}
-          onClick={() => onViewChange("history")}
-        >
-          History
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view === "comparison"}
-          className={view === "comparison" ? "surface-tab active" : "surface-tab"}
-          onClick={() => onViewChange("comparison")}
-        >
-          Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
-        </button>
-      </div>
-
-      {loadError ? <p role="alert">{loadError}</p> : null}
-      {isLoading ? <p className="muted">Loading runs…</p> : null}
+      {isControlled ? null : (
+        <div className="surface-tabs" role="tablist" aria-label="Run surfaces">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "history"}
+            className={view === "history" ? "surface-tab active" : "surface-tab"}
+            onClick={() => setView("history")}
+          >
+            History
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "comparison"}
+            className={view === "comparison" ? "surface-tab active" : "surface-tab"}
+            onClick={() => setView("comparison")}
+          >
+            Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+          </button>
+        </div>
+      )}
 
       {/*
+        Loading / error / content are mutually exclusive so the first open never
+        shows "Loading runs…" stacked over the empty state. The loading state only
+        replaces content on the very first load (hasLoaded === false); a later
+        background refresh keeps the current rows visible instead of flashing.
+
         Master-detail (History tab): a selected record swaps the list for the
         detail view (View Details). Otherwise the search + filter bar + list show.
         The Comparison tab is a pure function of the checked records.
       */}
-      {view === "comparison" ? (
+      {loadError ? (
+        <p role="alert" className="load-error">
+          {loadError}
+        </p>
+      ) : isLoading && !hasLoaded ? (
+        <p className="muted">Loading runs…</p>
+      ) : view === "comparison" ? (
         <ComparisonView
           records={comparisonRecords}
           onClear={clearComparison}
           onRemove={toggleComparison}
           onExport={() => setIsComparisonExportOpen(true)}
+          embedded={isControlled}
+          {...(isControlled ? { onGoToHistory: () => setView("history") } : {})}
         />
       ) : selectedRecord ? (
         <RunDetailPanel
@@ -268,6 +352,7 @@ export function RunHistoryContainer({
             onDelete={requestDelete}
             onExport={onExport}
             onToggleComparison={toggleComparison}
+            {...(onNavigateToConfig ? { onNavigateToConfig } : {})}
           />
         </>
       )}
@@ -280,7 +365,11 @@ export function RunHistoryContainer({
         />
       ) : null}
       {exportRecord ? (
-        <ExportStubDialog record={exportRecord} onClose={() => setExportRecord(null)} />
+        <ExportStubDialog
+          record={exportRecord}
+          mode={exportMode}
+          onClose={() => setExportRecord(null)}
+        />
       ) : null}
       {rerunRequest ? (
         <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
@@ -288,6 +377,7 @@ export function RunHistoryContainer({
       {isComparisonExportOpen ? (
         <ComparisonExportStubDialog
           records={comparisonRecords}
+          mode={exportMode}
           onClose={() => setIsComparisonExportOpen(false)}
         />
       ) : null}

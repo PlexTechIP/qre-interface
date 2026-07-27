@@ -7,12 +7,14 @@
  * the authority at submit time. `isConfigValid` combines both for Run gating.
  */
 
+import { validateHyperparams, type HyperparamError } from "../constants/hyperparameters";
 import type { FormState } from "./formState";
 import { schemaValidationStamp, toRunConfig } from "./toRunConfig";
 import { validateRunConfigSchema } from "./schemaValidation";
 
 export interface FieldErrors {
   benchmarkId?: string;
+  savedProgram?: string;
   uploadFilePath?: string;
   errorRate?: string;
   gateTime?: string;
@@ -21,6 +23,8 @@ export interface FieldErrors {
   operationTime?: string;
   tStatesPerRotation?: string;
   maxError?: string;
+  /** Per-benchmark hyperparameter errors (only present when non-empty). */
+  hyperparams?: HyperparamError[];
 }
 
 export function validateForm(state: FormState): FieldErrors {
@@ -31,6 +35,16 @@ export function validateForm(state: FormState): FieldErrors {
     if (application.benchmarkId.length === 0) {
       errors.benchmarkId = "Select a benchmark to estimate.";
     }
+    const hyperparamErrors = validateHyperparams(
+      application.benchmarkId,
+      application.hyperparams[application.benchmarkId] ?? {},
+    );
+    if (hyperparamErrors.length > 0) errors.hyperparams = hyperparamErrors;
+  } else if (application.type === "saved") {
+    const chosen = application.savedPrograms.find(
+      (program) => program.id === application.selectedSavedId,
+    );
+    if (!chosen) errors.savedProgram = "Select a saved program to estimate.";
   } else if (application.upload.filePath.trim().length === 0) {
     errors.uploadFilePath = "Choose a program file to upload.";
   }

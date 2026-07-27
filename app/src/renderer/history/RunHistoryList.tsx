@@ -32,6 +32,8 @@ export interface RunHistoryListProps {
   onDelete: (id: string) => void;
   onExport: (record: RunRecord) => void;
   onToggleComparison: (id: string) => void;
+  /** Navigate to Run Configuration from the empty state. Optional. */
+  onNavigateToConfig?: () => void;
 }
  
 function formatDateTime(iso: string): string {
@@ -56,6 +58,7 @@ export function RunHistoryList({
   onDelete,
   onExport,
   onToggleComparison,
+  onNavigateToConfig,
 }: RunHistoryListProps) {
   const comparisonSet = new Set(comparisonIds);
  
@@ -64,7 +67,7 @@ export function RunHistoryList({
       <div className="panel-header">
         <div>
           <h2 id="history-list-title">Completed Runs</h2>
-          <p>Selected row opens in Details; check runs to compare.</p>
+          <p>Select a run to open details; check two or more to compare.</p>
         </div>
         <span className="muted">
           {records.length} run{records.length === 1 ? "" : "s"}
@@ -72,7 +75,10 @@ export function RunHistoryList({
       </div>
  
       {records.length === 0 ? (
-        <EmptyState hasActiveFilter={hasActiveFilter} />
+        <EmptyState
+          hasActiveFilter={hasActiveFilter}
+          {...(onNavigateToConfig ? { onNavigateToConfig } : {})}
+        />
       ) : (
         <div className="history-table-scroll">
           <table className="history-table">
@@ -192,19 +198,34 @@ export function RunHistoryList({
   );
 }
  
-function EmptyState({ hasActiveFilter }: { hasActiveFilter: boolean }) {
+function EmptyState({
+  hasActiveFilter,
+  onNavigateToConfig,
+}: {
+  hasActiveFilter: boolean;
+  onNavigateToConfig?: () => void;
+}) {
   if (hasActiveFilter) {
     return (
-      <div className="empty-state" role="status">
+      <div className="empty-state empty-state--inline" role="status">
         <p>No runs match your search and filters.</p>
         <p className="muted">Clear or adjust the filters to see more runs.</p>
       </div>
     );
   }
   return (
-    <div className="empty-state" role="status">
-      <p>No saved runs yet.</p>
-      <p className="muted">Run a configuration to see it appear here.</p>
+    <div className="empty-state empty-state--inline" role="status">
+      <p className="muted">
+        No runs found.{" "}
+        {onNavigateToConfig ? (
+          <button type="button" className="link-button" onClick={onNavigateToConfig}>
+            Run a configuration
+          </button>
+        ) : (
+          "Run a configuration"
+        )}{" "}
+        to see results here.
+      </p>
     </div>
   );
 }

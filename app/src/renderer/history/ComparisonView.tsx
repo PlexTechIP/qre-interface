@@ -21,9 +21,22 @@ export interface ComparisonViewProps {
   onRemove: (id: string) => void;
   /** Opens the comparison-set export stub (the real exporter is Part 3). */
   onExport: () => void;
+  /** Navigate back to Run History (empty-state CTA). Optional. */
+  onGoToHistory?: () => void;
+  /** True when hosted inside the app shell, whose surface header already shows
+   *  the "Comparison" title + description — so this view drops its own heading
+   *  and keeps only the actions to avoid a duplicated header. */
+  embedded?: boolean;
 }
 
-export function ComparisonView({ records, onClear, onRemove, onExport }: ComparisonViewProps) {
+export function ComparisonView({
+  records,
+  onClear,
+  onRemove,
+  onExport,
+  onGoToHistory,
+  embedded = false,
+}: ComparisonViewProps) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
@@ -52,16 +65,21 @@ export function ComparisonView({ records, onClear, onRemove, onExport }: Compari
     });
 
   return (
-    <section className="comparison-view" aria-labelledby="comparison-title">
-      <div className="panel-header">
-        <div>
-          <h2 id="comparison-title">Comparison</h2>
-          <p>
-            {records.length === 0
-              ? "Select runs from History to compare them side by side."
-              : `Comparing ${records.length} selected run${records.length === 1 ? "" : "s"}.`}
-          </p>
-        </div>
+    <section
+      className="comparison-view"
+      {...(embedded ? { "aria-label": "Comparison" } : { "aria-labelledby": "comparison-title" })}
+    >
+      <div className={`panel-header${embedded ? " panel-header--actions-only" : ""}`}>
+        {embedded ? null : (
+          <div>
+            <h2 id="comparison-title">Comparison</h2>
+            <p>
+              {records.length === 0
+                ? "Select runs from History to compare them side by side."
+                : `Comparing ${records.length} selected run${records.length === 1 ? "" : "s"}.`}
+            </p>
+          </div>
+        )}
         <div className="comparison-actions">
           <button type="button" onClick={onExport} disabled={records.length === 0}>
             Export comparison
@@ -74,10 +92,18 @@ export function ComparisonView({ records, onClear, onRemove, onExport }: Compari
 
       {records.length === 0 ? (
         <div className="empty-state" role="status">
-          <p>No runs selected for comparison.</p>
+          <div className="empty-icon" aria-hidden="true">
+            <BarsGlyph />
+          </div>
+          <h1>Select at least 2 runs to compare</h1>
           <p className="muted">
-            Check the boxes next to runs in the History list, then return here to compare them.
+            Go to Run History, check the runs you want to compare, then choose Compare Selected.
           </p>
+          {onGoToHistory ? (
+            <button type="button" className="run-button empty-state__cta" onClick={onGoToHistory}>
+              Go to Run History
+            </button>
+          ) : null}
         </div>
       ) : (
         <>
@@ -143,5 +169,25 @@ export function ComparisonView({ records, onClear, onRemove, onExport }: Compari
         </>
       )}
     </section>
+  );
+}
+
+/** Bar-chart glyph for the empty comparison state. */
+function BarsGlyph(): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="40"
+      height="40"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M6 20v-6M12 20V6M18 20v-9" />
+    </svg>
   );
 }
