@@ -5,7 +5,7 @@ from `app/src/shared/types.ts`, identical to `contracts/types.ts`).
 
 ## Route
 
-**`qdk[qre]==1.29.1` Python subprocess** — in this team's technical brief and
+**`qdk[qre]==1.30.0` Python subprocess** — in this team's technical brief and
 checklist this is called "Route B"; `docs/tech-stack.md` numbers the same two
 options the other way around ("Route A" = Python `qdk`, "Route B" = JS/WASM
 `qsharp-lang`). This README follows the team-3 brief/checklist naming. See the
@@ -42,13 +42,13 @@ launches Electron. `npm run build` produces `dist/` and `dist-electron/`.
 POSIX setup:
 
 ```bash
-app/src/main/engine/python/setup_venv.sh   # one-time: creates .venv, installs qdk[qre]==1.29.1
+app/src/main/engine/python/setup_venv.sh   # one-time: creates .venv, installs requirements.txt
 ```
 
 Windows PowerShell setup:
 
 ```powershell
-app/src/main/engine/python/setup_venv.ps1  # one-time: creates .venv, installs qdk[qre]==1.29.1
+app/src/main/engine/python/setup_venv.ps1  # one-time: creates .venv, installs requirements.txt
 ```
 
 Run the harness from either platform, from the repository root:
@@ -62,7 +62,7 @@ npm --prefix app run typecheck    # tsc --noEmit -p tsconfig.node.json
 
 Both setup scripts require the repository-pinned Python 3.13.14, create
 `app/src/main/engine/python/.venv`, and install `requirements.txt`
-(`qdk[qre]==1.29.1`) into it. The real engine tests resolve
+(`qdk[qre]==1.30.0`) into it. The real engine tests resolve
 `.venv/bin/python3` on POSIX and `.venv/Scripts/python.exe` on Windows. Set
 `QRE_PYTHON_BIN` to an executable path to override that interpreter explicitly.
 The venv must exist before running `npm run test:engine` or `npm run test:all`.
@@ -144,16 +144,14 @@ branch does not treat them as approved contract changes. Evidence and proposed
 mappings are in `docs/week-3/team-3/contract-decision-proposals.md`.
 
 - **`Majorana.operationTime`: known engine-mapping gap.**
-  `qdk[qre]==1.29.1`'s
-  `Majorana` dataclass (`qdk.qre.models.Majorana`) only accepts `error_rate`
-  — there is no `operation_time` constructor parameter at all in this
-  package version. Internally, `Majorana.provided_isa` hardcodes
-  `time=1000` (ns) for every instruction (state prep, measurement, T gate)
-  regardless of configuration. The wrapper therefore builds
-  `Majorana(error_rate=…)` only: `operationTime` is validated and retained in
-  the invocation, but is not consumed by this QDK version. It is recorded as
-  a known gap rather than represented as effective. Follow-up: map it if a
-  future QDK version exposes a parameter.
+  On `qdk[qre]==1.29.1`, the `Majorana` dataclass
+  (`qdk.qre.models.Majorana`) only accepted `error_rate`; there was no
+  `operation_time` constructor parameter, and `Majorana.provided_isa`
+  hardcoded `time=1000` (ns). The wrapper therefore builds
+  `Majorana(error_rate=…)` only. In `qdk[qre]==1.30.0`, `Majorana` exposes a
+  `time` parameter, so the engine surface changed. This branch reports that
+  finding but does not map `operationTime` yet; doing so changes estimate
+  behavior and should move through the PM-owned contract decision.
 - **Trace-transform composition:** the frozen contract models PSSPC and
   Lattice Surgery as a one-of selection, while `qdk.qre` produces the required
   estimate through a composed `PSSPC * LatticeSurgery` trace pipeline. The
@@ -164,17 +162,15 @@ mappings are in `docs/week-3/team-3/contract-decision-proposals.md`.
 - **`source` is provisional.** The current `frontier[].additional.source`
   value records the application input format (`qsharp`, `openqasm`, or `qir`).
   The frozen contract describes this field as the ISA/instruction-set source,
-  which QDK 1.29.1 does not expose as a flat result property. Consumers should
+  which QDK 1.29.1 did not expose as a flat result property. Consumers should
   treat the current value as provisional until a true ISA mapping is agreed.
-- **Several appendix property names don't exist in this qdk version.**
+- **Several appendix property names were absent in qdk 1.29.1.**
   `docs/data-contracts.md`'s appendix lists `BLOCK_SIZE`, `BASE_SYSTEM_COST`,
   `SHOT_COST`, `COST_PER_QUBIT`, `COST_PER_HOUR`,
-  `COST_PER_QUBIT_PER_HOUR`, and `DATA_QUBIT_SPACING`. None of these names exist
-  on `qdk.qre.property_keys` in `1.29.1` (verified directly against the
-  installed package), so `estimate.py`'s `PROPERTY_IDS` — built from
-  `dir(property_keys)` — never includes them, and they never appear in
-  `frontier[].additional`. `outputToResult.ts` still carries mapping entries
-  for them so nothing needs to change if a future qdk version adds them.
+  `COST_PER_QUBIT_PER_HOUR`, and `DATA_QUBIT_SPACING`. These names were not
+  present in `qdk.qre.property_keys` in `1.29.1`; they are present in
+  `1.30.0`. `estimate.py` builds `PROPERTY_IDS` from `dir(property_keys)`, so
+  newly emitted values can flow through without a mapping-table change.
 - **`distance` and `codeCycleTime` aren't in the entry's flat properties
   dict.** They live on the QEC transform's instruction node in the result's
   provenance graph (`entry.source.nodes`, filtered to the `SurfaceCode` /

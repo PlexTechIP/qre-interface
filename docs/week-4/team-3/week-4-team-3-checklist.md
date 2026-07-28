@@ -1,4 +1,4 @@
-# Week 4 — Team 3 (Neil + Jessie) — Checklist: Engine Upgrade + Documentation
+# Week 4 — Team 3 — Checklist: Engine Upgrade + Documentation
 
 **Due: Wednesday Jul 29 EOD** — the single deadline for the week.
 **Tue Jul 28** 5–6pm is the checkpoint meeting.
@@ -13,8 +13,8 @@ blocked on the bump**, so it goes first.
 
 **Work split — fill this in at kickoff and commit it:**
 
-- Neil: _______________________
-- Jessie: _______________________
+- Architecture docs lead: _______________________
+- Setup guide lead: _______________________
 - Shared / pairing on: _______________________
 
 ## A. Day 0

@@ -17,13 +17,15 @@ docs/
 ├── tech-stack.md              ← Electron / React / TypeScript / SQLite / QRE v3
 ├── engineering-workflow.md    ← git, branches, PRs, reviews, repo conventions
 ├── data-contracts.md          ← RunConfig & RunResult JSON shapes (v1)
+├── architecture.md            ← end-to-end app, IPC, engine, and store architecture
+├── setup-and-troubleshooting.md ← clean-machine setup and real failure fixes
 ├── glossary.md                ← QRE and project terminology
 ├── week-1/                    ← Tue Jun 30 → Tue Jul 7, 2026
 │   ├── week-1-overview.md
 │   ├── week-1-mockup-spec.md  ← shared Figma mockup requirements (all teams)
 │   ├── team-1/                ← Sun Min + Emma
 │   ├── team-2/                ← Melody + Rishabh
-│   └── team-3/                ← Neil + Jessie
+│   └── team-3/                ← Mockup
 ├── week-2/                    ← Tue Jul 7 → Tue Jul 14 checkpoint; due Wed Jul 15 EOD
 │   ├── week-2-overview.md
 │   ├── team-1/                ← Configuration UI
@@ -59,8 +61,9 @@ dedicated integration doc appears only when a week's handoffs need one.
 ## Reading order
 
 1. **First week on the project:** `project-overview.md` → `tech-stack.md` →
-   `engineering-workflow.md` → `glossary.md` (skim) → your team's folder for the
-   current week.
+   `engineering-workflow.md` → `architecture.md` →
+   `setup-and-troubleshooting.md` → `glossary.md` (skim) → your team's folder
+   for the current week.
 2. **Every week after:** the current week's `week-N-overview.md` → your team's
    folder. Re-read `data-contracts.md` whenever your work touches RunConfig or
    RunResult.

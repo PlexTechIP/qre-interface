@@ -40,6 +40,7 @@ PROPERTY_IDS = {
 }
 PROPERTY_NAMES = {value: name for name, value in PROPERTY_IDS.items()}
 ROUND_BASED_CACHE = Path(__file__).parent / ".qre-cache" / "round-based"
+MISSING_PROPERTY = 2**63 - 1
 
 
 def failure_code_for(exc: Exception) -> str:
@@ -131,8 +132,8 @@ def build_trace_query(trace_transform: dict[str, Any]):
 def instruction_properties(instruction: Any) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     for name, key in PROPERTY_IDS.items():
-        value = instruction.get_property_or(key, None)
-        if value is not None:
+        value = instruction.get_property_or(key, MISSING_PROPERTY)
+        if value != MISSING_PROPERTY:
             properties[str(key)] = jsonable(value)
     return properties
 
@@ -186,8 +187,8 @@ def serialize_stats(stats: Any) -> dict[str, Any]:
 def find_qec_property(entry: Any, key: int, default: Any = None) -> Any:
     for node in entry.source.nodes:
         if type(node.transform).__name__ in ("SurfaceCode", "ThreeAux"):
-            value = node.instruction.get_property_or(key, None)
-            if value is not None:
+            value = node.instruction.get_property_or(key, MISSING_PROPERTY)
+            if value != MISSING_PROPERTY:
                 return value
     return default
 

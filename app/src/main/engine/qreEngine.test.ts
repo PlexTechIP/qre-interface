@@ -46,7 +46,7 @@ describe("QreEngine", () => {
         entries: expect.any(Array),
         stats: expect.any(Object),
       });
-      expect(result.qreVersion).toBe("1.29.1");
+      expect(result.qreVersion).toBe("1.30.0");
     },
     60_000,
   );
