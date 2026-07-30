@@ -80,6 +80,10 @@ describe("App shell wiring", () => {
     expect(
       screen.getByRole("heading", { name: "Estimation Results" }),
     ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled(),
+    );
+    expect(screen.getByRole("button", { name: "Rerun" })).toBeEnabled();
   });
 
   it("opening a run from Run History shows it on the Results page and moves the sidebar", async () => {
@@ -96,6 +100,37 @@ describe("App shell wiring", () => {
       "aria-current",
       "page",
     );
+  });
+
+  it("exports and reruns the resolved record directly from Results", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+
+    const viewButtons = await screen.findAllByRole("button", { name: "View" });
+    await userEvent.click(viewButtons[0]!);
+
+    const exportButton = await screen.findByRole("button", { name: "Export" });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    await userEvent.click(exportButton);
+
+    const exportDialog = screen.getByRole("dialog");
+    expect(
+      within(exportDialog).getByRole("heading", {
+        name: "Export run as Markdown",
+      }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(exportDialog).getByRole("button", { name: "Close" }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Rerun" }));
+    expect(
+      await screen.findByRole("heading", { name: "Run Configuration" }),
+    ).toBeVisible();
+    const nameInput = screen.getByRole("textbox", {
+      name: /optional/i,
+    }) as HTMLInputElement;
+    expect(nameInput.value).toMatch(/rerun$/i);
   });
 
   it("keeps each run's selected frontier row across Results, History, and Comparison", async () => {

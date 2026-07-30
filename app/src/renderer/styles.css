@@ -407,6 +407,32 @@ select {
   gap: 18px;
 }
 
+.results-page-frame {
+  display: grid;
+  gap: 12px;
+}
+
+.results-page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 30px;
+}
+
+.results-page-toolbar > .muted {
+  margin: 0;
+  font-size: 12px;
+}
+
+.results-actions-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-danger-text);
+  font-size: 12px;
+}
+
 .results-header {
   display: flex;
   align-items: flex-start;
@@ -3035,8 +3061,13 @@ button.danger:hover {
 
   .comparison-actions,
   .detail-actions,
+  .results-page-toolbar,
   .run-flow__actions {
     flex-wrap: wrap;
+  }
+
+  .results-page-toolbar {
+    justify-content: flex-start;
   }
 
   .filter-toggle {

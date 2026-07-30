@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
+import type { RerunRequest } from "./history/rerun";
 import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
 import { RunConfiguration } from "./RunConfiguration";
@@ -80,6 +81,17 @@ export function App() {
     );
   }, []);
 
+  const handleRerunRequest = useCallback(
+    ({ sourceRecord, config }: RerunRequest): void => {
+      setRerunConfig({
+        ...config,
+        name: `${sourceRecord.config.name} · rerun`,
+      });
+      setActivePage("config");
+    },
+    [],
+  );
+
   // History and Comparison are two views of the same store, so a selection made
   // in History carries into Comparison.
   const showHistorySurface = activePage === "history" || activePage === "comparison";
@@ -153,6 +165,8 @@ export function App() {
                   handleSelectedRowChange(latestRun.result.runId, selectedIndex);
                 }
               }}
+              store={window.store}
+              onRerunRequest={handleRerunRequest}
             />
           ) : null}
           {showHistorySurface ? (
@@ -164,13 +178,7 @@ export function App() {
               onViewRun={handleViewRun}
               selectedRowByRunId={selectedRowByRunId}
               onSelectedRowChange={handleSelectedRowChange}
-              onRerunRequest={({ sourceRecord, config }) => {
-                setRerunConfig({
-                  ...config,
-                  name: `${sourceRecord.config.name} · rerun`,
-                });
-                setActivePage("config");
-              }}
+              onRerunRequest={handleRerunRequest}
               exportMode="complete"
             />
           ) : null}
