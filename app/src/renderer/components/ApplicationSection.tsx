@@ -6,10 +6,12 @@ import type { HyperparamValue } from "../constants/hyperparameters";
 import type {
   ApplicationForm,
   ApplicationFormType,
+  ManualCountsForm,
   SavedProgram,
 } from "../state/formState";
 import type { FieldErrors } from "../state/validation";
 import { HyperparametersPanel } from "./HyperparametersPanel";
+import { NumberField } from "./NumberField";
 
 interface ApplicationSectionProps {
   value: ApplicationForm;
@@ -21,6 +23,22 @@ const TYPE_OPTIONS: readonly { value: ApplicationFormType; label: string }[] = [
   { value: "benchmark", label: "Benchmark" },
   { value: "saved", label: "Saved Programs" },
   { value: "uploaded", label: "Upload Program File" },
+  { value: "manualCounts", label: "Manual Logical Counts" },
+];
+
+/** The seven Manual Logical Counts fields, in spec order. */
+const MANUAL_COUNT_FIELDS: readonly {
+  key: keyof ManualCountsForm;
+  label: string;
+  help: string;
+}[] = [
+  { key: "numQubits", label: "Number of Qubits", help: "Required · integer ≥ 1" },
+  { key: "tCount", label: "T Count", help: "Required · integer ≥ 0" },
+  { key: "rotationCount", label: "Rotation Count", help: "Required · integer ≥ 0" },
+  { key: "rotationDepth", label: "Rotation Depth", help: "Required · 0 ≤ depth ≤ Rotation Count" },
+  { key: "cczCount", label: "CCZ Count", help: "Required · integer ≥ 0" },
+  { key: "ccixCount", label: "CCiX Count", help: "Required · integer ≥ 0" },
+  { key: "measurementCount", label: "Measurement Count", help: "Required · integer ≥ 0" },
 ];
 
 /** The file's basename, used as a saved program's default display name. */
@@ -92,6 +110,13 @@ export function ApplicationSection({
 
   const clearUpload = (): void => {
     patch({ upload: { ...value.upload, filePath: "" } });
+  };
+
+  const setManualCount = (
+    key: keyof ManualCountsForm,
+    next: number | null,
+  ): void => {
+    patch({ manualCounts: { ...value.manualCounts, [key]: next } });
   };
 
   /**
@@ -279,7 +304,7 @@ export function ApplicationSection({
             </p>
           ) : null}
         </div>
-      ) : (
+      ) : value.type === "uploaded" ? (
         <div className="upload-picker">
           <label
             className={`dropzone${dragging ? " dropzone--active" : ""}`}
@@ -335,6 +360,31 @@ export function ApplicationSection({
               {errors.uploadFilePath}
             </p>
           ) : null}
+        </div>
+      ) : (
+        <div className="field-block">
+          <span className="field-eyebrow" id="manual-counts-label">
+            Logical Resource Counts
+          </span>
+          <p className="dropzone__formats">
+            Estimate directly from logical counts — no source program. Fields map
+            to the engine's LogicalCounts.
+          </p>
+          <div className="form-grid" role="group" aria-labelledby="manual-counts-label">
+            {MANUAL_COUNT_FIELDS.map((field) => (
+              <NumberField
+                key={field.key}
+                id={`manual-${field.key}`}
+                label={field.label}
+                placeholder="None"
+                value={value.manualCounts[field.key]}
+                onChange={(next) => setManualCount(field.key, next)}
+                error={errors[field.key]}
+                help={field.help}
+                required
+              />
+            ))}
+          </div>
         </div>
       )}
     </section>

@@ -44,7 +44,36 @@ export interface UploadedApplication {
   addToLibrary: boolean;
 }
 
-export type Application = BenchmarkApplication | UploadedApplication;
+/**
+ * Manual Logical Counts — a program described directly by its logical resource
+ * counts, with no source file. The seven fields map one-to-one onto qdk's
+ * `LogicalCounts` keys; the engine builds a `QSharpApplication` whose
+ * `entry_expr` is that `LogicalCounts`, skipping Q# compilation entirely.
+ * All counts are non-negative integers; numQubits is >= 1 and rotationDepth is
+ * bounded by rotationCount (0 <= rotationDepth <= rotationCount).
+ */
+export interface ManualCountsApplication {
+  type: "manualCounts";
+  /** Number of Qubits — integer >= 1. */
+  numQubits: number;
+  /** T Count — integer >= 0. */
+  tCount: number;
+  /** Rotation Count — integer >= 0. */
+  rotationCount: number;
+  /** Rotation Depth — integer, 0 <= rotationDepth <= rotationCount. */
+  rotationDepth: number;
+  /** CCZ Count — integer >= 0. */
+  cczCount: number;
+  /** CCiX Count — integer >= 0. */
+  ccixCount: number;
+  /** Measurement Count — integer >= 0. */
+  measurementCount: number;
+}
+
+export type Application =
+  | BenchmarkApplication
+  | UploadedApplication
+  | ManualCountsApplication;
 
 export const ARCHITECTURE_TYPES = ["gateBased", "majorana"] as const;
 export type ArchitectureType = (typeof ARCHITECTURE_TYPES)[number];
@@ -372,13 +401,15 @@ export interface RunFilter {
 
 /**
  * The stable key the Application filter groups by: the benchmark id for
- * benchmark runs, or `uploaded:<filePath>` for uploaded programs. Team 1 builds
- * the filter's option list from the distinct keys present across the records.
+ * benchmark runs, `uploaded:<filePath>` for uploaded programs, or
+ * `manual-counts` for Manual Logical Counts runs (which have no source). Team 1
+ * builds the filter's option list from the distinct keys present in the records.
  */
 export function applicationKey(config: RunConfig): string {
-  return config.application.type === "benchmark"
-    ? config.application.benchmarkId
-    : `uploaded:${config.application.filePath}`;
+  const app = config.application;
+  if (app.type === "benchmark") return app.benchmarkId;
+  if (app.type === "uploaded") return `uploaded:${app.filePath}`;
+  return "manual-counts";
 }
 
 /** Does a record satisfy every constraint in the filter? Pure — the reference match semantics. */

@@ -31,10 +31,9 @@ interface MicroArchitectureSectionProps {
 }
 
 /**
- * The full QEC-code catalogue for display. Only `surface_code` and `three_aux`
- * are contract values and reachable (their architectures are available); the
- * rest are shown greyed. Low-Move belongs to Neutral Atom (not available yet),
- * and the last four are private builds — displayed, never selectable. QEC is
+ * The QEC-code catalogue for display. `surface_code` and `three_aux` are
+ * contract values and reachable (their architectures are available); Low-Move
+ * belongs to Neutral Atom and is shown disabled pending its enablement. QEC is
  * locked to architecture, so the control's value always follows the derivation.
  */
 const QEC_CODE_OPTIONS: readonly {
@@ -45,10 +44,6 @@ const QEC_CODE_OPTIONS: readonly {
   { value: "surface_code", label: "Surface Code", disabled: false },
   { value: "three_aux", label: "Three-Aux", disabled: false },
   { value: "low_move", label: "Low-Move Surface Code · Neutral Atom", disabled: true },
-  { value: "beryllium", label: "Beryllium · Private", disabled: true },
-  { value: "phenom_beryllium", label: "Phenomenological Beryllium · Private", disabled: true },
-  { value: "aft_surface", label: "AFT Surface Code · Private", disabled: true },
-  { value: "bicycle", label: "Bicycle Code · Private", disabled: true },
 ];
 
 /**
@@ -75,7 +70,7 @@ const MEMORY_OPTIMIZATION_OPTIONS = [
  * trace transform, and max-error controls. QEC is derived/locked; the factory
  * carries the Litinski19 fallback rule; Secondary Factory / Memory Optimization
  * are optional renderer-only placeholders (no contract field yet — not
- * serialized); Dynamic Memory Compute is a private, view-only block.
+ * serialized).
  */
 export function MicroArchitectureSection({
   architecture,
@@ -322,29 +317,6 @@ export function MicroArchitectureSection({
               readOnly
             />
           </Field>
-        </div>
-
-        <div className="micro-subgroup micro-subgroup--private">
-          <span className="micro-subgroup__label">
-            Dynamic Memory Compute
-            <span className="private-badge">Private · View only</span>
-          </span>
-          <div className="micro-grid">
-            <Field
-              id="micro-compute-capacity"
-              label="Compute Capacity Percentage"
-              help="Default 50%"
-            >
-              <select id="micro-compute-capacity" className="field__input" value="50" disabled>
-                <option value="50">50%</option>
-              </select>
-            </Field>
-            <Field id="micro-eviction" label="Eviction Strategy" help="Default LRU">
-              <select id="micro-eviction" className="field__input" value="lru" disabled>
-                <option value="lru">LRU</option>
-              </select>
-            </Field>
-          </div>
         </div>
         </div>
       </div>

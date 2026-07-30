@@ -16,10 +16,10 @@ interface ArchitectureSectionProps {
 }
 
 /**
- * The architecture options shown in the segmented control. Only the two the
- * contract supports (`gateBased`, `majorana`) are selectable; Neutral Atom and
- * Trapped Ion are displayed but disabled — Trapped Ion is marked Private, and
- * neither is available in this build (no contract variant + no engine support).
+ * The architecture options shown in the segmented control. `gateBased` and
+ * `majorana` are contract-supported and selectable; Neutral Atom is engine-
+ * supported and pending enablement (contract variant + field set), shown
+ * disabled until then.
  */
 type ArchOption =
   | { value: ArchitectureType; label: string; available: true }
@@ -29,7 +29,6 @@ const ARCH_OPTIONS: readonly ArchOption[] = [
   { value: "gateBased", label: "Superconducting", available: true },
   { value: "majorana", label: "Majorana", available: true },
   { value: "neutral-atom", label: "Neutral Atom", available: false, reason: "Not available in this build yet." },
-  { value: "trapped-ion", label: "Trapped Ion · Private", available: false, reason: "Private — not available." },
 ];
 
 /** Input 2 — QPU Specifications. Reveals only the selected architecture's fields. */

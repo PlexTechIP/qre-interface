@@ -50,7 +50,25 @@ export interface ArchitectureForm {
   majorana: MajoranaForm;
 }
 
-export type ApplicationFormType = "benchmark" | "saved" | "uploaded";
+export type ApplicationFormType =
+  | "benchmark"
+  | "saved"
+  | "uploaded"
+  | "manualCounts";
+
+/**
+ * Manual Logical Counts draft — the seven contract fields, each `null` until the
+ * user enters it (so the form can require them without pretending a default).
+ */
+export interface ManualCountsForm {
+  numQubits: number | null;
+  tCount: number | null;
+  rotationCount: number | null;
+  rotationDepth: number | null;
+  cczCount: number | null;
+  ccixCount: number | null;
+  measurementCount: number | null;
+}
 
 export interface UploadForm {
   filePath: string;
@@ -80,6 +98,8 @@ export interface ApplicationForm {
   savedPrograms: SavedProgram[];
   /** The selected saved program's id (empty until one is picked). */
   selectedSavedId: string;
+  /** Manual Logical Counts draft, used when type === "manualCounts". */
+  manualCounts: ManualCountsForm;
 }
 
 export interface PsspcForm {
@@ -118,6 +138,15 @@ export function createInitialFormState(): FormState {
       upload: { filePath: "", format: "qsharp", addToLibrary: false },
       savedPrograms: [],
       selectedSavedId: "",
+      manualCounts: {
+        numQubits: null,
+        tCount: null,
+        rotationCount: null,
+        rotationDepth: null,
+        cczCount: null,
+        ccixCount: null,
+        measurementCount: null,
+      },
     },
     architecture: {
       type: "gateBased",
@@ -141,22 +170,39 @@ export function createInitialFormState(): FormState {
 /** Rehydrate an immutable saved config into the editable form used by Rerun. */
 export function formStateFromRunConfig(config: RunConfig): FormState {
   const initial = createInitialFormState();
-  const application: ApplicationForm =
-    config.application.type === "benchmark"
-      ? {
-          ...initial.application,
-          type: "benchmark",
-          benchmarkId: config.application.benchmarkId,
-        }
-      : {
-          ...initial.application,
-          type: "uploaded",
-          upload: {
-            filePath: config.application.filePath,
-            format: config.application.format,
-            addToLibrary: config.application.addToLibrary,
-          },
-        };
+  const app = config.application;
+  let application: ApplicationForm;
+  if (app.type === "benchmark") {
+    application = {
+      ...initial.application,
+      type: "benchmark",
+      benchmarkId: app.benchmarkId,
+    };
+  } else if (app.type === "uploaded") {
+    application = {
+      ...initial.application,
+      type: "uploaded",
+      upload: {
+        filePath: app.filePath,
+        format: app.format,
+        addToLibrary: app.addToLibrary,
+      },
+    };
+  } else {
+    application = {
+      ...initial.application,
+      type: "manualCounts",
+      manualCounts: {
+        numQubits: app.numQubits,
+        tCount: app.tCount,
+        rotationCount: app.rotationCount,
+        rotationDepth: app.rotationDepth,
+        cczCount: app.cczCount,
+        ccixCount: app.ccixCount,
+        measurementCount: app.measurementCount,
+      },
+    };
+  }
 
   const architecture: ArchitectureForm =
     config.architecture.type === "gateBased"

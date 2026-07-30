@@ -39,7 +39,7 @@
       "format": "date-time"
     },
     "application": {
-      "description": "Application — exactly one benchmark or uploaded program variant.",
+      "description": "Application — exactly one benchmark, uploaded program, or manual logical counts variant.",
       "oneOf": [
         {
           "type": "object",
@@ -73,6 +73,31 @@
               "type": "boolean",
               "description": "Whether the uploaded program should be added to the benchmark list."
             }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Manual Logical Counts — the seven fields map 1:1 onto qdk LogicalCounts keys. The cross-field bound rotationDepth <= rotationCount is enforced by the adapter, not expressible here.",
+          "required": [
+            "type",
+            "numQubits",
+            "tCount",
+            "rotationCount",
+            "rotationDepth",
+            "cczCount",
+            "ccixCount",
+            "measurementCount"
+          ],
+          "properties": {
+            "type": { "const": "manualCounts" },
+            "numQubits": { "type": "integer", "minimum": 1, "description": "Number of Qubits (>= 1)." },
+            "tCount": { "type": "integer", "minimum": 0, "description": "T Count (>= 0)." },
+            "rotationCount": { "type": "integer", "minimum": 0, "description": "Rotation Count (>= 0)." },
+            "rotationDepth": { "type": "integer", "minimum": 0, "description": "Rotation Depth (>= 0; also <= rotationCount, enforced by the adapter)." },
+            "cczCount": { "type": "integer", "minimum": 0, "description": "CCZ Count (>= 0)." },
+            "ccixCount": { "type": "integer", "minimum": 0, "description": "CCiX Count (>= 0)." },
+            "measurementCount": { "type": "integer", "minimum": 0, "description": "Measurement Count (>= 0)." }
           }
         }
       ]

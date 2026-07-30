@@ -8,7 +8,7 @@
  */
 
 import { validateHyperparams, type HyperparamError } from "../constants/hyperparameters";
-import type { FormState } from "./formState";
+import type { FormState, ManualCountsForm } from "./formState";
 import { schemaValidationStamp, toRunConfig } from "./toRunConfig";
 import { validateRunConfigSchema } from "./schemaValidation";
 
@@ -16,6 +16,14 @@ export interface FieldErrors {
   benchmarkId?: string;
   savedProgram?: string;
   uploadFilePath?: string;
+  /** Manual Logical Counts field errors, keyed by the contract field name. */
+  numQubits?: string;
+  tCount?: string;
+  rotationCount?: string;
+  rotationDepth?: string;
+  cczCount?: string;
+  ccixCount?: string;
+  measurementCount?: string;
   errorRate?: string;
   gateTime?: string;
   measurementTime?: string;
@@ -45,6 +53,8 @@ export function validateForm(state: FormState): FieldErrors {
       (program) => program.id === application.selectedSavedId,
     );
     if (!chosen) errors.savedProgram = "Select a saved program to estimate.";
+  } else if (application.type === "manualCounts") {
+    validateManualCounts(application.manualCounts, errors);
   } else if (application.upload.filePath.trim().length === 0) {
     errors.uploadFilePath = "Choose a program file to upload.";
   }
@@ -94,6 +104,50 @@ export function validateForm(state: FormState): FieldErrors {
   }
 
   return errors;
+}
+
+/** A non-negative-integer count field: required, whole number, >= `min`. */
+function checkCount(
+  value: number | null,
+  min: number,
+  label: string,
+): string | undefined {
+  if (value === null) return `${label} is required.`;
+  if (!Number.isInteger(value)) return `${label} must be a whole number.`;
+  if (value < min) return `${label} must be ${min} or greater.`;
+  return undefined;
+}
+
+/** Assign `message` to `errors[key]` only when it is a real error (not undefined). */
+function assignIf(
+  errors: FieldErrors,
+  key: keyof FieldErrors,
+  message: string | undefined,
+): void {
+  if (message !== undefined) (errors as Record<string, string>)[key] = message;
+}
+
+/** Validate the seven Manual Logical Counts fields into `errors`. */
+function validateManualCounts(m: ManualCountsForm, errors: FieldErrors): void {
+  assignIf(errors, "numQubits", checkCount(m.numQubits, 1, "Number of Qubits"));
+  assignIf(errors, "tCount", checkCount(m.tCount, 0, "T Count"));
+  assignIf(errors, "rotationCount", checkCount(m.rotationCount, 0, "Rotation Count"));
+  assignIf(errors, "cczCount", checkCount(m.cczCount, 0, "CCZ Count"));
+  assignIf(errors, "ccixCount", checkCount(m.ccixCount, 0, "CCiX Count"));
+  assignIf(errors, "measurementCount", checkCount(m.measurementCount, 0, "Measurement Count"));
+
+  // Rotation Depth is a non-negative integer additionally bounded by Rotation
+  // Count (a rotation cannot have more depth than there are rotations).
+  const depthBase = checkCount(m.rotationDepth, 0, "Rotation Depth");
+  if (depthBase !== undefined) {
+    errors.rotationDepth = depthBase;
+  } else if (
+    m.rotationCount !== null &&
+    m.rotationDepth !== null &&
+    m.rotationDepth > m.rotationCount
+  ) {
+    errors.rotationDepth = "Rotation Depth cannot exceed Rotation Count.";
+  }
 }
 
 export function hasFieldErrors(errors: FieldErrors): boolean {
