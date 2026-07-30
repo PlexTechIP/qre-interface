@@ -1,6 +1,10 @@
 import type { RunRecord } from "../../shared/types";
 import { formatMetric } from "../results/formatMetric";
 import {
+  resolveSelectedFrontierRow,
+  type SelectedRowByRunId,
+} from "../results/selectedRows";
+import {
   ARCHITECTURE_LABELS,
   FACTORY_LABELS,
   QEC_LABELS,
@@ -13,9 +17,9 @@ import {
  * It knows the RunRecord shape and nothing about how records are stored: no
  * store import, no fetching, no engine. Every displayed value is DERIVED from
  * `config`/`result` (the record never duplicates them), and every result metric
- * comes from the run's representative frontier row (row 0 — RunRecord does not
- * persist a selected row; noted for review). All human-facing values route
- * through Team 2's `formatMetric`.
+ * comes from the run's session-selected representative frontier row (defaulting
+ * to row 1; RunRecord remains immutable). All human-facing values route through
+ * Team 2's `formatMetric`.
  *
  * This component only RENDERS and RAISES events. The container owns the store,
  * the confirm step for Delete, and the Rerun/Export handling.
@@ -25,6 +29,7 @@ export interface RunHistoryListProps {
   records: RunRecord[];
   selectedId: string | null;
   comparisonIds: string[];
+  selectedRowByRunId: SelectedRowByRunId;
   /** True when any search/filter is active — distinguishes "no matches" from "no runs yet". */
   hasActiveFilter: boolean;
   onViewDetails: (id: string) => void;
@@ -52,6 +57,7 @@ export function RunHistoryList({
   records,
   selectedId,
   comparisonIds,
+  selectedRowByRunId,
   hasActiveFilter,
   onViewDetails,
   onRerun,
@@ -103,9 +109,13 @@ export function RunHistoryList({
             <tbody>
               {records.map((record) => {
                 const { config, result } = record;
-                // Representative frontier row for this run. null on a failed run
-                // (frontier is null) — metric cells fall back to formatMetric's "—".
-                const row = result.frontier?.[0] ?? null;
+                // Representative frontier row for this run. Session selections
+                // never mutate the saved record; missing/stale indices fall back
+                // to row 1, and failed runs remain rowless.
+                const { row } = resolveSelectedFrontierRow(
+                  result,
+                  selectedRowByRunId[record.id] ?? 0,
+                );
                 const isSelected = record.id === selectedId;
                 const isChecked = comparisonSet.has(record.id);
                 const isFailed = result.status === "failed";

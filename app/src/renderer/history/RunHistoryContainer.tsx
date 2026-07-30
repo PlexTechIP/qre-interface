@@ -16,6 +16,7 @@ import { ExportStubDialog } from "./ExportStubDialog";
 import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
+import type { SelectedRowByRunId } from "../results/selectedRows";
 
 /**
  * Container for the Run History + Comparison surfaces.
@@ -57,6 +58,9 @@ interface RunHistoryContainerProps {
   onRerunRequest?: (request: RerunRequest) => void;
   /** The app ships the complete Markdown export; isolated tests keep the stub. */
   exportMode?: "preview" | "complete";
+  /** App-level session selection for each immutable run record. */
+  selectedRowByRunId?: SelectedRowByRunId;
+  onSelectedRowChange?: (runId: string, selectedIndex: number) => void;
 }
 
 export function RunHistoryContainer({
@@ -67,6 +71,8 @@ export function RunHistoryContainer({
   onViewRun,
   onRerunRequest,
   exportMode = "preview",
+  selectedRowByRunId: controlledSelectedRows,
+  onSelectedRowChange,
 }: RunHistoryContainerProps = {}) {
   // The store is created once and never recreated across renders. Kept behind
   // the RunStore type so nothing here depends on it being in-memory.
@@ -91,6 +97,21 @@ export function RunHistoryContainer({
 
   // Multi-select for Comparison: the set of record ids checked in History.
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [internalSelectedRows, setInternalSelectedRows] = useState<SelectedRowByRunId>({});
+  const selectedRowByRunId = controlledSelectedRows ?? internalSelectedRows;
+  const selectRow = useCallback(
+    (runId: string, selectedIndex: number) => {
+      if (controlledSelectedRows === undefined) {
+        setInternalSelectedRows((previous) =>
+          previous[runId] === selectedIndex
+            ? previous
+            : { ...previous, [runId]: selectedIndex },
+        );
+      }
+      onSelectedRowChange?.(runId, selectedIndex);
+    },
+    [controlledSelectedRows, onSelectedRowChange],
+  );
 
   // Fallback Rerun preview state, used only when no app-shell handoff is supplied.
   const [rerunRequest, setRerunRequest] = useState<RerunRequest | null>(null);
@@ -325,6 +346,7 @@ export function RunHistoryContainer({
       ) : view === "comparison" ? (
         <ComparisonView
           records={comparisonRecords}
+          selectedRowByRunId={selectedRowByRunId}
           onClear={clearComparison}
           onRemove={toggleComparison}
           onExport={() => setIsComparisonExportOpen(true)}
@@ -338,6 +360,10 @@ export function RunHistoryContainer({
           onRerun={onRerun}
           onExport={onExport}
           onDelete={requestDelete}
+          selectedIndex={selectedRowByRunId[selectedRecord.id] ?? 0}
+          onSelectedIndexChange={(selectedIndex) =>
+            selectRow(selectedRecord.id, selectedIndex)
+          }
         />
       ) : (
         <>
@@ -346,6 +372,7 @@ export function RunHistoryContainer({
             records={records}
             selectedId={selectedId}
             comparisonIds={comparisonIds}
+            selectedRowByRunId={selectedRowByRunId}
             hasActiveFilter={hasActiveFilter}
             onViewDetails={onViewDetails}
             onRerun={onRerun}
@@ -377,6 +404,7 @@ export function RunHistoryContainer({
       {isComparisonExportOpen ? (
         <ComparisonExportStubDialog
           records={comparisonRecords}
+          selectedRowByRunId={selectedRowByRunId}
           mode={exportMode}
           onClose={() => setIsComparisonExportOpen(false)}
         />

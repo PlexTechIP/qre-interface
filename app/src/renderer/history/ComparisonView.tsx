@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import type { RunRecord } from "../../shared/types";
 import { FieldFilter } from "../results/FieldFilter";
+import type { SelectedRowByRunId } from "../results/selectedRows";
 import { ComparisonCharts } from "./ComparisonCharts";
 import { ComparisonTable } from "./ComparisonTable";
 import { additionalFieldDefinitions, toComparisonColumn } from "./comparisonModel";
@@ -17,6 +18,7 @@ import { additionalFieldDefinitions, toComparisonColumn } from "./comparisonMode
  */
 export interface ComparisonViewProps {
   records: RunRecord[];
+  selectedRowByRunId?: SelectedRowByRunId;
   onClear: () => void;
   onRemove: (id: string) => void;
   /** Opens the comparison-set export stub (the real exporter is Part 3). */
@@ -31,6 +33,7 @@ export interface ComparisonViewProps {
 
 export function ComparisonView({
   records,
+  selectedRowByRunId = {},
   onClear,
   onRemove,
   onExport,
@@ -40,7 +43,13 @@ export function ComparisonView({
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  const columns = useMemo(() => records.map(toComparisonColumn), [records]);
+  const columns = useMemo(
+    () =>
+      records.map((record) =>
+        toComparisonColumn(record, selectedRowByRunId[record.id] ?? 0),
+      ),
+    [records, selectedRowByRunId],
+  );
   const additionalFields = useMemo(() => additionalFieldDefinitions(columns), [columns]);
   const visibleAdditionalCount = additionalFields.filter((field) => !hiddenKeys.has(field.key)).length;
 

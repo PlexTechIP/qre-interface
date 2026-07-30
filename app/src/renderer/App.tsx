@@ -4,6 +4,7 @@ import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import { ResultsPage } from "./results/ResultsPage";
+import type { SelectedRowByRunId } from "./results/selectedRows";
 import { RunConfiguration } from "./RunConfiguration";
 import { ThemeToggle, type Theme } from "./ThemeToggle";
 
@@ -47,6 +48,9 @@ export function App() {
   // (useRunFlow) already persists every finished run to the real SQLite store
   // over IPC (window.store); here we only capture it for the Results page.
   const [latestRun, setLatestRun] = useState<{ config: RunConfig; result: RunResult } | null>(null);
+  // Presentation-only session state: a saved record remains immutable while
+  // each run can be represented by the frontier row the user last selected.
+  const [selectedRowByRunId, setSelectedRowByRunId] = useState<SelectedRowByRunId>({});
   // A reconstructed config queued by a Rerun, pre-filled into the form.
   const [rerunConfig, setRerunConfig] = useState<RunConfig | null>(null);
 
@@ -66,6 +70,14 @@ export function App() {
   const handleViewRun = useCallback((record: RunRecord): void => {
     setLatestRun({ config: record.config, result: record.result });
     setActivePage("results");
+  }, []);
+
+  const handleSelectedRowChange = useCallback((runId: string, selectedIndex: number): void => {
+    setSelectedRowByRunId((previous) =>
+      previous[runId] === selectedIndex
+        ? previous
+        : { ...previous, [runId]: selectedIndex },
+    );
   }, []);
 
   // History and Comparison are two views of the same store, so a selection made
@@ -130,7 +142,18 @@ export function App() {
             <RunConfiguration onRunComplete={handleRunComplete} initialConfig={rerunConfig} />
           ) : null}
           {activePage === "results" ? (
-            <ResultsPage latestRun={latestRun} onRunEstimation={() => setActivePage("config")} />
+            <ResultsPage
+              latestRun={latestRun}
+              onRunEstimation={() => setActivePage("config")}
+              selectedIndex={
+                latestRun ? (selectedRowByRunId[latestRun.result.runId] ?? 0) : 0
+              }
+              onSelectedIndexChange={(selectedIndex) => {
+                if (latestRun) {
+                  handleSelectedRowChange(latestRun.result.runId, selectedIndex);
+                }
+              }}
+            />
           ) : null}
           {showHistorySurface ? (
             <RunHistoryContainer
@@ -139,6 +162,8 @@ export function App() {
               onViewChange={setActivePage}
               onNavigateToConfig={() => setActivePage("config")}
               onViewRun={handleViewRun}
+              selectedRowByRunId={selectedRowByRunId}
+              onSelectedRowChange={handleSelectedRowChange}
               onRerunRequest={({ sourceRecord, config }) => {
                 setRerunConfig({
                   ...config,
