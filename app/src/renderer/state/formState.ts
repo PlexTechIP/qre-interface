@@ -8,16 +8,20 @@
  *
  * `id`/`createdAt` are NOT stored here — they're stamped at Run-click.
  */
-
+ 
 import {
   BENCHMARK_IDS,
   expectedQecCode,
+  isGsj24Allowed,
   isLitinski19Allowed,
+  type Architecture,
   type ArchitectureType,
   type MagicStateFactoryId,
   type MajoranaArchitecture,
+  type MemoryOptimizationId,
   type QecCodeId,
   type RunConfig,
+  type SecondaryFactoryId,
   type TraceTransformType,
   type UploadedProgramFormat,
 } from "../../shared/types";
@@ -25,7 +29,7 @@ import {
   defaultAllHyperparams,
   type HyperparamValues,
 } from "../constants/hyperparameters";
-
+ 
 export interface GateBasedForm {
   /** Default 1e-4. Valid: 0 < x < 0.01. null until entered. */
   errorRate: number | null;
@@ -36,26 +40,59 @@ export interface GateBasedForm {
   /** Optional; null means use the engine default. */
   twoQubitGateTime: number | null;
 }
-
+ 
 export interface MajoranaForm {
   /** Select-only: 1e-4 / 1e-5 / 1e-6. Default 1e-5. */
   errorRate: MajoranaArchitecture["errorRate"];
   /** Default 1000 ns; > 0. null until entered. */
   operationTime: number | null;
 }
-
+ 
+/**
+ * Neutral Atom draft (v1.1.0). Every field has a spec default (QPU Specification
+ * tab), so none is nullable — the form seeds them all and the user edits in
+ * place, mirroring how Majorana treats its defaulted fields.
+ */
+export interface NeutralAtomForm {
+  /** Rydberg Time (ns), > 0. Default 500. */
+  rydbergTime: number;
+  /** Rydberg Error, [0, 0.01). Default 1e-3. */
+  rydbergError: number;
+  /** Single-Qubit Time (ns), > 0. Default 1000. */
+  singleQubitTime: number;
+  /** Single-Qubit Error, [0, 0.01). Default 1e-4. */
+  singleQubitError: number;
+  /** Measurement Time (ns), > 0. Default 10000. */
+  measurementTime: number;
+  /** Measurement Error, [0, 0.01). Default 1e-4. */
+  measurementError: number;
+  /** Handoff Time (ns), >= 0. Default 0. */
+  handoffTime: number;
+  /** Atom Spacing (µm), > 0. Default 3.0. */
+  atomSpacing: number;
+  /** Max Velocity (m/s), > 0. Default 0.25. */
+  maxVelocity: number;
+  /** Max Acceleration (m/s²), > 0. Default 5000.0. */
+  maxAcceleration: number;
+  /** Surface Code Single-Qubit Time Factor, >= 1. Default 1. */
+  surfaceCodeOneQubitTimeFactor: number;
+  /** Surface Code Two-Qubit Time Factor, >= 1. Default 1. */
+  surfaceCodeTwoQubitTimeFactor: number;
+}
+ 
 export interface ArchitectureForm {
   type: ArchitectureType;
   gateBased: GateBasedForm;
   majorana: MajoranaForm;
+  neutralAtom: NeutralAtomForm;
 }
-
+ 
 export type ApplicationFormType =
   | "benchmark"
   | "saved"
   | "uploaded"
   | "manualCounts";
-
+ 
 /**
  * Manual Logical Counts draft — the seven contract fields, each `null` until the
  * user enters it (so the form can require them without pretending a default).
@@ -69,7 +106,7 @@ export interface ManualCountsForm {
   ccixCount: number | null;
   measurementCount: number | null;
 }
-
+ 
 export interface UploadForm {
   filePath: string;
   format: UploadedProgramFormat;
@@ -77,7 +114,7 @@ export interface UploadForm {
    *  keeps the uploaded file in `savedPrograms` so it can be re-run later. */
   addToLibrary: boolean;
 }
-
+ 
 /** One program the user kept in their session library (an earlier upload). */
 export interface SavedProgram {
   id: string;
@@ -86,7 +123,7 @@ export interface SavedProgram {
   filePath: string;
   format: UploadedProgramFormat;
 }
-
+ 
 export interface ApplicationForm {
   type: ApplicationFormType;
   benchmarkId: string;
@@ -101,32 +138,41 @@ export interface ApplicationForm {
   /** Manual Logical Counts draft, used when type === "manualCounts". */
   manualCounts: ManualCountsForm;
 }
-
+ 
 export interface PsspcForm {
   /** Default 20. Valid: 5 <= x <= 20. */
   tStatesPerRotation: number;
   ccxMagicStates: boolean;
 }
-
+ 
 export interface TraceTransformForm {
   type: TraceTransformType;
   psspc: PsspcForm;
 }
-
+ 
 export interface FormState {
   /** Blank => auto-generated at serialization time (see generateName). */
   name: string;
   application: ApplicationForm;
   architecture: ArchitectureForm;
   magicStateFactory: MagicStateFactoryId;
+  /**
+   * Secondary factories (v1.1.0). Multi-select set, empty by default. Independent
+   * of the primary magicStateFactory. gsj24_ccx is kept in sync with the PSSPC
+   * ccxMagicStates flag by the UI; magic_up_to_clifford is cleared on Majorana by
+   * normalizeFormState.
+   */
+  secondaryFactories: SecondaryFactoryId[];
+  /** Memory optimization (v1.1.0). "none" by default. */
+  memoryOptimization: MemoryOptimizationId;
   traceTransform: TraceTransformForm;
   /** Default 1.0 (unconstrained). Valid: 0 < x <= 1. null => unset. */
   maxError: number | null;
 }
-
+ 
 /** First benchmark in contract order, used as the default selection. */
 const DEFAULT_BENCHMARK_ID = BENCHMARK_IDS[0];
-
+ 
 /** A fresh draft: everything defaulted except the two required GateBased times. */
 export function createInitialFormState(): FormState {
   return {
@@ -157,8 +203,24 @@ export function createInitialFormState(): FormState {
         twoQubitGateTime: null,
       },
       majorana: { errorRate: 0.00001, operationTime: 1000 },
+      neutralAtom: {
+        rydbergTime: 500,
+        rydbergError: 0.001,
+        singleQubitTime: 1000,
+        singleQubitError: 0.0001,
+        measurementTime: 10000,
+        measurementError: 0.0001,
+        handoffTime: 0,
+        atomSpacing: 3.0,
+        maxVelocity: 0.25,
+        maxAcceleration: 5000.0,
+        surfaceCodeOneQubitTimeFactor: 1,
+        surfaceCodeTwoQubitTimeFactor: 1,
+      },
     },
     magicStateFactory: "round_based",
+    secondaryFactories: [],
+    memoryOptimization: "none",
     traceTransform: {
       type: "psspc",
       psspc: { tStatesPerRotation: 20, ccxMagicStates: false },
@@ -166,7 +228,7 @@ export function createInitialFormState(): FormState {
     maxError: 1.0,
   };
 }
-
+ 
 /** Rehydrate an immutable saved config into the editable form used by Rerun. */
 export function formStateFromRunConfig(config: RunConfig): FormState {
   const initial = createInitialFormState();
@@ -203,33 +265,58 @@ export function formStateFromRunConfig(config: RunConfig): FormState {
       },
     };
   }
-
-  const architecture: ArchitectureForm =
-    config.architecture.type === "gateBased"
-      ? {
-          ...initial.architecture,
-          type: "gateBased",
-          gateBased: {
-            errorRate: config.architecture.errorRate,
-            gateTime: config.architecture.gateTime,
-            measurementTime: config.architecture.measurementTime,
-            twoQubitGateTime: config.architecture.twoQubitGateTime ?? null,
-          },
-        }
-      : {
-          ...initial.architecture,
-          type: "majorana",
-          majorana: {
-            errorRate: config.architecture.errorRate,
-            operationTime: config.architecture.operationTime,
-          },
-        };
-
+ 
+  let architecture: ArchitectureForm;
+  if (config.architecture.type === "gateBased") {
+    architecture = {
+      ...initial.architecture,
+      type: "gateBased",
+      gateBased: {
+        errorRate: config.architecture.errorRate,
+        gateTime: config.architecture.gateTime,
+        measurementTime: config.architecture.measurementTime,
+        twoQubitGateTime: config.architecture.twoQubitGateTime ?? null,
+      },
+    };
+  } else if (config.architecture.type === "majorana") {
+    architecture = {
+      ...initial.architecture,
+      type: "majorana",
+      majorana: {
+        errorRate: config.architecture.errorRate,
+        operationTime: config.architecture.operationTime,
+      },
+    };
+  } else {
+    architecture = {
+      ...initial.architecture,
+      type: "neutralAtom",
+      neutralAtom: {
+        rydbergTime: config.architecture.rydbergTime,
+        rydbergError: config.architecture.rydbergError,
+        singleQubitTime: config.architecture.singleQubitTime,
+        singleQubitError: config.architecture.singleQubitError,
+        measurementTime: config.architecture.measurementTime,
+        measurementError: config.architecture.measurementError,
+        handoffTime: config.architecture.handoffTime,
+        atomSpacing: config.architecture.atomSpacing,
+        maxVelocity: config.architecture.maxVelocity,
+        maxAcceleration: config.architecture.maxAcceleration,
+        surfaceCodeOneQubitTimeFactor:
+          config.architecture.surfaceCodeOneQubitTimeFactor,
+        surfaceCodeTwoQubitTimeFactor:
+          config.architecture.surfaceCodeTwoQubitTimeFactor,
+      },
+    };
+  }
+ 
   return normalizeFormState({
     name: config.name,
     application,
     architecture,
     magicStateFactory: config.magicStateFactory,
+    secondaryFactories: config.secondaryFactories ?? [],
+    memoryOptimization: config.memoryOptimization ?? "none",
     traceTransform: {
       type: config.traceTransform.type,
       psspc:
@@ -243,56 +330,121 @@ export function formStateFromRunConfig(config: RunConfig): FormState {
     maxError: config.maxError,
   });
 }
-
+ 
 /**
  * QEC code derived from the architecture type only, via the contract helper.
  * Works before the required times are entered (fills probes that the helper
  * ignores), so the UI can display the derived code and auto-name at any time.
  */
 export function deriveQecCode(arch: ArchitectureForm): QecCodeId {
-  return expectedQecCode(
-    arch.type === "gateBased"
-      ? {
-          type: "gateBased",
-          errorRate: arch.gateBased.errorRate ?? 0.0001,
-          gateTime: arch.gateBased.gateTime ?? 1,
-          measurementTime: arch.gateBased.measurementTime ?? 1,
-          twoQubitGateTime: arch.gateBased.twoQubitGateTime,
-        }
-      : {
-          type: "majorana",
-          errorRate: arch.majorana.errorRate,
-          operationTime: arch.majorana.operationTime ?? 1000,
-        },
-  );
+  if (arch.type === "gateBased") {
+    return expectedQecCode({
+      type: "gateBased",
+      errorRate: arch.gateBased.errorRate ?? 0.0001,
+      gateTime: arch.gateBased.gateTime ?? 1,
+      measurementTime: arch.gateBased.measurementTime ?? 1,
+      twoQubitGateTime: arch.gateBased.twoQubitGateTime,
+    });
+  }
+  if (arch.type === "majorana") {
+    return expectedQecCode({
+      type: "majorana",
+      errorRate: arch.majorana.errorRate,
+      operationTime: arch.majorana.operationTime ?? 1000,
+    });
+  }
+  return expectedQecCode({ type: "neutralAtom", ...arch.neutralAtom });
 }
-
+ 
 /**
- * Whether Litinski19 is selectable given the current draft — GateBased with a
- * present error rate <= 1e-3. Delegates the threshold to the contract helper.
+ * Build the contract Architecture a form draft currently represents, filling the
+ * few probe fields the availability helpers ignore, so the contract-level
+ * `isLitinski19Allowed` / `isGsj24Allowed` can be reused verbatim (single source
+ * of truth for the thresholds). Returns null only when a required GateBased field
+ * is unset, in which case factory availability is treated as false.
+ */
+function draftArchitecture(arch: ArchitectureForm): Architecture | null {
+  if (arch.type === "gateBased") {
+    if (arch.gateBased.errorRate === null) return null;
+    return {
+      type: "gateBased",
+      errorRate: arch.gateBased.errorRate,
+      gateTime: arch.gateBased.gateTime ?? 1,
+      measurementTime: arch.gateBased.measurementTime ?? 1,
+      twoQubitGateTime: arch.gateBased.twoQubitGateTime,
+    };
+  }
+  if (arch.type === "majorana") {
+    return {
+      type: "majorana",
+      errorRate: arch.majorana.errorRate,
+      operationTime: arch.majorana.operationTime ?? 1000,
+    };
+  }
+  return { type: "neutralAtom", ...arch.neutralAtom };
+}
+ 
+/**
+ * Whether Litinski19 is selectable given the current draft. Delegates the
+ * thresholds to the contract helper (Superconducting <= 1e-3, or Neutral Atom
+ * with all three errors <= 1e-3). Majorana never qualifies.
  */
 export function isLitinski19AllowedInForm(arch: ArchitectureForm): boolean {
-  if (arch.type !== "gateBased" || arch.gateBased.errorRate === null) return false;
-  return isLitinski19Allowed({
-    type: "gateBased",
-    errorRate: arch.gateBased.errorRate,
-    gateTime: arch.gateBased.gateTime ?? 1,
-    measurementTime: arch.gateBased.measurementTime ?? 1,
-    twoQubitGateTime: arch.gateBased.twoQubitGateTime,
-  });
+  const architecture = draftArchitecture(arch);
+  return architecture !== null && isLitinski19Allowed(architecture);
 }
-
+ 
+/**
+ * Whether GSJ24 is selectable given the current draft. Delegates to the contract
+ * helper (Superconducting <= 1e-3, or Neutral Atom with rydbergError <= 1e-3 and
+ * single-qubit/measurement error < 1e-2). Majorana never qualifies.
+ */
+export function isGsj24AllowedInForm(arch: ArchitectureForm): boolean {
+  const architecture = draftArchitecture(arch);
+  return architecture !== null && isGsj24Allowed(architecture);
+}
+ 
+/**
+ * Whether the currently selected primary magic-state factory is still allowed on
+ * the current architecture.
+ */
+function isPrimaryFactoryAllowed(
+  factory: MagicStateFactoryId,
+  arch: ArchitectureForm,
+): boolean {
+  if (factory === "round_based") return true;
+  if (factory === "litinski19") return isLitinski19AllowedInForm(arch);
+  return isGsj24AllowedInForm(arch);
+}
+ 
 /**
  * Enforce cross-field coupling the schema requires, so the UI state is never
- * internally inconsistent: Litinski19 falls back to Round-Based whenever it is
- * no longer allowed (Majorana, or GateBased error rate raised above 1e-3).
+ * internally inconsistent:
+ *  - the primary factory falls back to round_based whenever it is no longer
+ *    allowed on the current architecture (raised error rate, or a switch to
+ *    Majorana, which supports only round_based); and
+ *  - magic_up_to_clifford is dropped from the secondary set under Majorana, which
+ *    the schema forbids.
+ * Idempotent: applying it to already-consistent state returns it unchanged.
  */
 export function normalizeFormState(state: FormState): FormState {
-  if (
-    state.magicStateFactory === "litinski19" &&
-    !isLitinski19AllowedInForm(state.architecture)
-  ) {
-    return { ...state, magicStateFactory: "round_based" };
+  let next = state;
+ 
+  if (!isPrimaryFactoryAllowed(state.magicStateFactory, state.architecture)) {
+    next = { ...next, magicStateFactory: "round_based" };
   }
-  return state;
+ 
+  if (
+    state.architecture.type === "majorana" &&
+    next.secondaryFactories.includes("magic_up_to_clifford")
+  ) {
+    next = {
+      ...next,
+      secondaryFactories: next.secondaryFactories.filter(
+        (f) => f !== "magic_up_to_clifford",
+      ),
+    };
+  }
+ 
+  return next;
 }

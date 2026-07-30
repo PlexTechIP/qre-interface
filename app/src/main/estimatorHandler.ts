@@ -8,7 +8,7 @@ export function failedBoundaryResult(config: RunConfig, error: unknown): RunResu
   const now = new Date().toISOString();
   const detail = error instanceof Error ? error.message : String(error);
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     runId: config.id,
     status: "failed",
     error: {

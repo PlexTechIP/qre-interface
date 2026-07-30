@@ -5,15 +5,19 @@
  * the coupled fields (qecCode, magicStateFactory) so the output is never
  * internally inconsistent with the architecture.
  */
-
+ 
 import {
   SCHEMA_VERSION,
   expectedQecCode,
+  isGsj24Allowed,
   isLitinski19Allowed,
   type Application,
   type Architecture,
+  type BenchmarkId,
+  type HyperparameterValues,
   type MagicStateFactoryId,
   type RunConfig,
+  type SecondaryFactoryId,
   type TraceTransform,
 } from "../../shared/types";
 import {
@@ -22,6 +26,7 @@ import {
   TRANSFORM_LABELS,
 } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
+import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
 import { deriveQecCode } from "./formState";
 import type {
   ApplicationForm,
@@ -29,13 +34,13 @@ import type {
   FormState,
   TraceTransformForm,
 } from "./formState";
-
+ 
 /** id + createdAt are stamped at Run-click and passed in (keeps this pure). */
 export interface RunStamp {
   id: string;
   createdAt: string;
 }
-
+ 
 /**
  * A schema-valid placeholder stamp for validation/preview only — id/createdAt
  * are real only at Run-click, and neither affects whether a config validates.
@@ -46,14 +51,13 @@ export function schemaValidationStamp(): RunStamp {
     createdAt: "2000-01-01T00:00:00.000Z",
   };
 }
-
+ 
 function buildApplication(app: ApplicationForm): Application | null {
   if (app.type === "benchmark") {
     if (app.benchmarkId.length === 0) return null;
-    // Hyperparameter VALUES (app.hyperparams[benchmarkId]) are intentionally not
-    // serialized here: the frozen BenchmarkApplication has no field to hold them.
-    // They live in FormState and will reach RunConfig once the contract gains a
-    // `parameters` field (a PM-owned change) — see constants/hyperparameters.ts.
+    // Hyperparameter VALUES live on RunConfig.parameters (not on the benchmark
+    // application variant, whose shape is frozen). toRunConfig serializes them
+    // from app.hyperparams[benchmarkId] — see buildParameters below.
     return { type: "benchmark", benchmarkId: app.benchmarkId };
   }
   if (app.type === "saved") {
@@ -102,7 +106,7 @@ function buildApplication(app: ApplicationForm): Application | null {
     addToLibrary: app.upload.addToLibrary,
   };
 }
-
+ 
 function buildArchitecture(arch: ArchitectureForm): Architecture | null {
   if (arch.type === "gateBased") {
     const g = arch.gateBased;
@@ -118,14 +122,34 @@ function buildArchitecture(arch: ArchitectureForm): Architecture | null {
       twoQubitGateTime: g.twoQubitGateTime,
     };
   }
-  if (arch.majorana.operationTime === null) return null;
+  if (arch.type === "majorana") {
+    if (arch.majorana.operationTime === null) return null;
+    return {
+      type: "majorana",
+      errorRate: arch.majorana.errorRate,
+      operationTime: arch.majorana.operationTime,
+    };
+  }
+  // Neutral Atom: every field is defaulted in the form, so nothing gates
+  // serialization — the draft is always structurally complete.
+  const n = arch.neutralAtom;
   return {
-    type: "majorana",
-    errorRate: arch.majorana.errorRate,
-    operationTime: arch.majorana.operationTime,
+    type: "neutralAtom",
+    rydbergTime: n.rydbergTime,
+    rydbergError: n.rydbergError,
+    singleQubitTime: n.singleQubitTime,
+    singleQubitError: n.singleQubitError,
+    measurementTime: n.measurementTime,
+    measurementError: n.measurementError,
+    handoffTime: n.handoffTime,
+    atomSpacing: n.atomSpacing,
+    maxVelocity: n.maxVelocity,
+    maxAcceleration: n.maxAcceleration,
+    surfaceCodeOneQubitTimeFactor: n.surfaceCodeOneQubitTimeFactor,
+    surfaceCodeTwoQubitTimeFactor: n.surfaceCodeTwoQubitTimeFactor,
   };
 }
-
+ 
 function buildTraceTransform(tt: TraceTransformForm): TraceTransform {
   if (tt.type === "psspc") {
     return {
@@ -136,21 +160,53 @@ function buildTraceTransform(tt: TraceTransformForm): TraceTransform {
   }
   return { type: "latticeSurgery", slowDownFactor: 1.0 };
 }
-
+ 
 /**
- * Litinski19 survives serialization only when the architecture actually permits
- * it; otherwise it falls back to round_based so the output always satisfies the
- * schema's factory/architecture coupling. The UI shows this fallback visibly.
+ * A non-round_based primary factory survives serialization only when the
+ * architecture actually permits it (litinski19 / gsj24 each have their own
+ * availability rule); otherwise it falls back to round_based so the output always
+ * satisfies the schema's factory/architecture coupling. This mirrors
+ * `normalizeFormState`'s form-side rule, so the serialized config never disagrees
+ * with what the UI showed. The UI surfaces the fallback visibly.
  */
 function effectiveFactory(
   selected: MagicStateFactoryId,
   architecture: Architecture,
 ): MagicStateFactoryId {
-  return selected === "litinski19" && isLitinski19Allowed(architecture)
-    ? "litinski19"
-    : "round_based";
+  if (selected === "litinski19" && isLitinski19Allowed(architecture)) {
+    return "litinski19";
+  }
+  if (selected === "gsj24" && isGsj24Allowed(architecture)) {
+    return "gsj24";
+  }
+  return "round_based";
 }
-
+ 
+/**
+ * Secondary factories that survive serialization: magic_up_to_clifford is dropped
+ * under Majorana (schema-forbidden), the rest pass through. Order is preserved,
+ * duplicates are removed. Empty in => empty out.
+ */
+function effectiveSecondaryFactories(
+  selected: readonly SecondaryFactoryId[],
+  architecture: Architecture,
+): SecondaryFactoryId[] {
+  const seen = new Set<SecondaryFactoryId>();
+  const out: SecondaryFactoryId[] = [];
+  for (const factory of selected) {
+    if (seen.has(factory)) continue;
+    if (
+      factory === "magic_up_to_clifford" &&
+      architecture.type === "majorana"
+    ) {
+      continue;
+    }
+    seen.add(factory);
+    out.push(factory);
+  }
+  return out;
+}
+ 
 function applicationLabel(app: ApplicationForm): string {
   if (app.type === "benchmark") {
     const known = findBenchmark(app.benchmarkId);
@@ -168,7 +224,7 @@ function applicationLabel(app: ApplicationForm): string {
   const base = app.upload.filePath.split(/[\\/]/).pop() ?? "";
   return base.length > 0 ? base : "Uploaded program";
 }
-
+ 
 /**
  * Deterministic auto-name: benchmark · architecture · QEC · transform. Shown in
  * the UI before Run and serialized when the user leaves the name blank.
@@ -181,7 +237,36 @@ export function generateName(state: FormState): string {
     TRANSFORM_LABELS[state.traceTransform.type],
   ].join(" · ");
 }
-
+ 
+/**
+ * Benchmark hyperparameter values for the selected benchmark, or null when there
+ * are none to record (non-benchmark application, or an empty value map). Only the
+ * selected benchmark's values are serialized — the form seeds every benchmark, so
+ * we must not dump the whole keyed map. RECORDED-ONLY: these do not change the
+ * estimate this contract version.
+ */
+function buildParameters(state: FormState): HyperparameterValues | null {
+  const app = state.application;
+  if (app.type !== "benchmark" || app.benchmarkId.length === 0) return null;
+  const values = app.hyperparams[app.benchmarkId];
+  if (values === undefined) return null;
+ 
+  // Serialize only the benchmark's real, user-editable fields, taking the value
+  // from the form. Computed fields (e.g. Grover's "iterations", derived by the
+  // engine at estimation) are excluded — they carry no user value. A field the
+  // user cleared (null) is dropped: its absence means "use the engine default",
+  // which is the honest record and matches the contract's number | string type.
+  const fields = BENCHMARK_HYPERPARAMS[app.benchmarkId as BenchmarkId] ?? [];
+  const params: HyperparameterValues = {};
+  for (const field of fields) {
+    if (field.kind === "computed") continue;
+    const value = values[field.key];
+    if (value === null || value === undefined) continue;
+    params[field.key] = value;
+  }
+  return Object.keys(params).length > 0 ? params : null;
+}
+ 
 /**
  * Serialize a draft to a contract RunConfig, or null if it isn't structurally
  * complete (missing required numbers, unset maxError, or an empty application).
@@ -194,11 +279,17 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
   if (application === null || architecture === null || state.maxError === null) {
     return null;
   }
-
+ 
   const name =
     state.name.trim().length > 0 ? state.name.trim() : generateName(state);
-
-  return {
+ 
+  const secondaryFactories = effectiveSecondaryFactories(
+    state.secondaryFactories,
+    architecture,
+  );
+  const parameters = buildParameters(state);
+ 
+  const config: RunConfig = {
     schemaVersion: SCHEMA_VERSION,
     id: stamp.id,
     name,
@@ -211,4 +302,19 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
     maxError: state.maxError,
     qreVersion: QRE_VERSION,
   };
+ 
+  // Optional fields are OMITTED when empty/default, not written as undefined —
+  // exactOptionalPropertyTypes requires absence, and it keeps v1.0.0-shaped
+  // records byte-identical for runs that use no v1.1.0 feature.
+  if (secondaryFactories.length > 0) {
+    config.secondaryFactories = secondaryFactories;
+  }
+  if (state.memoryOptimization !== "none") {
+    config.memoryOptimization = state.memoryOptimization;
+  }
+  if (parameters !== null) {
+    config.parameters = parameters;
+  }
+ 
+  return config;
 }

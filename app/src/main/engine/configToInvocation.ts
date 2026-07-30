@@ -1,15 +1,20 @@
 import type { RunConfig } from "../../shared/types.js";
+import {
+  expectedQecCode,
+  isGsj24Allowed,
+  isLitinski19Allowed,
+} from "../../shared/types.js";
 import type { QreInvocation } from "./invocation.js";
 import { resolveBenchmark } from "./benchmarkRegistry.js";
-
+ 
 export type ConfigToInvocationResult =
   | { ok: true; invocation: QreInvocation }
   | { ok: false; error: { code: "INVALID_CONFIG"; message: string } };
-
+ 
 function invalid(message: string): ConfigToInvocationResult {
   return { ok: false, error: { code: "INVALID_CONFIG", message } };
 }
-
+ 
 export function configToInvocation(config: RunConfig, timeoutMs: number): ConfigToInvocationResult {
   // --- application ---
   let program: QreInvocation["program"];
@@ -61,15 +66,16 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     }
     program = { sourcePath: config.application.filePath, format: config.application.format, entryExpr: "" };
   }
-
+ 
   // --- architecture <-> qecCode coupling ---
   const architecture = config.architecture;
+  const expectedQec = expectedQecCode(architecture);
+  if (config.qecCode !== expectedQec) {
+    return invalid(
+      `${architecture.type} architecture requires qecCode "${expectedQec}", got "${config.qecCode}".`,
+    );
+  }
   if (architecture.type === "gateBased") {
-    if (config.qecCode !== "surface_code") {
-      return invalid(
-        `GateBased architecture requires qecCode "surface_code", got "${config.qecCode}".`,
-      );
-    }
     if (!(architecture.errorRate > 0 && architecture.errorRate < 0.01)) {
       return invalid(`GateBased errorRate must be in (0, 0.01), got ${architecture.errorRate}.`);
     }
@@ -82,10 +88,7 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     if (architecture.twoQubitGateTime != null && !(architecture.twoQubitGateTime > 0)) {
       return invalid(`GateBased twoQubitGateTime must be null or > 0, got ${architecture.twoQubitGateTime}.`);
     }
-  } else {
-    if (config.qecCode !== "three_aux") {
-      return invalid(`Majorana architecture requires qecCode "three_aux", got "${config.qecCode}".`);
-    }
+  } else if (architecture.type === "majorana") {
     if (![0.0001, 0.00001, 0.000001].includes(architecture.errorRate)) {
       return invalid(`Majorana errorRate must be one of 1e-4, 1e-5, 1e-6, got ${architecture.errorRate}.`);
     }
@@ -95,17 +98,58 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     if (config.magicStateFactory !== "round_based") {
       return invalid(`Majorana architectures only support magicStateFactory "round_based".`);
     }
-  }
-
-  // --- magic state factory eligibility ---
-  if (config.magicStateFactory === "litinski19") {
-    if (architecture.type !== "gateBased" || !(architecture.errorRate <= 0.001)) {
-      return invalid(
-        "litinski19 magic state factory requires a GateBased architecture with errorRate <= 1e-3.",
-      );
+  } else {
+    // Neutral Atom: integer times > 0 (handoff >= 0), the three error rates in
+    // [0, 0.01), spacing/velocity/acceleration > 0, factors integers >= 1.
+    const na = architecture;
+    const posInt = (v: number, name: string): ConfigToInvocationResult | null =>
+      Number.isInteger(v) && v > 0 ? null : invalid(`NeutralAtom ${name} must be an integer > 0, got ${v}.`);
+    const errRate = (v: number, name: string): ConfigToInvocationResult | null =>
+      v >= 0 && v < 0.01 ? null : invalid(`NeutralAtom ${name} must be in [0, 0.01), got ${v}.`);
+    const positive = (v: number, name: string): ConfigToInvocationResult | null =>
+      v > 0 ? null : invalid(`NeutralAtom ${name} must be > 0, got ${v}.`);
+    const factor = (v: number, name: string): ConfigToInvocationResult | null =>
+      Number.isInteger(v) && v >= 1 ? null : invalid(`NeutralAtom ${name} must be an integer >= 1, got ${v}.`);
+    const checks = [
+      posInt(na.rydbergTime, "rydbergTime"),
+      errRate(na.rydbergError, "rydbergError"),
+      posInt(na.singleQubitTime, "singleQubitTime"),
+      errRate(na.singleQubitError, "singleQubitError"),
+      posInt(na.measurementTime, "measurementTime"),
+      errRate(na.measurementError, "measurementError"),
+      Number.isInteger(na.handoffTime) && na.handoffTime >= 0
+        ? null
+        : invalid(`NeutralAtom handoffTime must be an integer >= 0, got ${na.handoffTime}.`),
+      positive(na.atomSpacing, "atomSpacing"),
+      positive(na.maxVelocity, "maxVelocity"),
+      positive(na.maxAcceleration, "maxAcceleration"),
+      factor(na.surfaceCodeOneQubitTimeFactor, "surfaceCodeOneQubitTimeFactor"),
+      factor(na.surfaceCodeTwoQubitTimeFactor, "surfaceCodeTwoQubitTimeFactor"),
+    ];
+    for (const failure of checks) {
+      if (failure) return failure;
     }
   }
-
+ 
+  // --- magic state factory eligibility (delegates to the contract rules) ---
+  if (config.magicStateFactory === "litinski19" && !isLitinski19Allowed(architecture)) {
+    return invalid(
+      "litinski19 magic state factory requires Superconducting (errorRate <= 1e-3) or Neutral Atom (all errors <= 1e-3).",
+    );
+  }
+  if (config.magicStateFactory === "gsj24" && !isGsj24Allowed(architecture)) {
+    return invalid(
+      "gsj24 magic state factory requires Superconducting (errorRate <= 1e-3) or Neutral Atom (rydberg <= 1e-3, single-qubit and measurement < 1e-2).",
+    );
+  }
+  // magic_up_to_clifford is incompatible with Majorana.
+  if (
+    architecture.type === "majorana" &&
+    (config.secondaryFactories ?? []).includes("magic_up_to_clifford")
+  ) {
+    return invalid("magic_up_to_clifford secondary factory is not compatible with Majorana architectures.");
+  }
+ 
   // --- trace transform ---
   const traceTransform = config.traceTransform;
   if (traceTransform.type === "psspc") {
@@ -119,12 +163,12 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       return invalid(`latticeSurgery slowDownFactor must be 1.0, got ${traceTransform.slowDownFactor}.`);
     }
   }
-
+ 
   // --- maxError: range-checked only; unsatisfiability is NOT validated here ---
   if (!(config.maxError > 0 && config.maxError <= 1)) {
     return invalid(`maxError must be in (0, 1], got ${config.maxError}.`);
   }
-
+ 
   return {
     ok: true,
     invocation: {
@@ -138,9 +182,26 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
               measurementTime: architecture.measurementTime,
               twoQubitGateTime: architecture.twoQubitGateTime ?? null,
             }
-          : { type: "majorana", errorRate: architecture.errorRate, operationTime: architecture.operationTime },
+          : architecture.type === "majorana"
+            ? { type: "majorana", errorRate: architecture.errorRate, operationTime: architecture.operationTime }
+            : {
+                type: "neutralAtom",
+                rydbergTime: architecture.rydbergTime,
+                rydbergError: architecture.rydbergError,
+                singleQubitTime: architecture.singleQubitTime,
+                singleQubitError: architecture.singleQubitError,
+                measurementTime: architecture.measurementTime,
+                measurementError: architecture.measurementError,
+                handoffTime: architecture.handoffTime,
+                atomSpacing: architecture.atomSpacing,
+                maxVelocity: architecture.maxVelocity,
+                maxAcceleration: architecture.maxAcceleration,
+                surfaceCodeOneQubitTimeFactor: architecture.surfaceCodeOneQubitTimeFactor,
+                surfaceCodeTwoQubitTimeFactor: architecture.surfaceCodeTwoQubitTimeFactor,
+              },
       qecCode: config.qecCode,
       magicStateFactory: config.magicStateFactory,
+      secondaryFactories: config.secondaryFactories ?? [],
       traceTransform:
         traceTransform.type === "psspc"
           ? { type: "psspc", tStatesPerRotation: traceTransform.tStatesPerRotation, ccxMagicStates: traceTransform.ccxMagicStates }

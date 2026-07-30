@@ -30,7 +30,7 @@ export class QreEngine implements EstimatorService {
         );
         if (!preflight.ok) {
           return {
-            schemaVersion: "1.0.0",
+            schemaVersion: "1.1.0",
             runId: config.id,
             status: "failed",
             error: { code: preflight.code, message: preflight.message },
@@ -46,7 +46,7 @@ export class QreEngine implements EstimatorService {
       const invocationResult = configToInvocation(config, this.timeoutMs);
       if (!invocationResult.ok) {
         return {
-          schemaVersion: "1.0.0",
+          schemaVersion: "1.1.0",
           runId: config.id,
           status: "failed",
           error: invocationResult.error,
@@ -71,7 +71,7 @@ export class QreEngine implements EstimatorService {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       return {
-        schemaVersion: "1.0.0",
+        schemaVersion: "1.1.0",
         runId: config.id,
         status: "failed",
         error: {

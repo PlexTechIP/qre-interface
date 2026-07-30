@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
+ 
 import type { RunConfig, RunResult } from "../shared/types";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
@@ -13,7 +13,6 @@ import { QRE_VERSION } from "./constants/staticOptions";
 import {
   createInitialFormState,
   formStateFromRunConfig,
-  isLitinski19AllowedInForm,
   normalizeFormState,
   type FormState,
 } from "./state/formState";
@@ -25,7 +24,7 @@ import {
 } from "./state/toRunConfig";
 import { useRunFlow } from "./state/useRunFlow";
 import { isConfigValid, validateForm } from "./state/validation";
-
+ 
 interface RunConfigurationProps {
   /** Fired once when a run finishes, so the shell can persist it to History
    *  and surface it on the Results page. Optional — omitted in unit tests. */
@@ -33,7 +32,7 @@ interface RunConfigurationProps {
   /** Saved configuration to load into the editable form for a Rerun. */
   initialConfig?: RunConfig | null;
 }
-
+ 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
 export function RunConfiguration({
   onRunComplete,
@@ -43,7 +42,7 @@ export function RunConfiguration({
     initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState(),
   );
   const { runState, start, retry, edit } = useRunFlow();
-
+ 
   // A Rerun hands a reconstructed config down as `initialConfig`; load it into
   // the editable form when it changes.
   useEffect(() => {
@@ -51,7 +50,7 @@ export function RunConfiguration({
       setState(formStateFromRunConfig(initialConfig));
     }
   }, [initialConfig]);
-
+ 
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).
   const reportedIdRef = useRef<string | null>(null);
@@ -61,24 +60,23 @@ export function RunConfiguration({
     reportedIdRef.current = runState.config.id;
     onRunComplete?.(runState.config, runState.result);
   }, [runState, onRunComplete]);
-
+ 
   // Every update is normalized so cross-field coupling (Litinski19 fallback)
   // can never leave the draft internally inconsistent.
   const update = (updater: (prev: FormState) => FormState): void => {
     setState((prev) => normalizeFormState(updater(prev)));
   };
-
+ 
   const errors = validateForm(state);
   const generatedName = generateName(state);
-  const litinski19Allowed = isLitinski19AllowedInForm(state.architecture);
   const valid = isConfigValid(state);
-
+ 
   // Live serialized preview (placeholder stamp) so the dev inspector can prove
   // the draft validates against the contract schema before Run stamps it for real.
   const previewConfig = toRunConfig(state, schemaValidationStamp());
   const previewValid =
     previewConfig !== null && validateRunConfigSchema(previewConfig).valid;
-
+ 
   if (runState.phase !== "idle") {
     return (
       <div className="run-config">
@@ -94,7 +92,7 @@ export function RunConfiguration({
       </div>
     );
   }
-
+ 
   return (
     <div className="run-config">
       <header className="run-config__header">
@@ -103,7 +101,7 @@ export function RunConfiguration({
           Configure an estimate, then run it against the engine.
         </p>
       </header>
-
+ 
       <div className="run-config__body">
         <div className="run-config__form">
           <ApplicationSection
@@ -119,9 +117,16 @@ export function RunConfiguration({
           <MicroArchitectureSection
             architecture={state.architecture}
             magicStateFactory={state.magicStateFactory}
-            magicStateFactoryAllowed={litinski19Allowed}
             onMagicStateFactoryChange={(magicStateFactory) =>
               update((s) => ({ ...s, magicStateFactory }))
+            }
+            secondaryFactories={state.secondaryFactories}
+            onSecondaryFactoriesChange={(secondaryFactories) =>
+              update((s) => ({ ...s, secondaryFactories }))
+            }
+            memoryOptimization={state.memoryOptimization}
+            onMemoryOptimizationChange={(memoryOptimization) =>
+              update((s) => ({ ...s, memoryOptimization }))
             }
             traceTransform={state.traceTransform}
             onTraceTransformChange={(traceTransform) =>
@@ -132,7 +137,7 @@ export function RunConfiguration({
             onMaxErrorChange={(maxError) => update((s) => ({ ...s, maxError }))}
           />
         </div>
-
+ 
         {/* Summary, run name, and the primary CTA live full-width at the bottom. */}
         <section
           className="config-summary-card"
@@ -159,7 +164,7 @@ export function RunConfiguration({
             Run estimate
           </button>
         </section>
-
+ 
         <div className="run-config__dev">
           <RunConfigInspector
             config={previewConfig}

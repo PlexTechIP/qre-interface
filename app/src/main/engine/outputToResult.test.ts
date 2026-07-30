@@ -19,7 +19,7 @@ function loadCapture(name: string): Record<string, unknown> {
 }
 
 const config: RunConfig = {
-  schemaVersion: "1.0.0",
+  schemaVersion: "1.1.0",
   id: "acaf1c0e-a716-41bc-9774-598cacee033f",
   name: "test",
   createdAt: "2026-07-09T18:22:00Z",

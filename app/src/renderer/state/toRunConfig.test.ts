@@ -45,7 +45,7 @@ describe("toRunConfig — defaults path", () => {
 
   it("serializes to a schema-valid RunConfig once the two required times are entered", () => {
     const config = expectSchemaValid(validGateBasedDraft());
-    expect(config.schemaVersion).toBe("1.0.0");
+    expect(config.schemaVersion).toBe("1.1.0");
     expect(config.application).toEqual({
       type: "benchmark",
       benchmarkId: "shors-factoring",
