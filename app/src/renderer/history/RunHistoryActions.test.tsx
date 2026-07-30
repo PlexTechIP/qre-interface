@@ -76,6 +76,98 @@ describe("Run History — per-run actions (Part D)", () => {
     await waitFor(() => expect(screen.queryByText(SUCCESS_NAME)).not.toBeInTheDocument());
   });
 
+  it("bulk delete uses a separate selection, names the count, and removes all chosen runs", async () => {
+    renderHistory();
+    const successRow = await rowByName(SUCCESS_NAME);
+    const failedRow = await rowByName(FAILED_NAME);
+
+    // Comparison and deletion are intentionally independent selections.
+    const compareSuccess = within(successRow).getByRole("checkbox", {
+      name: `Compare ${SUCCESS_NAME}`,
+    });
+    await userEvent.click(compareSuccess);
+    await userEvent.click(screen.getByRole("button", { name: "Select to delete" }));
+
+    const deleteSuccess = within(successRow).getByRole("checkbox", {
+      name: `Select ${SUCCESS_NAME} for deletion`,
+    });
+    const deleteFailed = within(failedRow).getByRole("checkbox", {
+      name: `Select ${FAILED_NAME} for deletion`,
+    });
+    expect(compareSuccess).toBeChecked();
+    expect(deleteSuccess).not.toBeChecked();
+
+    await userEvent.click(deleteSuccess);
+    await userEvent.click(deleteFailed);
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+    const firstConfirm = await screen.findByRole("dialog");
+    expect(
+      within(firstConfirm).getByRole("heading", { name: "Delete 2 runs?" }),
+    ).toBeInTheDocument();
+
+    // Cancel is non-destructive and preserves the explicit delete selection.
+    await userEvent.click(within(firstConfirm).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText(SUCCESS_NAME)).toBeInTheDocument();
+    expect(screen.getByText(FAILED_NAME)).toBeInTheDocument();
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete 2 runs",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText(SUCCESS_NAME)).not.toBeInTheDocument();
+      expect(screen.queryByText(FAILED_NAME)).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("5 runs")).toBeInTheDocument();
+  });
+
+  it("bulk delete prunes deleted ids from the comparison selection", async () => {
+    renderHistory();
+    const successRow = await rowByName(SUCCESS_NAME);
+    const failedRow = await rowByName(FAILED_NAME);
+
+    await userEvent.click(
+      within(successRow).getByRole("checkbox", {
+        name: `Compare ${SUCCESS_NAME}`,
+      }),
+    );
+    await userEvent.click(
+      within(failedRow).getByRole("checkbox", {
+        name: `Compare ${FAILED_NAME}`,
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Compare Selected (2)" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Select to delete" }));
+    await userEvent.click(
+      within(successRow).getByRole("checkbox", {
+        name: `Select ${SUCCESS_NAME} for deletion`,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Delete selected" }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Delete 1 run",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Compare Selected (1)" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(SUCCESS_NAME)).not.toBeInTheDocument();
+    expect(screen.getByText(FAILED_NAME)).toBeInTheDocument();
+  });
+
   it("Export opens the Markdown stub preview (seam only, no real generator)", async () => {
     renderHistory();
     const row = await rowByName(SUCCESS_NAME);
