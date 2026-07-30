@@ -14,7 +14,6 @@ docs/
 ├── README.md                  ← you are here
 ├── project-overview.md        ← what we're building and why (read first)
 ├── timeline-and-milestones.md ← week-by-week map of the whole summer
-├── team-directory.md          ← teams, PMs, stakeholders, meetings, comms
 ├── tech-stack.md              ← Electron / React / TypeScript / SQLite / QRE v3
 ├── engineering-workflow.md    ← git, branches, PRs, reviews, repo conventions
 ├── data-contracts.md          ← RunConfig & RunResult JSON shapes (v1)
@@ -25,11 +24,21 @@ docs/
 │   ├── team-1/                ← Sun Min + Emma
 │   ├── team-2/                ← Melody + Rishabh
 │   └── team-3/                ← Neil + Jessie
-└── week-2/                    ← Tue Jul 7 → Tue Jul 14 checkpoint; due Wed Jul 15 EOD
-    ├── week-2-overview.md
-    ├── team-1/                ← Configuration UI
-    ├── team-2/                ← Output Display & Filtering
-    └── team-3/                ← Engine & Execution
+├── week-2/                    ← Tue Jul 7 → Tue Jul 14 checkpoint; due Wed Jul 15 EOD
+│   ├── week-2-overview.md
+│   ├── team-1/                ← Configuration UI
+│   ├── team-2/                ← Output Display & Filtering
+│   └── team-3/                ← Engine & Execution
+├── week-3/                    ← Thu Jul 16 → due Tue Jul 21 EOD
+│   ├── week-3-overview.md
+│   ├── team-1/                ← Run History UI + Comparison UI
+│   ├── team-2/                ← SQLite persistence + Rerun
+│   └── team-3/                ← Integration — the mock→real swap
+└── week-4/                    ← Fri Jul 24 → due Wed Jul 29 EOD
+    ├── week-4-overview.md
+    ├── team-1/                ← Run Configuration
+    ├── team-2/                ← Results · History · Comparison
+    └── team-3/                ← Engine upgrade + documentation
 ```
 
 Each team folder for a week contains the docs the PMs publish for that week's
@@ -42,22 +51,23 @@ track. Common files:
 | Technical brief / spec docs | Deeper context specific to your week's assignment |
 | Coordination / integration docs *(when present)* | Cross-team handoffs and sync points for weeks that actually include integration work |
 
-Week 2 intentionally has no per-team integration docs: the three tracks build
-separately against the frozen contract, mock engine, and fixtures. Integration
-handoff docs resume when cross-track wiring starts in week 3.
+Weeks 2–4 have no separate per-team integration docs: cross-track seams (the
+frozen contract, the `RunStore` API, the IPC boundary) are described in each
+week's overview and technical briefs, and coordinated in the channel. A
+dedicated integration doc appears only when a week's handoffs need one.
 
 ## Reading order
 
-1. **First week on the project:** `project-overview.md` → `team-directory.md` →
-   `tech-stack.md` → `engineering-workflow.md` → `glossary.md` (skim) → your
-   team's folder for the current week.
+1. **First week on the project:** `project-overview.md` → `tech-stack.md` →
+   `engineering-workflow.md` → `glossary.md` (skim) → your team's folder for the
+   current week.
 2. **Every week after:** the current week's `week-N-overview.md` → your team's
    folder. Re-read `data-contracts.md` whenever your work touches RunConfig or
    RunResult.
 
 ## Ground rules
 
-- **Weekly folders are published one week at a time.** Week 3+ docs will appear
+- **Weekly folders are published one week at a time.** Week 5+ docs will appear
   as the PMs finalize each week's plan. Don't plan ahead off stale assumptions —
   assignments rotate.
 - **Checklists are living documents.** Check items off in your team's checklist

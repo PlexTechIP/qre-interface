@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+.python-venv/
+.qre-cache/
+.tmp/
+# Vendored Microsoft QDK extension artifacts (~5 MiB) used only as an offline
+# fallback when the npm registry was unreachable during the spike. Not part of
+# the deliverable — see FINDINGS.md for how to reproduce with `npm install`.
+vendor-extension-fallback/

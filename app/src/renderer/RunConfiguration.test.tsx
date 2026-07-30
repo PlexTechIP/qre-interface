@@ -7,23 +7,27 @@
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
+import { buildFailedResult, buildSuccessResult, fakeEstimator } from "../shared/testing";
 import { RunConfiguration } from "./RunConfiguration";
 
-// Radios are matched on the START of their accessible name: a disabled
-// Litinski19 radio's reason text mentions both "Superconducting" and
-// "Round-Based", so only anchored names disambiguate the toggles.
 const runButton = () => screen.getByRole("button", { name: /run estimate/i });
-const litinski19Radio = () =>
-  screen.getByRole("radio", { name: /^litinski19/i });
-const roundBasedRadio = () =>
-  screen.getByRole("radio", { name: /^round-based/i });
+
+// The Magic State Factory is a dropdown; Litinski19 availability is expressed by
+// enabling/disabling its <option> and by the selected value falling back.
+const factorySelect = () =>
+  screen.getByRole("combobox", { name: /magic state factory/i });
+const litinski19Option = () =>
+  within(factorySelect()).getByRole("option", { name: /litinski19/i });
+
+// Architecture is a segmented control whose buttons expose role="radio".
 const superconductingRadio = () =>
   screen.getByRole("radio", { name: /^superconducting/i });
 const majoranaRadio = () => screen.getByRole("radio", { name: /^majorana/i });
 
-const gateTimeInput = () => screen.getByRole("textbox", { name: /^gate time/i });
+const gateTimeInput = () =>
+  screen.getByRole("textbox", { name: /single-qubit gate time/i });
 const measurementTimeInput = () =>
   screen.getByRole("textbox", { name: /^measurement time/i });
 const errorRateInput = () =>
@@ -34,6 +38,13 @@ async function fillRequiredTimes(user: ReturnType<typeof userEvent.setup>) {
   await user.type(gateTimeInput(), "50");
   await user.type(measurementTimeInput(), "100");
 }
+
+// Post-swap the run flow drives the real engine over `window.estimator`. Give
+// every test a success estimator by default; the failure-path tests override it.
+// The small delay keeps the "running" phase observable before it resolves.
+beforeEach(() => {
+  window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 50 });
+});
 
 describe("Run-button validation gating", () => {
   it("starts disabled because gate/measurement times have no defaults", () => {
@@ -87,7 +98,7 @@ describe("Run-button validation gating", () => {
 describe("Litinski19 availability rule", () => {
   it("is selectable on GateBased with the default error rate (1e-4)", () => {
     render(<RunConfiguration />);
-    expect(litinski19Radio()).toBeEnabled();
+    expect(litinski19Option()).toBeEnabled();
   });
 
   it("auto-disables with a visible reason when switching to Majorana", async () => {
@@ -95,7 +106,7 @@ describe("Litinski19 availability rule", () => {
     render(<RunConfiguration />);
     await user.click(majoranaRadio());
 
-    expect(litinski19Radio()).toBeDisabled();
+    expect(litinski19Option()).toBeDisabled();
     expect(
       screen.getByText(/needs superconducting hardware with error rate/i),
     ).toBeInTheDocument();
@@ -106,34 +117,33 @@ describe("Litinski19 availability rule", () => {
     render(<RunConfiguration />);
 
     // Select Litinski19 while it's allowed…
-    await user.click(litinski19Radio());
-    expect(litinski19Radio()).toBeChecked();
+    await user.selectOptions(factorySelect(), "litinski19");
+    expect(factorySelect()).toHaveValue("litinski19");
 
     // …then break the condition; selection must revert to Round-Based.
     await user.click(majoranaRadio());
-    expect(roundBasedRadio()).toBeChecked();
-    expect(litinski19Radio()).not.toBeChecked();
+    expect(factorySelect()).toHaveValue("round_based");
   });
 
   it("re-disables Litinski19 when the GateBased error rate is raised above 1e-3", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
-    expect(litinski19Radio()).toBeEnabled();
+    expect(litinski19Option()).toBeEnabled();
 
     const errorRate = errorRateInput();
     await user.clear(errorRate);
     await user.type(errorRate, "0.005"); // > 1e-3, still within (0, 0.01)
 
-    expect(litinski19Radio()).toBeDisabled();
+    expect(litinski19Option()).toBeDisabled();
   });
 
   it("re-enables Litinski19 after switching back to Superconducting", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
     await user.click(majoranaRadio());
-    expect(litinski19Radio()).toBeDisabled();
+    expect(litinski19Option()).toBeDisabled();
     await user.click(superconductingRadio());
-    expect(litinski19Radio()).toBeEnabled();
+    expect(litinski19Option()).toBeEnabled();
   });
 });
 
@@ -159,6 +169,58 @@ describe("Run flow", () => {
   });
 });
 
+describe("Failure path (Retry / Edit configuration)", () => {
+  it("delivers a failed result at the seam with a way forward, and Retry re-runs", async () => {
+    const user = userEvent.setup();
+    // Post-swap the app runs the real engine, which reports failures itself —
+    // there is no "simulate failure" dev toggle anymore. Drive a failure by
+    // injecting the failed-mode mock behind the same EstimatorService the swap consumes.
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 50 });
+    render(<RunConfiguration />);
+
+    await fillRequiredTimes(user);
+    await user.click(runButton());
+
+    // Running state first, then the failed result renders through Team 2's Results
+    // surface (the "Run failed" chrome + the fixture's error code).
+    expect(screen.getByText(/running your estimate/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/run failed/i)).toBeInTheDocument();
+
+    // The failure is never a dead end: both recovery affordances are offered.
+    const retry = screen.getByRole("button", { name: /^retry$/i });
+    expect(retry).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /edit configuration/i }),
+    ).toBeEnabled();
+
+    // Retry re-runs the same config: back to the running state (the injected
+    // engine still fails, so it resolves to the failure again — the point is it re-ran).
+    await user.click(retry);
+    expect(screen.getByText(/running your estimate/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("Edit configuration returns to the form from the failed state", async () => {
+    const user = userEvent.setup();
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 50 });
+    render(<RunConfiguration />);
+
+    await fillRequiredTimes(user);
+    await user.click(runButton());
+    await screen.findByText(/estimation_failed/i, {}, { timeout: 3000 });
+
+    await user.click(screen.getByRole("button", { name: /edit configuration/i }));
+
+    // Back on the form: the Run button (absent in the flow panel) is present again.
+    expect(runButton()).toBeInTheDocument();
+  });
+});
+
 describe("Configuration summary reflects the draft", () => {
   it("shows the derived QEC code, and updates it when architecture changes", async () => {
     const user = userEvent.setup();
@@ -168,11 +230,11 @@ describe("Configuration summary reflects the draft", () => {
       .getByRole("heading", { name: /configuration summary/i })
       .closest("section")!;
 
-    // Scope to the QEC row — the auto-generated Name row also contains the code.
+    // Scope to the QEC cell in the summary grid.
     const qecValue = () =>
       within(summary)
-        .getByText("QEC code")
-        .closest(".summary-panel__row") as HTMLElement;
+        .getByText("QEC Code")
+        .closest(".summary-grid__cell") as HTMLElement;
     expect(within(qecValue()).getByText("Surface Code")).toBeInTheDocument();
 
     await user.click(majoranaRadio());

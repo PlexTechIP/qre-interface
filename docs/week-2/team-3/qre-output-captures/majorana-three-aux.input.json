@@ -1,0 +1,21 @@
+{
+  "program": {
+    "sourcePath": "C:\\Users\\neilj\\OneDrive\\Desktop\\microsoft-qre-dashboard\\app\\src\\main\\engine\\benchmarks\\qsharp-project",
+    "format": "qsharp",
+    "entryExpr": "QuantumDynamics.Run()"
+  },
+  "architecture": {
+    "type": "majorana",
+    "errorRate": 1e-05,
+    "operationTime": 1000
+  },
+  "qecCode": "three_aux",
+  "magicStateFactory": "round_based",
+  "traceTransform": {
+    "type": "psspc",
+    "tStatesPerRotation": 20,
+    "ccxMagicStates": false
+  },
+  "maxError": 1.0,
+  "timeoutMs": 30000
+}

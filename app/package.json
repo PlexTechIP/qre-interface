@@ -3,22 +3,26 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": "24.18.0",
-    "npm": "11.16.0"
-  },
-  "packageManager": "npm@11.16.0",
+  "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run typecheck && vite build && vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run --config vitest.workspace.ts",
+    "test:engine": "vitest run --config vitest.engine.config.ts --no-file-parallelism --maxWorkers=1",
+    "harness": "tsx src/main/harness.ts",
+    "acceptance": "tsx src/main/engine/acceptanceHarness.ts",
+    "test:all": "vitest run --no-file-parallelism --maxWorkers=1",
+    "test:watch": "vitest --config vitest.workspace.ts"
   },
+  "engines": { "node": "24.18.0", "npm": "11.16.0" },
+  "packageManager": "npm@11.16.0",
   "dependencies": {
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "recharts": "^3.10.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.9.1",
@@ -38,7 +42,5 @@
     "vite": "8.1.3",
     "vitest": "4.1.10"
   },
-  "optionalDependencies": {
-    "qsharp-lang": "1.29.1"
-  }
+  "optionalDependencies": { "qsharp-lang": "1.29.1" }
 }

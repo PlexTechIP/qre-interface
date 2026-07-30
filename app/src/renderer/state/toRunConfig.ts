@@ -50,7 +50,23 @@ export function schemaValidationStamp(): RunStamp {
 function buildApplication(app: ApplicationForm): Application | null {
   if (app.type === "benchmark") {
     if (app.benchmarkId.length === 0) return null;
+    // Hyperparameter VALUES (app.hyperparams[benchmarkId]) are intentionally not
+    // serialized here: the frozen BenchmarkApplication has no field to hold them.
+    // They live in FormState and will reach RunConfig once the contract gains a
+    // `parameters` field (a PM-owned change) — see constants/hyperparameters.ts.
     return { type: "benchmark", benchmarkId: app.benchmarkId };
+  }
+  if (app.type === "saved") {
+    // A saved program is a remembered upload, so it serializes to the same
+    // contract `uploaded` variant (addToLibrary is true — it's in the library).
+    const chosen = app.savedPrograms.find((p) => p.id === app.selectedSavedId);
+    if (!chosen) return null;
+    return {
+      type: "uploaded",
+      filePath: chosen.filePath,
+      format: chosen.format,
+      addToLibrary: true,
+    };
   }
   if (app.upload.filePath.length === 0) return null;
   return {
@@ -114,6 +130,11 @@ function applicationLabel(app: ApplicationForm): string {
     const known = findBenchmark(app.benchmarkId);
     if (known) return known.name;
     return app.benchmarkId.length > 0 ? app.benchmarkId : "Custom program";
+  }
+  if (app.type === "saved") {
+    const chosen = app.savedPrograms.find((p) => p.id === app.selectedSavedId);
+    if (!chosen) return "Saved program";
+    return chosen.name || (chosen.filePath.split(/[\\/]/).pop() ?? "Saved program");
   }
   const base = app.upload.filePath.split(/[\\/]/).pop() ?? "";
   return base.length > 0 ? base : "Uploaded program";

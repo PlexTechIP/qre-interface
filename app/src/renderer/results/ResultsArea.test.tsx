@@ -4,7 +4,11 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { ResultsArea } from "./ResultsArea";
-import { FIXTURE_SCENARIOS } from "./fixtures";
+import {
+  RESULT_SCENARIOS as FIXTURE_SCENARIOS,
+  buildRunConfig,
+  buildRunResult,
+} from "../../shared/testing";
 
 const successScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "success");
 const sparseScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "sparse");
@@ -13,6 +17,20 @@ const failedScenario = FIXTURE_SCENARIOS.find((scenario) => scenario.id === "fai
 
 afterEach(() => {
   cleanup();
+});
+
+describe("ResultsArea lifecycle states", () => {
+  it("shows progress—not the empty state—while a null result is still running", () => {
+    render(<ResultsArea phase="running" result={null} />);
+
+    expect(
+      screen.getByRole("heading", { name: "Running estimation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/complex benchmarks can take up to a minute/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No results yet")).not.toBeInTheDocument();
+  });
 });
 
 describe("ResultsArea frontier display", () => {
@@ -32,7 +50,9 @@ describe("ResultsArea frontier display", () => {
     expect(screen.getByRole("table", { name: /pareto frontier estimates/i })).toBeInTheDocument();
     expect(screen.getByText("Quantum Dynamics - GateBased 1e-4 - Surface - PSSPC")).toBeInTheDocument();
     expect(screen.getByText("Configuration Summary")).toBeInTheDocument();
-    expect(screen.getByText("Selected row represents this run in History & Comparison.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/history and comparison summarize the first pareto point/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /pareto frontier scatter plot/i })).toBeInTheDocument();
     expect(screen.getByText("Row 1 full reported field set.")).toBeInTheDocument();
 
@@ -79,7 +99,7 @@ describe("ResultsArea frontier display", () => {
       />,
     );
 
-    expect(screen.getByText("1 Pareto-optimal solutions")).toBeInTheDocument();
+    expect(screen.getByText("1 Pareto-optimal solution")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /select row 1: 880 µs runtime, 126,400 physical qubits/i }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -209,5 +229,93 @@ describe("ResultsArea across every committed fixture", () => {
 
     expect(screen.getAllByText(/no raw output was produced/i).length).toBeGreaterThan(0);
     unmount();
+  });
+});
+
+describe("week-2 carry-over: forward compatibility", () => {
+  it("renders an error.code the canonical list doesn't know about, instead of hiding or crashing on it", () => {
+    if (!failedScenario?.result) {
+      throw new Error("Failed fixture scenario was not found.");
+    }
+
+    render(
+      <ResultsArea
+        phase={failedScenario.phase}
+        result={{
+          ...failedScenario.result,
+          error: { ...failedScenario.result.error!, code: "FUTURE_ENGINE_TIMEOUT" },
+        }}
+        config={failedScenario.config}
+      />,
+    );
+
+    expect(screen.getByText("FUTURE_ENGINE_TIMEOUT")).toBeInTheDocument();
+    expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
+  });
+
+  it("renders a result field the 37-field appendix doesn't know about, instead of dropping it", () => {
+    if (!successScenario?.result) {
+      throw new Error("Success fixture scenario was not found.");
+    }
+
+    const resultWithUnknownField = structuredClone(successScenario.result);
+    const firstRow = resultWithUnknownField.frontier?.[0];
+    if (!firstRow) {
+      throw new Error("Success fixture scenario has no frontier rows.");
+    }
+    firstRow.additional = {
+      ...firstRow.additional,
+      futureQreMetric: { value: 42, unit: "count", display: "42" },
+    };
+
+    render(
+      <ResultsArea phase={successScenario.phase} result={resultWithUnknownField} config={successScenario.config} />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: /future qre metric/i })).toBeInTheDocument();
+    expect(screen.getAllByText("42").length).toBeGreaterThan(0);
+  });
+});
+
+describe("week-2 carry-over: reverse selection sync (graph point -> table row)", () => {
+  it("selecting a graph point selects its matching table row", async () => {
+    if (!successScenario) {
+      throw new Error("Success fixture scenario was not found.");
+    }
+
+    render(
+      <ResultsArea
+        phase={successScenario.phase}
+        result={successScenario.result}
+        config={successScenario.config}
+      />,
+    );
+
+    const secondGraphPoint = screen.getByRole("button", {
+      name: /select row 2: 14\.3 ms runtime, 1,048,200 physical qubits/i,
+    });
+    await userEvent.click(secondGraphPoint);
+
+    expect(secondGraphPoint).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("row", { name: /2 1,048,200 14.3 ms 6.1e-4 288 x T 17 4.8 µs/i }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Row 2 full reported field set.")).toBeInTheDocument();
+  });
+});
+
+describe("ResultsArea empty-frontier state", () => {
+  it("shows an explicit message for a succeeded run that reported no frontier points", () => {
+    const noRows = buildRunResult({ frontier: [] });
+
+    render(<ResultsArea phase="done" result={noRows} config={buildRunConfig()} />);
+
+    expect(
+      screen.getByText(/succeeded but produced no pareto-frontier points/i),
+    ).toBeInTheDocument();
+    // No empty frontier table or metric grid is rendered in this state.
+    expect(
+      screen.queryByRole("table", { name: /pareto frontier/i }),
+    ).not.toBeInTheDocument();
   });
 });

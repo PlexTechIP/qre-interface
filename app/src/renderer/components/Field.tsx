@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 interface FieldProps {
   id: string;
-  label: string;
+  label: ReactNode;
   help?: string | undefined;
   error?: string | undefined;
   required?: boolean | undefined;

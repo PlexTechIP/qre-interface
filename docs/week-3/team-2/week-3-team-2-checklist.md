@@ -30,31 +30,31 @@ This week rotates you from the frontend (Results Area) into the **backend**
 
 ## B. The persistence store
 
-- [ ] Stand up the SQLite store in **`app/src/main/`** (main-process only; the
+- [x] Stand up the SQLite store in **`app/src/main/`** (main-process only; the
       renderer never touches SQLite — `docs/tech-stack.md` §Architecture)
-- [ ] Schema/migration for run records: a stable table keyed by record id,
+- [x] Schema/migration for run records: a stable table keyed by record id,
       storing the full `RunConfig` + full `RunResult` (+ `savedAt`) — with the
       filterable values (application, architecture, QEC code, factory, QRE
       version, name, date) denormalized into indexed columns for query speed
-- [ ] **`RunStore implements` the committed API:** `save`, `list`, `get`,
+- [x] **`RunStore implements` the committed API:** `save`, `list`, `get`,
       `delete`, `query` — the exact interface Team 1 codes against (see technical
       brief §The API)
 
 ## C. Immutable records + query API
 
-- [ ] **Save every run as an immutable record:** assemble a `RunRecord` from
+- [x] **Save every run as an immutable record:** assemble a `RunRecord` from
       `(RunConfig, RunResult)` + runtime `qreVersion` + timestamps; **no update
       path exists** — records are write-once, Rerun creates a new record (a
       stated non-negotiable, `docs/tech-stack.md`)
-- [ ] Store the **complete, verbatim `RunResult`** including the full `raw`
+- [x] Store the **complete, verbatim `RunResult`** including the full `raw`
       blob — persistence is full-fidelity; nothing QRE emitted is dropped on the
       way to disk (reproducibility is an SOW objective)
-- [ ] **Query/filter API** over saved records: filter by run-name search,
+- [x] **Query/filter API** over saved records: filter by run-name search,
       application, physical architecture, error correction code, magic state
       factory, and QRE version — combinable; `list` returns newest-first;
       round-trips a record byte-faithfully (`get` after `save` equals what went
       in)
-- [ ] Handles a **failed** run record and a **sparse/one-row** run record the
+- [x] Handles a **failed** run record and a **sparse/one-row** run record the
       same as a multi-row success (persist and return them intact)
 
 ## D. Rerun reconstruction
