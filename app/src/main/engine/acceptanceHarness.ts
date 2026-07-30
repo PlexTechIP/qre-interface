@@ -51,7 +51,9 @@ async function main(): Promise<void> {
         application:
           config.application.type === "benchmark"
             ? config.application.benchmarkId
-            : config.application.format,
+            : config.application.type === "manualCounts"
+              ? "manual-counts"
+              : config.application.format,
         architecture: config.architecture.type,
         qecCode: config.qecCode,
         traceTransform: config.traceTransform.type,

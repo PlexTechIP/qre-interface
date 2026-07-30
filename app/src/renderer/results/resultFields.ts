@@ -235,6 +235,10 @@ function summarizeApplication(application: RunConfig["application"]): string {
     return `${fileName} (${FORMAT_LABELS[application.format]})`;
   }
 
+  if (application.type === "manualCounts") {
+    return `Manual Logical Counts (${application.numQubits} qubits, ${application.tCount} T)`;
+  }
+
   return (
     findBenchmark(application.benchmarkId)?.name ??
     humanizeIdentifier(application.benchmarkId)

@@ -21,6 +21,40 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       );
     }
     program = { sourcePath: entry.sourcePath, format: entry.format, entryExpr: entry.entryExpr };
+  } else if (config.application.type === "manualCounts") {
+    const c = config.application;
+    const counts: Record<string, number> = {
+      numQubits: c.numQubits,
+      tCount: c.tCount,
+      rotationCount: c.rotationCount,
+      rotationDepth: c.rotationDepth,
+      cczCount: c.cczCount,
+      ccixCount: c.ccixCount,
+      measurementCount: c.measurementCount,
+    };
+    for (const [key, value] of Object.entries(counts)) {
+      const min = key === "numQubits" ? 1 : 0;
+      if (!Number.isInteger(value) || value < min) {
+        return invalid(`Manual logical count "${key}" must be an integer >= ${min}, got ${value}.`);
+      }
+    }
+    if (c.rotationDepth > c.rotationCount) {
+      return invalid(
+        `Manual logical count "rotationDepth" (${c.rotationDepth}) cannot exceed "rotationCount" (${c.rotationCount}).`,
+      );
+    }
+    program = {
+      format: "logicalCounts",
+      logicalCounts: {
+        numQubits: c.numQubits,
+        tCount: c.tCount,
+        rotationCount: c.rotationCount,
+        rotationDepth: c.rotationDepth,
+        cczCount: c.cczCount,
+        ccixCount: c.ccixCount,
+        measurementCount: c.measurementCount,
+      },
+    };
   } else {
     if (!config.application.filePath) {
       return invalid("Uploaded program is missing a file path.");

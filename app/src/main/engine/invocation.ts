@@ -3,13 +3,28 @@
  * Not part of the frozen contracts/ — owned entirely by this engine module.
  */
 export interface QreInvocation {
-  program: {
-    /** Absolute path to the Q# project root (dir with qsharp.json), or the OpenQASM/QIR source file. */
-    sourcePath: string;
-    format: "qsharp" | "openqasm" | "qir";
-    /** Fully-qualified Q# entry expression, e.g. "QuantumDynamics.Main()". Empty for openqasm/qir. */
-    entryExpr: string;
-  };
+  program:
+    | {
+        /** Absolute path to the Q# project root (dir with qsharp.json), or the OpenQASM/QIR source file. */
+        sourcePath: string;
+        format: "qsharp" | "openqasm" | "qir";
+        /** Fully-qualified Q# entry expression, e.g. "QuantumDynamics.Main()". Empty for openqasm/qir. */
+        entryExpr: string;
+      }
+    | {
+        /** Manual Logical Counts — no source file; the engine builds a
+         *  QSharpApplication whose entry_expr is a LogicalCounts of these. */
+        format: "logicalCounts";
+        logicalCounts: {
+          numQubits: number;
+          tCount: number;
+          rotationCount: number;
+          rotationDepth: number;
+          cczCount: number;
+          ccixCount: number;
+          measurementCount: number;
+        };
+      };
   architecture:
     | {
         type: "gateBased";

@@ -275,6 +275,50 @@ describe("toRunConfig — Litinski19 factory coupling", () => {
   });
 });
 
+/** A defaults draft switched to Manual Logical Counts with all seven fields filled. */
+function validManualCountsDraft(): FormState {
+  const s = validGateBasedDraft();
+  s.application.type = "manualCounts";
+  s.application.manualCounts = {
+    numQubits: 100,
+    tCount: 20000,
+    rotationCount: 500,
+    rotationDepth: 50,
+    cczCount: 0,
+    ccixCount: 0,
+    measurementCount: 10,
+  };
+  return s;
+}
+
+describe("toRunConfig — Manual Logical Counts", () => {
+  it("serializes all seven counts into a schema-valid manualCounts application", () => {
+    const config = expectSchemaValid(validManualCountsDraft());
+    expect(config.application).toEqual({
+      type: "manualCounts",
+      numQubits: 100,
+      tCount: 20000,
+      rotationCount: 500,
+      rotationDepth: 50,
+      cczCount: 0,
+      ccixCount: 0,
+      measurementCount: 10,
+    });
+  });
+
+  it("auto-names a blank-name manual-counts run", () => {
+    const s = validManualCountsDraft();
+    s.name = "";
+    expect(serialize(s)!.name).toContain("Manual Logical Counts");
+  });
+
+  it("returns null when any count is unset", () => {
+    const s = validManualCountsDraft();
+    s.application.manualCounts.tCount = null;
+    expect(serialize(s)).toBeNull();
+  });
+});
+
 describe("toRunConfig — invalid states never serialize", () => {
   it("returns null when the benchmark id is empty", () => {
     const s = validGateBasedDraft();

@@ -22,16 +22,17 @@ export const FACTORY_LABELS: Record<string, string> = {
   litinski19: "Litinski19",
 };
 
-/** A run's application as a label: the benchmark id, or `Uploaded: <filename>`. */
+/**
+ * A run's application as a label: the benchmark name/id, `Manual Logical
+ * Counts`, or `Uploaded: <filename>`.
+ */
 export function applicationLabel(config: RunConfig): string {
-  if (config.application.type === "benchmark") {
-    return (
-      findBenchmark(config.application.benchmarkId)?.name ??
-      config.application.benchmarkId
-    );
+  const app = config.application;
+  if (app.type === "benchmark") {
+    return findBenchmark(app.benchmarkId)?.name ?? app.benchmarkId;
   }
-  return `Uploaded: ${
-    config.application.filePath.split(/[\\/]/).pop() ??
-    config.application.filePath
-  }`;
+  if (app.type === "manualCounts") {
+    return "Manual Logical Counts";
+  }
+  return `Uploaded: ${app.filePath.split(/[\\/]/).pop() ?? app.filePath}`;
 }

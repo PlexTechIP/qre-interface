@@ -68,6 +68,32 @@ function buildApplication(app: ApplicationForm): Application | null {
       addToLibrary: true,
     };
   }
+  if (app.type === "manualCounts") {
+    const m = app.manualCounts;
+    // All seven counts are required; any unset field gates serialization. The
+    // schema/adapter enforce ranges and the rotationDepth <= rotationCount bound.
+    if (
+      m.numQubits === null ||
+      m.tCount === null ||
+      m.rotationCount === null ||
+      m.rotationDepth === null ||
+      m.cczCount === null ||
+      m.ccixCount === null ||
+      m.measurementCount === null
+    ) {
+      return null;
+    }
+    return {
+      type: "manualCounts",
+      numQubits: m.numQubits,
+      tCount: m.tCount,
+      rotationCount: m.rotationCount,
+      rotationDepth: m.rotationDepth,
+      cczCount: m.cczCount,
+      ccixCount: m.ccixCount,
+      measurementCount: m.measurementCount,
+    };
+  }
   if (app.upload.filePath.length === 0) return null;
   return {
     type: "uploaded",
@@ -135,6 +161,9 @@ function applicationLabel(app: ApplicationForm): string {
     const chosen = app.savedPrograms.find((p) => p.id === app.selectedSavedId);
     if (!chosen) return "Saved program";
     return chosen.name || (chosen.filePath.split(/[\\/]/).pop() ?? "Saved program");
+  }
+  if (app.type === "manualCounts") {
+    return "Manual Logical Counts";
   }
   const base = app.upload.filePath.split(/[\\/]/).pop() ?? "";
   return base.length > 0 ? base : "Uploaded program";

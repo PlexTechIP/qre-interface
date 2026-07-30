@@ -19,7 +19,7 @@ from typing import Any
 import qdk
 import qdk.qre as qre
 from qsharp import QSharpError
-from qdk.qre import LatticeSurgery, PSSPC, instruction_name
+from qdk.qre import LatticeSurgery, LogicalCounts, PSSPC, instruction_name
 from qdk.qre.application import OpenQASMApplication, QIRApplication, QSharpApplication
 from qdk.qre.models import (
     GateBased,
@@ -93,6 +93,12 @@ def build_application(program: dict[str, Any]):
     if fmt == "qir":
         with open(program["sourcePath"], "r", encoding="utf-8") as source:
             return QIRApplication(input=source.read())
+    if fmt == "logicalCounts":
+        # Manual Logical Counts: no source to compile. QSharpApplication accepts
+        # a LogicalCounts as its entry_expr; qdk builds the Trace straight from
+        # the counts, skipping Q# compilation entirely. The seven keys map 1:1.
+        counts = program["logicalCounts"]
+        return QSharpApplication(entry_expr=LogicalCounts(counts))
     raise ValueError(f"Unknown program format: {fmt}")
 
 

@@ -49,15 +49,15 @@ describe("uploaded program end to end", () => {
     expect(result.frontier!.length).toBeGreaterThan(0);
   }, 60000);
 
-  it("fails soft with COMPILE_ERROR for a garbled uploaded program", async () => {
+  it("fails fast with INVALID_CONFIG for a garbled uploaded program", async () => {
+    // The pre-flight checker rejects the obviously-not-OpenQASM file before the
+    // engine spawns, so this returns immediately instead of a slow COMPILE_ERROR.
     const engine = new QreEngine(PYTHON_BIN);
     const result = await engine.run(
       uploadConfig(path.join(__dirname, "uploads", "bad-sample.qasm")),
     );
     expect(result.status).toBe("failed");
-    expect(result.error?.code).toBe("COMPILE_ERROR");
-    expect(result.error?.message).toContain(
-      "Check the program source and entry point, then retry.",
-    );
-  }, 120_000);
+    expect(result.error?.code).toBe("INVALID_CONFIG");
+    expect(result.error?.message).toContain("no recognizable statements");
+  }, 60_000);
 });

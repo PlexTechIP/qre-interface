@@ -51,7 +51,7 @@ describe("configToInvocation", () => {
   it("translates a valid GateBased/PSSPC config into an invocation", () => {
     const result = configToInvocation(baseGateBasedConfig(), 30000);
     expect(result.ok).toBe(true);
-    if (result.ok) {
+    if (result.ok && result.invocation.program.format === "qsharp") {
       expect(result.invocation.program.entryExpr).toBe("QuantumDynamics.Run()");
       expect(result.invocation.program.format).toBe("qsharp");
       expect(result.invocation.architecture).toEqual({
@@ -177,6 +177,69 @@ describe("configToInvocation", () => {
           type: "psspc",
           tStatesPerRotation: 21,
           ccxMagicStates: false,
+        },
+      }),
+      30000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+});
+
+describe("configToInvocation — Manual Logical Counts", () => {
+  const manualCounts = {
+    numQubits: 100,
+    tCount: 20000,
+    rotationCount: 500,
+    rotationDepth: 50,
+    cczCount: 0,
+    ccixCount: 0,
+    measurementCount: 10,
+  } as const;
+
+  it("translates a valid manualCounts config into a logicalCounts program", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({ application: { type: "manualCounts", ...manualCounts } }),
+      30000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.invocation.program.format === "logicalCounts") {
+      expect(result.invocation.program.logicalCounts).toEqual(manualCounts);
+    } else {
+      throw new Error("expected a logicalCounts program");
+    }
+  });
+
+  it("rejects a negative count with INVALID_CONFIG", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: { type: "manualCounts", ...manualCounts, tCount: -1 },
+      }),
+      30000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("rejects a non-integer count with INVALID_CONFIG", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: { type: "manualCounts", ...manualCounts, numQubits: 1.5 },
+      }),
+      30000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("rejects rotationDepth greater than rotationCount", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: {
+          type: "manualCounts",
+          ...manualCounts,
+          rotationCount: 10,
+          rotationDepth: 11,
         },
       }),
       30000,
