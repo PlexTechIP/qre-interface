@@ -5,7 +5,13 @@ import { FieldFilter } from "../results/FieldFilter";
 import type { SelectedRowByRunId } from "../results/selectedRows";
 import { ComparisonCharts } from "./ComparisonCharts";
 import { ComparisonTable } from "./ComparisonTable";
-import { additionalFieldDefinitions, toComparisonColumn } from "./comparisonModel";
+import { ParetoCurves } from "./ParetoCurves";
+import {
+  additionalFieldDefinitions,
+  belowThresholdMessage,
+  MIN_COMPARISON_RUNS,
+  toComparisonColumn,
+} from "./comparisonModel";
 
 /**
  * The Comparison surface — a PURE function of a selected set of `RunRecord`s plus
@@ -13,8 +19,13 @@ import { additionalFieldDefinitions, toComparisonColumn } from "./comparisonMode
  * History list already renders. It owns only the local field-filter view state
  * (which additional rows show), reusing Team 2's `FieldFilter` + `formatMetric`.
  *
- * States: an empty "pick runs to compare" prompt, a single-run selection, and a
- * many-run selection all render cleanly against the mock records.
+ * States: an empty "pick runs to compare" prompt, a single-run selection (which
+ * renders, but says it is below the two-run threshold), and a many-run selection
+ * all render cleanly against the mock records.
+ *
+ * Three views of the same selection, in order: the table (one column per run,
+ * one row per field), the Pareto frontier curves (every run's FULL frontier),
+ * and the per-metric bars (one representative row per run).
  */
 export interface ComparisonViewProps {
   records: RunRecord[];
@@ -116,6 +127,23 @@ export function ComparisonView({
         </div>
       ) : (
         <>
+          {/*
+            Below the threshold the surface still renders — a one-column view is
+            more useful than a blank page — but it says plainly that this is not
+            yet a comparison. Reaching Comparison with one run selected must
+            never look like a finished comparison of one.
+          */}
+          {records.length < MIN_COMPARISON_RUNS ? (
+            <div className="comparison-notice" role="alert">
+              <p>{belowThresholdMessage(records.length)}</p>
+              {onGoToHistory ? (
+                <button type="button" className="surface-action" onClick={onGoToHistory}>
+                  Go to Run History
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="comparison-chips" aria-label="Selected runs">
             {columns.map((col) => (
               <span key={col.id} className="comparison-chip">
@@ -164,6 +192,20 @@ export function ComparisonView({
               />
             ) : null}
             <ComparisonTable columns={columns} hiddenKeys={hiddenKeys} />
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Pareto frontiers</h3>
+                <p>
+                  Every selected run's full frontier as its own curve — physical
+                  qubits against runtime. The table above shows only each run's
+                  representative row.
+                </p>
+              </div>
+            </div>
+            <ParetoCurves records={records} selectedRowByRunId={selectedRowByRunId} />
           </section>
 
           <section className="panel">

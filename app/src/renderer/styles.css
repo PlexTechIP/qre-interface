@@ -39,6 +39,18 @@
   --color-chart-axis: #cbd5e1;
   --color-chart-line: #0891b2;
   --color-chart-point-stroke: #a5e8f3;
+  /* Categorical series palette for the Pareto curves — one hue per compared
+     run, eight before it wraps. Hues are widely separated and each series also
+     carries a distinct point symbol, so a curve is never identified by colour
+     alone. Both themes keep the strokes legible on their own surface. */
+  --color-series-1: #0072b2;
+  --color-series-2: #d55e00;
+  --color-series-3: #009e73;
+  --color-series-4: #7048e8;
+  --color-series-5: #b3568f;
+  --color-series-6: #8a6d00;
+  --color-series-7: #0e7490;
+  --color-series-8: #a02c2c;
 
   color: var(--color-text);
   background: var(--color-bg);
@@ -88,6 +100,14 @@
   --color-chart-axis: #3a4a64;
   --color-chart-line: #22d3ee;
   --color-chart-point-stroke: #17545f;
+  --color-series-1: #56b4e9;
+  --color-series-2: #f0a35e;
+  --color-series-3: #4fd1a5;
+  --color-series-4: #b197fc;
+  --color-series-5: #f79ac9;
+  --color-series-6: #e6d264;
+  --color-series-7: #67e8f9;
+  --color-series-8: #fca5a5;
 }
 
 * {
@@ -3071,6 +3091,94 @@ button.danger:hover {
 .comparison-tooltip span {
   color: var(--color-body);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Pareto frontier curves --------------------------------------------- */
+
+.pareto-curves {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pareto-figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.pareto-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.pareto-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pareto-legend__glyph {
+  flex: none;
+}
+
+.pareto-legend__name {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.pareto-omitted,
+.pareto-empty {
+  font-size: 12px;
+  margin: 0;
+}
+
+.pareto-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 0;
+}
+
+/* The disclosure is a .filter-toggle button (styled with the field filter's),
+   so only the gap above the revealed table belongs here. */
+.pareto-data {
+  min-width: 0;
+}
+
+.pareto-data > .comparison-table-scroll {
+  margin-top: 8px;
+}
+
+/* ---- Below-threshold comparison warnings --------------------------------- */
+
+.compare-warning,
+.comparison-notice {
+  border: 1px solid var(--color-accent-border);
+  border-radius: 10px;
+  background: var(--color-accent-bg);
+  color: var(--color-text);
+  padding: 12px 14px;
+  font-size: 13px;
+  margin: 0;
+}
+
+.comparison-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.comparison-notice p {
+  margin: 0;
 }
 
 .history-panel .empty-state,
