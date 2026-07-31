@@ -1,17 +1,20 @@
+/// Shor's factoring stand-in, sized by Bit Size and Generator.
+/// See Common.qs for what "stand-in" means here.
 namespace ShorsFactoring {
-    operation ApplyInverseQft(qs : Qubit[]) : Unit {
-        let n = Length(qs);
-        for i in 0..n - 1 {
-            for j in 0..i - 1 {
-                Controlled R1Frac([qs[j]], (1, i - j + 1, qs[i]));
-            }
-            H(qs[i]);
-        }
-    }
+    import Common.*;
 
-    operation ModularExponentiationStandIn(counting : Qubit[], work : Qubit[]) : Unit {
+    /// Stand-in for modular exponentiation by `generator`. The number of
+    /// multiply rounds per counting qubit varies with the generator, and each
+    /// round touches the whole work register — so the cost grows with Bit Size
+    /// through both registers, as the real routine does.
+    operation ModularExponentiationStandIn(
+        counting : Qubit[],
+        work : Qubit[],
+        generator : Int
+    ) : Unit {
+        let rounds = generator % 8 + 1;
         for i in 0..Length(counting) - 1 {
-            for _ in 1..(1 <<< i) % 8 + 1 {
+            for _ in 1..rounds {
                 for w in work {
                     Controlled Rz([counting[i]], (0.9, w));
                 }
@@ -20,14 +23,16 @@ namespace ShorsFactoring {
         }
     }
 
-    operation Run() : Result[] {
-        use counting = Qubit[10];
-        use work = Qubit[8];
+    /// `bitSize` is the modulus width: the counting register is the usual 2n
+    /// wide and the work register n.
+    operation Run(bitSize : Int, generator : Int) : Result[] {
+        use counting = Qubit[2 * bitSize];
+        use work = Qubit[bitSize];
         ApplyToEach(H, counting);
         X(work[0]);
 
-        ModularExponentiationStandIn(counting, work);
-        ApplyInverseQft(counting);
+        ModularExponentiationStandIn(counting, work, generator);
+        ApplyApproximateInverseQft(counting);
 
         let countingResults = MResetEachZ(counting);
         let workResults = MResetEachZ(work);

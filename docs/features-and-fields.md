@@ -36,6 +36,24 @@ One of: **Benchmarks**, **Saved Programs**, **Manual Logical Counts**.
 
 ### Benchmarks
 
+> **What the bundled benchmarks are.** The five starter benchmarks are
+> **demonstration circuits**, not reference implementations of the algorithms
+> they are named after. Their hyperparameters genuinely size the circuit the
+> estimator traces — changing Bit Size or Lattice N₁ changes the estimate — but
+> their absolute numbers are not calibrated against published Shor / Grover /
+> Ekerå-Håstad resource counts. Use them to compare *configurations*, not to
+> quote a cost for factoring RSA-2048.
+>
+> Each benchmark's hyperparameters become the arguments of its Q# entry
+> operation. The spec below is the single source of truth for both the form and
+> the engine: it lives in `app/src/shared/benchmarkParams.ts`, and the argument
+> order there matches the `Run(...)` signature in
+> `app/src/main/engine/benchmarks/qsharp-project/src/`.
+>
+> Large parameters produce large circuits and can legitimately exceed the run
+> timeout, or return no feasible Pareto point. Both are honest engine answers,
+> not failures of the tool.
+
 #### Shor's Factoring
 
 | Hyperparameter | Type | Default |
@@ -201,8 +219,10 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 
 ### Design notes
 
-- Hyperparameters are serialized and validated, but are **not** part of
-  `RunConfig`.
+- Hyperparameters are serialized onto `RunConfig.parameters` and **do** drive
+  the estimate: the engine turns them into the arguments of the benchmark's Q#
+  entry operation. *(The source doc predates this; it said they were validated
+  but not part of `RunConfig`.)*
 - Need to update backend configuration.
 - Need a file upload checker.
 - Wanted to avoid putting proprietary code in the repo → can use Manual

@@ -242,8 +242,9 @@ export function generateName(state: FormState): string {
  * Benchmark hyperparameter values for the selected benchmark, or null when there
  * are none to record (non-benchmark application, or an empty value map). Only the
  * selected benchmark's values are serialized — the form seeds every benchmark, so
- * we must not dump the whole keyed map. RECORDED-ONLY: these do not change the
- * estimate this contract version.
+ * we must not dump the whole keyed map. These become the arguments of the
+ * benchmark's Q# entry operation at Run, so what is serialized here is what the
+ * estimator runs.
  */
 function buildParameters(state: FormState): HyperparameterValues | null {
   const app = state.application;

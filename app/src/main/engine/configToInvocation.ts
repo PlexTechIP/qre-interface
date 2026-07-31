@@ -4,6 +4,7 @@ import {
   isGsj24Allowed,
   isLitinski19Allowed,
 } from "../../shared/types.js";
+import { buildBenchmarkEntryExpr } from "../../shared/benchmarkParams.js";
 import type { QreInvocation } from "./invocation.js";
 import { resolveBenchmark } from "./benchmarkRegistry.js";
  
@@ -25,7 +26,20 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
         `Unknown benchmark id "${config.application.benchmarkId}". Choose one of the starter benchmarks or upload a program.`,
       );
     }
-    program = { sourcePath: entry.sourcePath, format: entry.format, entryExpr: entry.entryExpr };
+    // The recorded hyperparameters become the entry operation's arguments, so
+    // they size the circuit the estimator actually traces. Anything outside its
+    // spec is refused here rather than emitted into Q# source.
+    const built = buildBenchmarkEntryExpr(entry.id, config.parameters);
+    if (!built.ok) {
+      return invalid(
+        `${built.message} Correct the benchmark hyperparameter and retry.`,
+      );
+    }
+    program = {
+      sourcePath: entry.sourcePath,
+      format: entry.format,
+      entryExpr: built.entryExpr,
+    };
   } else if (config.application.type === "manualCounts") {
     const c = config.application;
     const counts: Record<string, number> = {

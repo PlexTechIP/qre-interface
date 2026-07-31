@@ -47,6 +47,19 @@ describe("cross-config sanity", () => {
           operationTime: 1000,
         },
         qecCode: "three_aux",
+        // A smaller lattice than the spec default, because Majorana/Three-Aux
+        // genuinely has no feasible frontier point for the default 10x10 / 34-step
+        // circuit even at maxError = 1 — the accumulated error exceeds 1 at every
+        // distance the estimator considers. This case is about the architecture
+        // producing a DIFFERENT answer, so it needs one that exists.
+        parameters: {
+          latticeN1: 3,
+          latticeN2: 3,
+          totalTime: 9.0,
+          trotterStep: 0.9,
+          couplingJ: 1.0,
+          fieldG: 1.0,
+        },
       }),
     ];
     const inputTuples = new Set(
@@ -80,13 +93,15 @@ describe("cross-config sanity", () => {
     );
     expect(signatures.size).toBe(3);
 
-    // Pinned qdk[qre] 1.29.1 regression anchors derived from real local runs
+    // Pinned qdk[qre] 1.30.0 regression anchors derived from real local runs
     // for GateBased/Surface/maxError=1, GateBased/Surface/maxError=.01, and
-    // Majorana/ThreeAux/maxError=1 respectively.
+    // Majorana/ThreeAux/maxError=1 respectively. The first two run Quantum
+    // Dynamics at its spec defaults (10x10 lattice, 34 Trotter steps); the third
+    // runs the 3x3 lattice configured above.
     // If Microsoft publishes canonical tutorial numbers for this exact trio,
     // replace these package-derived anchors with those external references.
-    expect(firstRows[0]!.runtime.value).toBe(585900);
-    expect(firstRows[1]!.runtime.value).toBe(2538900);
-    expect(firstRows[2]!.runtime.value).toBe(10602000);
+    expect(firstRows[0]!.runtime.value).toBe(43029000);
+    expect(firstRows[1]!.runtime.value).toBe(62153000);
+    expect(firstRows[2]!.runtime.value).toBe(24681000);
   }, 120000);
 });

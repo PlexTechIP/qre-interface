@@ -1,9 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { QreEngine } from "./qreEngine.js";
-import type { RunConfig } from "../../shared/types.js";
+import type { RunConfig, RunResult } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 
 const PYTHON_BIN = resolvePythonBin();
+
+/** The verbatim engine output's first Pareto entry. */
+function firstEntry(result: RunResult): { runtime: number; error: number } {
+  const raw = result.raw as {
+    entries?: { runtime: number; error: number }[];
+  } | null;
+  const entry = raw?.entries?.[0];
+  expect(entry).toBeDefined();
+  return entry!;
+}
 
 function config(id: string, benchmarkId: string): RunConfig {
   return {
@@ -74,18 +84,16 @@ describe("robustness", () => {
     // got swapped or interleaved, one of these would report the other
     // benchmark's numbers (or fail to match at all) even though runId/status
     // still looked fine.
-    expect(r1.raw).toMatchObject({
-      entries: [
-        expect.objectContaining({
-          runtime: 3064950,
-          error: 0.5609254302906356,
-        }),
-      ],
+    // Anchored on the FIRST frontier point of each, not the whole array: both
+    // benchmarks now return a genuine multi-point Pareto frontier, and the
+    // number of points is not what this test is about.
+    expect(firstEntry(r1)).toMatchObject({
+      runtime: 13671000,
+      error: 0.8525631444031513,
     });
-    expect(r2.raw).toMatchObject({
-      entries: [
-        expect.objectContaining({ runtime: 585900, error: 0.2218502264687556 }),
-      ],
+    expect(firstEntry(r2)).toMatchObject({
+      runtime: 43029000,
+      error: 0.04059524476170029,
     });
   }, 90000);
 });

@@ -52,7 +52,9 @@ describe("configToInvocation", () => {
     const result = configToInvocation(baseGateBasedConfig(), 30000);
     expect(result.ok).toBe(true);
     if (result.ok && result.invocation.program.format === "qsharp") {
-      expect(result.invocation.program.entryExpr).toBe("QuantumDynamics.Run()");
+      expect(result.invocation.program.entryExpr).toBe(
+        "QuantumDynamics.Run(10, 10, 30.0, 0.9, 1.0, 1.0)",
+      );
       expect(result.invocation.program.format).toBe("qsharp");
       expect(result.invocation.architecture).toEqual({
         type: "gateBased",
@@ -246,5 +248,111 @@ describe("configToInvocation — Manual Logical Counts", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+});
+
+/** The entry expression a benchmark config translates to, or "" if it failed. */
+function entryExprFor(config: RunConfig): string {
+  const result = configToInvocation(config, 30_000);
+  if (!result.ok) return "";
+  const { program } = result.invocation;
+  return program.format === "logicalCounts" ? "" : program.entryExpr;
+}
+
+describe("benchmark hyperparameters reach the entry expression", () => {
+  it("passes the recorded values as arguments to the entry operation", () => {
+    expect(
+      entryExprFor(
+        baseGateBasedConfig({
+          application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
+          parameters: {
+            latticeN1: 4,
+            latticeN2: 6,
+            totalTime: 12.0,
+            trotterStep: 0.5,
+            couplingJ: 1.0,
+            fieldG: 1.0,
+          },
+        }),
+      ),
+    ).toBe("QuantumDynamics.Run(4, 6, 12.0, 0.5, 1.0, 1.0)");
+  });
+
+  it("uses the spec defaults when the config records no parameters", () => {
+    expect(
+      entryExprFor(
+        baseGateBasedConfig({
+          application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
+        }),
+      ),
+    ).toBe("QuantumDynamics.Run(10, 10, 30.0, 0.9, 1.0, 1.0)");
+  });
+
+  it("gives two different parameter sets two different entry expressions", () => {
+    const small = entryExprFor(
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "grovers-search" },
+        parameters: { searchQubits: 3 },
+      }),
+    );
+    const large = entryExprFor(
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "grovers-search" },
+        parameters: { searchQubits: 9 },
+      }),
+    );
+    expect(small).toBe("GroversSearch.Run(3)");
+    expect(large).toBe("GroversSearch.Run(9)");
+  });
+
+  it("rejects an out-of-spec hyperparameter with INVALID_CONFIG", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "shors-factoring" },
+        parameters: { bitSize: 0 },
+      }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_CONFIG");
+      expect(result.error.message).toContain("Bit Size");
+    }
+  });
+
+  it("refuses to interpolate an unrecognised choice value into Q# source", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: {
+          type: "benchmark",
+          benchmarkId: "ekera-hastad-factoring",
+        },
+        parameters: { rsaInstance: "rsa-100); Message(\"pwned\"); (" },
+      }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("ignores hyperparameters recorded against a non-benchmark application", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: {
+          type: "manualCounts",
+          numQubits: 100,
+          tCount: 20000,
+          rotationCount: 500,
+          rotationDepth: 50,
+          cczCount: 0,
+          ccixCount: 0,
+          measurementCount: 10,
+        },
+        parameters: { bitSize: 31 },
+      }),
+      30_000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.invocation.program.format).toBe("logicalCounts");
   });
 });

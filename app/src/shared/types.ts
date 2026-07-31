@@ -272,11 +272,11 @@ export type TraceTransform = PsspcTraceTransform | LatticeSurgeryTraceTransform;
 /**
  * Benchmark hyperparameter values carried on the config (v1.1.0). A flat map of
  * parameter key -> value for the selected benchmark (e.g. bitSize, generator,
- * searchQubits). RECORDED-ONLY this version: serializing these makes the saved
- * record complete and reproducible (History, Comparison, Rerun, export tell the
- * truth about what was configured), but does NOT change any estimate — the
- * bundled Q# benchmarks hardcode their sizes. Per-benchmark analytic mappings
- * that would make these move the numbers are explicitly out of scope for v1.1.0.
+ * searchQubits). These ARE inputs to the estimate: the engine turns them into
+ * the arguments of the benchmark's Q# entry operation, so they size the circuit
+ * that gets traced. Values are validated against the shared spec
+ * (shared/benchmarkParams.ts) before they reach the compiler; an omitted key
+ * means "use that parameter's default", which is what the engine then runs.
  * Absent/empty when the application is not a benchmark.
  */
 export type HyperparameterValues = Record<string, number | string>;
@@ -315,8 +315,7 @@ export interface RunConfig {
   traceTransform: TraceTransform;
   /**
    * Benchmark hyperparameter values (v1.1.0). Optional; present only for
-   * benchmark applications. Recorded-only — does not influence the estimate this
-   * version (see HyperparameterValues).
+   * benchmark applications. Drives the estimate — see HyperparameterValues.
    */
   parameters?: HyperparameterValues;
   /** Cap on total logical error probability. Valid range: 0 < maxError <= 1. */

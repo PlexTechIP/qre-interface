@@ -110,14 +110,26 @@ const majorana: RunConfig = {
   name: "majorana operation time",
   architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
   qecCode: "three_aux",
+  // Explicitly sized rather than left at the spec defaults: Majorana/Three-Aux
+  // has no feasible frontier point for the default 10x10 / 34-step lattice even
+  // at maxError = 1, and this test needs an estimate to compare against itself.
+  parameters: {
+    latticeN1: 3,
+    latticeN2: 3,
+    totalTime: 9.0,
+    trotterStep: 0.9,
+    couplingJ: 1.0,
+    fieldG: 1.0,
+  },
 };
 
 /**
- * Runtime at operationTime 1000 (QDK's default and the UI's). Pinned because it
- * is the value crossConfig.test.ts:88 already anchors — mapping `time` must not
- * move it, which is what makes the mapping a zero-migration change.
+ * Runtime at operationTime 1000 (QDK's default and the UI's) for the 3x3 lattice
+ * pinned above. `operationTime` is the field that reached every layer of the
+ * stack except the engine until it was mapped in build_architecture, so this
+ * anchor is what proves the mapping is still there.
  */
-const MAJORANA_RUNTIME_AT_1000 = 10_602_000;
+const MAJORANA_RUNTIME_AT_1000 = 24_681_000;
 
 describe("QreEngine", () => {
   it.runIf(QRE_AVAILABLE)(
@@ -236,8 +248,6 @@ describe("QreEngine", () => {
       const slow = atDefault.frontier![0]!;
       const fast = atQuarter.frontier![0]!;
 
-      // Mapping `time` must be output-identical at the default, or every
-      // existing fixture, capture and saved run silently changes meaning.
       expect(slow.runtime.value).toBe(MAJORANA_RUNTIME_AT_1000);
 
       // Quartering the operation time quarters the runtime exactly, and moves
