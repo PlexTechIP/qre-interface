@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { InMemoryRunStore } from "../../shared/runStore";
 import {
-  reconstructConfig,
-  type RunConfig,
   type RunFilter,
   type RunRecord,
   type RunStore,
@@ -17,6 +15,10 @@ import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
 import type { SelectedRowByRunId } from "../results/selectedRows";
+import {
+  createRerunRequest,
+  type RerunRequest,
+} from "./rerun";
 
 /**
  * Container for the Run History + Comparison surfaces.
@@ -28,16 +30,6 @@ import type { SelectedRowByRunId } from "../results/selectedRows";
  * the app shell so the sidebar and the in-surface tab strip stay in sync and the
  * comparison selection survives switching between the two.
  */
-
-/** A Rerun handoff payload: the reconstructed pre-fill config for a new run. */
-export interface RerunRequest {
-  sourceRecord: RunRecord;
-  config: RunConfig;
-}
-
-function makeStamp(): { id: string; createdAt: string } {
-  return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
-}
 
 interface RunHistoryContainerProps {
   /** The run store to read from. Defaults to an empty in-memory store; the app
@@ -203,10 +195,7 @@ export function RunHistoryContainer({
 
   const onRerun = useCallback(
     (record: RunRecord) => {
-      // reconstructConfig is PROVIDED — call it, never re-implement. It carries
-      // the saved config forward with a fresh id + createdAt for the new run.
-      const config = reconstructConfig(record, makeStamp());
-      const request = { sourceRecord: record, config };
+      const request = createRerunRequest(record);
       // App-shell handoff pre-fills the live form; otherwise show the preview.
       if (onRerunRequest) {
         onRerunRequest(request);

@@ -1,4 +1,16 @@
-import type { RunConfig, RunResult } from "../../shared/types";
+import { useEffect, useState } from "react";
+
+import type {
+  RunConfig,
+  RunRecord,
+  RunResult,
+  RunStore,
+} from "../../shared/types";
+import { ExportStubDialog } from "../history/ExportStubDialog";
+import {
+  createRerunRequest,
+  type RerunRequest,
+} from "../history/rerun";
 import { ResultsArea } from "./ResultsArea";
 
 interface ResultsPageProps {
@@ -9,7 +21,16 @@ interface ResultsPageProps {
   /** Session-selected representative frontier row for the latest run. */
   selectedIndex?: number;
   onSelectedIndexChange?: (index: number) => void;
+  /** Resolve the immutable record persisted by save-after-run. */
+  store: Pick<RunStore, "get">;
+  /** Reuse the shell handoff that History uses for Rerun. */
+  onRerunRequest: (request: RerunRequest) => void;
 }
+
+type RecordResolution =
+  | { status: "loading" }
+  | { status: "ready"; record: RunRecord }
+  | { status: "error"; message: string };
 
 /**
  * The Results sidebar page. Shows the latest run's result (via Team 2's
@@ -20,7 +41,52 @@ export function ResultsPage({
   onRunEstimation,
   selectedIndex,
   onSelectedIndexChange,
+  store,
+  onRerunRequest,
 }: ResultsPageProps): React.JSX.Element {
+  const [recordResolution, setRecordResolution] =
+    useState<RecordResolution>({ status: "loading" });
+  const [lookupAttempt, setLookupAttempt] = useState(0);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const runId = latestRun?.result.runId ?? null;
+
+  useEffect(() => {
+    if (runId === null) return;
+
+    let active = true;
+    setRecordResolution({ status: "loading" });
+    setIsExportOpen(false);
+
+    void store
+      .get(runId)
+      .then((record) => {
+        if (!active) return;
+        setRecordResolution(
+          record
+            ? { status: "ready", record }
+            : {
+                status: "error",
+                message:
+                  "This run has not appeared in saved history yet. Retry the lookup in a moment.",
+              },
+        );
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setRecordResolution({
+          status: "error",
+          message:
+            error instanceof Error
+              ? `Unable to load saved run actions: ${error.message}`
+              : "Unable to load saved run actions.",
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [lookupAttempt, runId, store]);
+
   if (latestRun === null) {
     return (
       <section className="empty-state" aria-labelledby="results-empty-title">
@@ -36,14 +102,67 @@ export function ResultsPage({
     );
   }
 
+  const record =
+    recordResolution.status === "ready" ? recordResolution.record : null;
+
   return (
-    <ResultsArea
-      phase="done"
-      result={latestRun.result}
-      config={latestRun.config}
-      {...(selectedIndex !== undefined ? { selectedIndex } : {})}
-      {...(onSelectedIndexChange ? { onSelectedIndexChange } : {})}
-    />
+    <div className="results-page-frame">
+      <div className="results-page-toolbar">
+        <div className="detail-actions" aria-label="Run actions">
+          <button
+            type="button"
+            disabled={record === null}
+            aria-describedby={record === null ? "results-actions-status" : undefined}
+            onClick={() => setIsExportOpen(true)}
+          >
+            Export
+          </button>
+          <button
+            type="button"
+            disabled={record === null}
+            aria-describedby={record === null ? "results-actions-status" : undefined}
+            onClick={() => {
+              if (record) onRerunRequest(createRerunRequest(record));
+            }}
+          >
+            Rerun
+          </button>
+        </div>
+        {recordResolution.status === "loading" ? (
+          <p id="results-actions-status" className="muted" role="status">
+            Loading saved run actions…
+          </p>
+        ) : null}
+        {recordResolution.status === "error" ? (
+          <div id="results-actions-status" className="results-actions-error" role="alert">
+            <span>{recordResolution.message}</span>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => setLookupAttempt((attempt) => attempt + 1)}
+            >
+              Retry lookup
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <ResultsArea
+        phase="done"
+        result={latestRun.result}
+        config={latestRun.config}
+        {...(selectedIndex !== undefined ? { selectedIndex } : {})}
+        {...(onSelectedIndexChange ? { onSelectedIndexChange } : {})}
+      />
+
+      {isExportOpen && record ? (
+        <ExportStubDialog
+          record={record}
+          mode="complete"
+          onClose={() => setIsExportOpen(false)}
+        />
+      ) : null}
+    </div>
   );
 }
 
