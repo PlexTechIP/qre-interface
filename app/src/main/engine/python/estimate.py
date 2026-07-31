@@ -19,7 +19,8 @@ from typing import Any
 import qdk
 import qdk.qre as qre
 from qsharp import QSharpError
-from qdk.qre import LatticeSurgery, LogicalCounts, PSSPC, instruction_name
+from qdk.qre import LatticeSurgery, PSSPC, instruction_name
+from qdk.estimator import LogicalCounts
 from qdk.qre.application import OpenQASMApplication, QIRApplication, QSharpApplication
 from qdk.qre.models import (
     GateBased,
@@ -125,8 +126,8 @@ def build_architecture(architecture: dict[str, Any]):
         return NeutralAtom(
             rydberg_time=architecture["rydbergTime"],
             rydberg_error=architecture["rydbergError"],
-            single_qubit_time=architecture["singleQubitTime"],
-            single_qubit_error=architecture["singleQubitError"],
+            one_qubit_time=architecture["singleQubitTime"],
+            one_qubit_error=architecture["singleQubitError"],
             measurement_time=architecture["measurementTime"],
             measurement_error=architecture["measurementError"],
             handoff_time=architecture["handoffTime"],
