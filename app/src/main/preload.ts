@@ -6,9 +6,12 @@ import type {
   RunRecord,
   RunResult,
   RunStore,
+  UploadedProgramFormat,
 } from "../shared/types.js";
+import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
   ESTIMATOR_RUN_CHANNEL,
+  UPLOAD_PREFLIGHT_CHANNEL,
   STORE_DELETE_CHANNEL,
   STORE_GET_CHANNEL,
   STORE_LIST_CHANNEL,
@@ -43,7 +46,22 @@ const store: RunStore = {
   },
 };
 
+// Pre-flight an uploaded program from the renderer. The filesystem read happens
+// in the main process; the renderer only ever sees the pass/fail verdict.
+const uploads = {
+  preflight(
+    filePath: string,
+    format: UploadedProgramFormat,
+  ): Promise<UploadValidationResult> {
+    return ipcRenderer.invoke(UPLOAD_PREFLIGHT_CHANNEL, {
+      filePath,
+      format,
+    }) as Promise<UploadValidationResult>;
+  },
+};
+
 contextBridge.exposeInMainWorld("estimator", estimator);
+contextBridge.exposeInMainWorld("uploads", uploads);
 contextBridge.exposeInMainWorld("store", store);
 contextBridge.exposeInMainWorld("files", {
   getPathForFile(
