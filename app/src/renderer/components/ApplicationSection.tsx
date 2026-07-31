@@ -17,6 +17,9 @@ interface ApplicationSectionProps {
   value: ApplicationForm;
   errors: FieldErrors;
   onChange: (value: ApplicationForm) => void;
+  /** True while the chosen program file is being pre-flighted. Run is gated on
+   *  it, so the wait needs to be visible rather than looking like a dead button. */
+  isCheckingFile?: boolean;
 }
 
 const TYPE_OPTIONS: readonly { value: ApplicationFormType; label: string }[] = [
@@ -66,6 +69,7 @@ export function ApplicationSection({
   value,
   errors,
   onChange,
+  isCheckingFile = false,
 }: ApplicationSectionProps): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [savedQuery, setSavedQuery] = useState("");
@@ -101,11 +105,26 @@ export function ApplicationSection({
     patch({ upload: { ...value.upload, filePath, format } });
   };
 
+  /**
+   * The ABSOLUTE path, not `file.name`. A browser File only exposes its
+   * basename, which the engine cannot open and the form pre-flight would always
+   * report as missing; Electron's webUtils bridge gives the real path.
+   *
+   * Electron returns an EMPTY STRING — not null — for a File with no filesystem
+   * path (a synthesized or drag-from-web File), so the fallback is a truthiness
+   * check, not `??`. An empty path would clear the selection outright and make
+   * the drop look like a no-op.
+   */
+  const pathOf = (file: File): string => {
+    const resolved = window.files?.getPathForFile(file);
+    return resolved !== undefined && resolved.length > 0 ? resolved : file.name;
+  };
+
   const onDrop = (event: React.DragEvent<HTMLLabelElement>): void => {
     event.preventDefault();
     setDragging(false);
     const file = event.dataTransfer.files?.[0];
-    if (file) onPickFile(file.name);
+    if (file) onPickFile(pathOf(file));
   };
 
   const clearUpload = (): void => {
@@ -298,6 +317,11 @@ export function ApplicationSection({
               </div>
             </>
           )}
+          {isCheckingFile ? (
+            <p className="field__help" role="status">
+              Checking file…
+            </p>
+          ) : null}
           {errors.savedProgram ? (
             <p className="field__error" role="alert">
               {errors.savedProgram}
@@ -322,7 +346,7 @@ export function ApplicationSection({
               accept=".qs,.qasm,.ll,.bc"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) onPickFile(file.name);
+                if (file) onPickFile(pathOf(file));
               }}
             />
             <UploadIcon />
@@ -332,7 +356,9 @@ export function ApplicationSection({
           {value.upload.filePath ? (
             <div className="file-pill">
               <FileIcon className="file-pill__icon" />
-              <span className="file-pill__name">{value.upload.filePath}</span>
+              <span className="file-pill__name" title={value.upload.filePath}>
+                {basename(value.upload.filePath)}
+              </span>
               <button
                 type="button"
                 className="file-pill__save"
@@ -355,6 +381,11 @@ export function ApplicationSection({
             Supported: .qs (Q#), .qasm (OpenQASM), .ll / .bc (QIR)
           </p>
 
+          {isCheckingFile ? (
+            <p className="field__help" role="status">
+              Checking file…
+            </p>
+          ) : null}
           {errors.uploadFilePath ? (
             <p className="field__error" role="alert">
               {errors.uploadFilePath}

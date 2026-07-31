@@ -13,7 +13,7 @@ const QRE_AVAILABLE =
     .status === 0;
 
 const config: RunConfig = {
-  schemaVersion: "1.1.0",
+  schemaVersion: "1.2.0",
   id: "acaf1c0e-a716-41bc-9774-598cacee033f",
   name: "test",
   createdAt: "2026-07-09T18:22:00Z",
@@ -26,7 +26,7 @@ const config: RunConfig = {
     twoQubitGateTime: null,
   },
   qecCode: "surface_code",
-  magicStateFactory: "round_based",
+  magicStateFactories: ["round_based"],
   traceTransform: {
     type: "psspc",
     tStatesPerRotation: 20,
@@ -46,7 +46,7 @@ const config: RunConfig = {
  * been caught here.
  */
 const manualNeutralAtom: RunConfig = {
-  schemaVersion: "1.1.0",
+  schemaVersion: "1.2.0",
   id: "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
   name: "manual counts on neutral atom",
   createdAt: "2026-07-30T00:00:00Z",
@@ -76,7 +76,7 @@ const manualNeutralAtom: RunConfig = {
     surfaceCodeTwoQubitTimeFactor: 1,
   },
   qecCode: "low_move_surface_code",
-  magicStateFactory: "round_based",
+  magicStateFactories: ["round_based"],
   traceTransform: {
     type: "psspc",
     tStatesPerRotation: 20,
@@ -198,7 +198,7 @@ describe("QreEngine", () => {
       const gsj24 = await engine.run({
         ...manualNeutralAtom,
         id: "d5f3e4b6-7a8c-4d9e-0f1a-2b3c4d5e6f7a",
-        magicStateFactory: "gsj24",
+        magicStateFactories: ["gsj24"],
         secondaryFactories: ["magic_up_to_clifford", "gsj24_ccx"],
         // gsj24_ccx is yoked to this flag — turning either on turns the other on.
         traceTransform: {

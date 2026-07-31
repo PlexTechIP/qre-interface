@@ -165,17 +165,35 @@ def build_primary_factory(magic_state_factory: str):
         return Litinski19Factory.q()
     if magic_state_factory == "gsj24":
         return GSJ24Factory.q()
-    return RoundBasedFactory.q(cache_dir=ROUND_BASED_CACHE, use_cache=True)
+    if magic_state_factory == "round_based":
+        return RoundBasedFactory.q(cache_dir=ROUND_BASED_CACHE, use_cache=True)
+    raise ValueError(f"Unknown magic state factory: {magic_state_factory}")
+
+
+def build_primary_factory_query(magic_state_factories: list[str]):
+    """Union the selected primary factories into a single ISA query.
+
+    ``_ComponentQuery.__add__`` is documented as a union: enumerating ``a + b``
+    yields the ISAs of both. So ``qec * (f1 + f2)`` makes the estimator explore
+    every selected factory and return ONE Pareto frontier across all of them --
+    not one frontier per factory, and not a silently-picked winner.
+    """
+    if not magic_state_factories:
+        raise ValueError("At least one magic state factory is required.")
+    query = build_primary_factory(magic_state_factories[0])
+    for factory in magic_state_factories[1:]:
+        query = query + build_primary_factory(factory)
+    return query
  
  
 def build_isa_query(
     qec_code: str,
-    magic_state_factory: str,
+    magic_state_factories: list[str],
     secondary_factories: list[str] | None = None,
 ):
     qec = build_qec(qec_code)
-    query = qec * build_primary_factory(magic_state_factory)
-    # Secondary factories are layered onto the primary factory. They are an
+    query = qec * build_primary_factory_query(magic_state_factories)
+    # Secondary factories are layered onto the primary factories. They are an
     # independent multi-select set; order does not matter to the product.
     for secondary in secondary_factories or []:
         if secondary == "magic_up_to_clifford":
@@ -262,6 +280,29 @@ def find_qec_property(entry: Any, key: int, default: Any = None) -> Any:
     return default
  
  
+# Factory model class name -> the contract's MagicStateFactoryId.
+FACTORY_MODEL_IDS = {
+    "RoundBasedFactory": "round_based",
+    "Litinski19Factory": "litinski19",
+    "GSJ24Factory": "gsj24",
+}
+
+
+def find_magic_state_factory(entry: Any) -> str | None:
+    """Which primary factory produced this frontier point.
+
+    With a multi-select set the estimator unions the factories, so different
+    rows of the SAME frontier can come from different factories. The winning
+    one is named by its transform in the entry's source graph; reading it back
+    is what keeps a multi-factory frontier legible instead of anonymous.
+    """
+    for node in entry.source.nodes:
+        factory_id = FACTORY_MODEL_IDS.get(type(node.transform).__name__)
+        if factory_id is not None:
+            return factory_id
+    return None
+
+
 def entry_to_dict(entry: Any, source_format: str) -> dict[str, Any]:
     distance = find_qec_property(entry, DISTANCE)
     code_cycle_time = find_qec_property(entry, CODE_CYCLE_TIME)
@@ -285,6 +326,7 @@ def entry_to_dict(entry: Any, source_format: str) -> dict[str, Any]:
             for instruction_id, result in entry.factories.items()
         ],
         "source": source_format,
+        "magicStateFactory": find_magic_state_factory(entry),
         "properties": {
             PROPERTY_NAMES.get(key, str(key)): jsonable(value)
             for key, value in entry.properties.items()
@@ -313,7 +355,7 @@ def main() -> int:
         architecture = build_architecture(invocation["architecture"])
         isa_query = build_isa_query(
             invocation["qecCode"],
-            invocation["magicStateFactory"],
+            invocation["magicStateFactories"],
             invocation.get("secondaryFactories"),
         )
         trace_query = build_trace_query(invocation["traceTransform"])

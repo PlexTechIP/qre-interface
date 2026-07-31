@@ -1,5 +1,6 @@
 import type { IpcMain } from "electron";
 import type { EstimatorService, RunConfig, RunResult } from "../shared/types.js";
+import { SCHEMA_VERSION } from "../shared/types.js";
 import { QreEngine } from "./engine/qreEngine.js";
 import { resolvePythonBin } from "./engine/pythonBin.js";
 import { ESTIMATOR_RUN_CHANNEL } from "./ipcChannels.js";
@@ -8,7 +9,7 @@ export function failedBoundaryResult(config: RunConfig, error: unknown): RunResu
   const now = new Date().toISOString();
   const detail = error instanceof Error ? error.message : String(error);
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     runId: config.id,
     status: "failed",
     error: {

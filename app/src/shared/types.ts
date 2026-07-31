@@ -1,5 +1,5 @@
 /**
- * Contract types — RunConfig & RunResult (v1.1.0).
+ * Contract types — RunConfig & RunResult (v1.2.0).
  *
  * CANONICAL, PM-owned, frozen with the schemas in this folder. Import these
  * types (copy this file into your workspace verbatim until the shared app
@@ -9,18 +9,35 @@
  *
  * Changes only via the contract-change process (docs/engineering-workflow.md).
  *
+ * v1.2.0 (BREAKING — reshapes one existing field): `magicStateFactory:
+ * MagicStateFactoryId` becomes `magicStateFactories: MagicStateFactoryId[]`,
+ * the multi-select the spec always called for and v1.1.0 deferred. The set is
+ * non-empty and unique; every member must be allowed on the chosen architecture
+ * (see `isMagicStateFactoryAllowed`). The engine unions the selected factories
+ * into ONE ISA query, so a multi-select run returns a single Pareto frontier
+ * explored across all of them — not one frontier per factory.
+ *
+ * Records saved under 1.0.0/1.1.0 carry the old singular field. They are read
+ * back through `upgradeRunConfig`, which lifts it to a one-element set and
+ * LEAVES `schemaVersion` alone, so a record keeps saying which version
+ * configured it. Nothing rewrites stored rows in place.
+ *
  * v1.1.0 (additive, backward-compatible): Neutral Atom architecture; Low-Move
  * Surface Code QEC (paired with Neutral Atom); GSJ24 / GSJ24 CCX / Magic
  * Up-to-Clifford factory values; secondary factories and memory optimization as
  * optional sets; an optional `parameters` field carrying benchmark
- * hyperparameters; Litinski19 availability widened to Neutral Atom. The primary
- * `magicStateFactory` field remains a single value in this version — the
- * multi-select migration is tracked separately (see PR notes) because it changes
- * an existing field's shape and touches the store and Team 2's consumers.
+ * hyperparameters; Litinski19 availability widened to Neutral Atom.
  */
- 
-/** Contract version stamped into every RunConfig and RunResult. */
-export const SCHEMA_VERSION = "1.1.0";
+
+/**
+ * Every contract version this build can READ. New records are always stamped
+ * with SCHEMA_VERSION; older values appear only on records loaded from the store.
+ */
+export const SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0"] as const;
+export type SchemaVersion = (typeof SCHEMA_VERSIONS)[number];
+
+/** Contract version stamped into every RunConfig and RunResult written today. */
+export const SCHEMA_VERSION: SchemaVersion = "1.2.0";
  
 // ---------------------------------------------------------------------------
 // RunConfig — what a configured run looks like going in (Team 1 → engine)
@@ -250,6 +267,38 @@ export function isGsj24Allowed(architecture: Architecture): boolean {
   return false;
 }
  
+/**
+ * Is one primary factory allowed on this architecture? round_based always is;
+ * the other two delegate to the predicates above. This is the single rule the
+ * form, the serializer, the schema and the engine adapter all answer to.
+ */
+export function isMagicStateFactoryAllowed(
+  factory: MagicStateFactoryId,
+  architecture: Architecture,
+): boolean {
+  switch (factory) {
+    case "round_based":
+      return true;
+    case "litinski19":
+      return isLitinski19Allowed(architecture);
+    case "gsj24":
+      return isGsj24Allowed(architecture);
+  }
+}
+
+/**
+ * Every factory selectable on this architecture, in contract order. Never empty:
+ * round_based qualifies everywhere, which is what keeps the non-empty-set
+ * invariant satisfiable no matter how the architecture changes under the user.
+ */
+export function allowedMagicStateFactories(
+  architecture: Architecture,
+): MagicStateFactoryId[] {
+  return MAGIC_STATE_FACTORY_IDS.filter((id) =>
+    isMagicStateFactoryAllowed(id, architecture),
+  );
+}
+
 export const TRACE_TRANSFORM_TYPES = ["psspc", "latticeSurgery"] as const;
 export type TraceTransformType = (typeof TRACE_TRANSFORM_TYPES)[number];
  
@@ -282,7 +331,7 @@ export type TraceTransform = PsspcTraceTransform | LatticeSurgeryTraceTransform;
 export type HyperparameterValues = Record<string, number | string>;
  
 export interface RunConfig {
-  schemaVersion: typeof SCHEMA_VERSION;
+  schemaVersion: SchemaVersion;
   /** UUID v4, stamped at Run-click (not while editing). */
   id: string;
   /** User-editable label; auto-derived and serialized when the user leaves it blank. */
@@ -294,17 +343,20 @@ export interface RunConfig {
   /** Derived from architecture: GateBased -> surface_code; Majorana -> three_aux. */
   qecCode: QecCodeId;
   /**
-   * Primary magic-state factory. round_based by default; litinski19 and gsj24
-   * only for qualifying architectures (see isLitinski19Allowed / isGsj24Allowed).
-   * NOTE (v1.1.0): still a single value. The spec calls for multi-select; that
-   * migration (magicStateFactory -> magicStateFactories: MagicStateFactoryId[])
-   * is deferred to its own contract change because it reshapes an existing field
-   * that the store and Team 2's history/results consumers read.
+   * Primary magic-state factories (v1.2.0) — a NON-EMPTY, unique set. Defaults
+   * to ["round_based"]; litinski19 and gsj24 may join it only on qualifying
+   * architectures (see isMagicStateFactoryAllowed). Majorana admits round_based
+   * alone, so its set is always exactly ["round_based"].
+   *
+   * The engine unions the set into one ISA query, so selecting several factories
+   * asks "explore all of these and give me the combined frontier" — the result
+   * is one frontier whose rows may come from different factories, each row
+   * naming its own under `additional.magicStateFactory`.
    */
-  magicStateFactory: MagicStateFactoryId;
+  magicStateFactories: MagicStateFactoryId[];
   /**
    * Secondary factories (v1.1.0). Optional; omitted or [] means none. Multi-select
-   * set, independent of the primary factory. Absent on v1.0.0 records.
+   * set, independent of the primary factories. Absent on v1.0.0 records.
    */
   secondaryFactories?: SecondaryFactoryId[];
   /**
@@ -440,7 +492,7 @@ export interface RunError {
 }
  
 export interface RunResult {
-  schemaVersion: typeof SCHEMA_VERSION;
+  schemaVersion: SchemaVersion;
   /** Matches the RunConfig.id that produced this result. */
   runId: string;
   /** The ONLY flow control — never infer failure from missing fields. */
@@ -529,7 +581,7 @@ export interface ResultsAreaProps {
  * every filterable value from `config`/`result`.
  */
 export interface RunRecord {
-  schemaVersion: typeof SCHEMA_VERSION;
+  schemaVersion: SchemaVersion;
   /** The run's UUID — equals config.id and result.runId. The record's stable key. */
   id: string;
   config: RunConfig;
@@ -555,9 +607,40 @@ export function makeRunRecord(config: RunConfig, result: RunResult, savedAt: str
 }
  
 /**
+ * Reading a record saved before v1.2.0.
+ *
+ * The only shape difference this build has to absorb is the factory field, so
+ * that is all this touches: a singular `magicStateFactory` becomes a
+ * one-element `magicStateFactories`. `schemaVersion` is deliberately LEFT AS
+ * SAVED — a run configured under 1.1.0 must keep saying 1.1.0 in History and in
+ * exports; claiming 1.2.0 would be a lie about what the user actually chose.
+ *
+ * Pure and idempotent: a record already in v1.2.0 shape passes through as-is.
+ * Applied at the store's read boundary, so nothing downstream needs to know two
+ * shapes exist. Nothing rewrites stored JSON in place.
+ */
+export function upgradeRunConfig(config: RunConfig): RunConfig {
+  if (Array.isArray(config.magicStateFactories)) return config;
+
+  const legacy = (config as { magicStateFactory?: MagicStateFactoryId })
+    .magicStateFactory;
+  const { magicStateFactory: _dropped, ...rest } = config as RunConfig & {
+    magicStateFactory?: MagicStateFactoryId;
+  };
+  return { ...rest, magicStateFactories: [legacy ?? "round_based"] };
+}
+
+/** `upgradeRunConfig` applied to a record's config. Pure; idempotent. */
+export function upgradeRunRecord(record: RunRecord): RunRecord {
+  const config = upgradeRunConfig(record.config);
+  return config === record.config ? record : { ...record, config };
+}
+
+/**
  * The filter set the Run History surface exposes (SOW Part 2). Every field is
  * optional; an omitted field does not constrain. `nameSearch` is a
- * case-insensitive substring over the run name; the rest are exact matches.
+ * case-insensitive substring over the run name; the rest are exact matches,
+ * except `magicStateFactory`, which matches any member of the run's factory set.
  * `qreVersion` matches the AUTHORITATIVE `result.qreVersion`.
  */
 export interface RunFilter {
@@ -593,7 +676,13 @@ export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean 
   if (filter.application !== undefined && applicationKey(config) !== filter.application) return false;
   if (filter.architecture !== undefined && config.architecture.type !== filter.architecture) return false;
   if (filter.qecCode !== undefined && config.qecCode !== filter.qecCode) return false;
-  if (filter.magicStateFactory !== undefined && config.magicStateFactory !== filter.magicStateFactory) return false;
+  // "Runs that used this factory" — a multi-select run matches on any member.
+  if (
+    filter.magicStateFactory !== undefined &&
+    !config.magicStateFactories.includes(filter.magicStateFactory)
+  ) {
+    return false;
+  }
   if (filter.qreVersion !== undefined && result.qreVersion !== filter.qreVersion) return false;
   return true;
 }

@@ -5,7 +5,7 @@ import { formatMetric } from "../results/formatMetric";
 import { getAdditionalFieldDefinitions } from "../results/resultFields";
 import {
   ARCHITECTURE_LABELS,
-  FACTORY_LABELS,
+  factorySetLabel,
   QEC_LABELS,
   applicationLabel,
 } from "./historyLabels";
@@ -35,7 +35,7 @@ export function buildExportStub(record: RunRecord): string {
     `- Application: ${applicationKey(config)}`,
     `- Architecture: ${config.architecture.type}`,
     `- QEC code: ${config.qecCode}`,
-    `- Magic state factory: ${config.magicStateFactory}`,
+    `- Magic state factories: ${config.magicStateFactories.join(", ")}`,
     `- QRE version: ${result.qreVersion}`,
     `- Created: ${config.createdAt}`,
     `- Saved: ${record.savedAt}`,
@@ -56,7 +56,7 @@ export function buildRunExportMarkdown(record: RunRecord): string {
     `- **Application:** ${applicationLabel(config)}`,
     `- **Architecture:** ${ARCHITECTURE_LABELS[config.architecture.type] ?? config.architecture.type}`,
     `- **QEC code:** ${QEC_LABELS[config.qecCode] ?? config.qecCode}`,
-    `- **Magic-state factory:** ${FACTORY_LABELS[config.magicStateFactory] ?? config.magicStateFactory}`,
+    `- **Magic-state ${config.magicStateFactories.length > 1 ? "factories" : "factory"}:** ${factorySetLabel(config)}`,
     `- **QRE version:** ${result.qreVersion}`,
     `- **Created:** ${config.createdAt}`,
     `- **Completed:** ${result.completedAt}`,

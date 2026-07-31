@@ -9,7 +9,7 @@ const IDS = Object.keys(BENCHMARK_REGISTRY);
 
 function config(benchmarkId: string, index: number): RunConfig {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: "1.2.0",
     id: `80000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     name: `benchmark smoke: ${benchmarkId}`,
     createdAt: "2026-07-15T23:00:00Z",
@@ -22,7 +22,7 @@ function config(benchmarkId: string, index: number): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform: {
       type: "psspc",
       tStatesPerRotation: 20,

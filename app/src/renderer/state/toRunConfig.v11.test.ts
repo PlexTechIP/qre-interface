@@ -89,30 +89,30 @@ describe("v1.1.0 — magic-state factory availability", () => {
   it("keeps litinski19 on GateBased at the 1e-3 boundary", () => {
     const s = validGateBasedDraft();
     s.architecture.gateBased.errorRate = 0.001;
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("litinski19");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["litinski19"]);
   });
  
   it("falls back to round_based when GateBased error rate exceeds 1e-3", () => {
     const s = validGateBasedDraft();
     s.architecture.gateBased.errorRate = 0.002;
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("round_based");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["round_based"]);
   });
  
   it("allows litinski19 on Neutral Atom when all three errors are <= 1e-3", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("litinski19");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["litinski19"]);
   });
  
   it("falls back from litinski19 on Neutral Atom when an error exceeds 1e-3", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
     s.architecture.neutralAtom.singleQubitError = 0.005;
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("round_based");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["round_based"]);
   });
  
   it("allows gsj24 on Neutral Atom under its looser error conditions", () => {
@@ -120,8 +120,8 @@ describe("v1.1.0 — magic-state factory availability", () => {
     s.architecture.type = "neutralAtom";
     s.architecture.neutralAtom.singleQubitError = 0.005;
     s.architecture.neutralAtom.measurementError = 0.005;
-    s.magicStateFactory = "gsj24";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("gsj24");
+    s.magicStateFactories = ["gsj24"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["gsj24"]);
   });
 });
  

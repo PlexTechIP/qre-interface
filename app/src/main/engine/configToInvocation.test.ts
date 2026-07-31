@@ -10,7 +10,7 @@ import {
 
 function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: "1.2.0",
     id: "acaf1c0e-a716-41bc-9774-598cacee033f",
     name: "test",
     createdAt: "2026-07-09T18:22:00Z",
@@ -23,7 +23,7 @@ function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform: {
       type: "psspc",
       tStatesPerRotation: 20,
@@ -96,7 +96,7 @@ describe("configToInvocation", () => {
           measurementTime: 100,
           twoQubitGateTime: null,
         },
-        magicStateFactory: "litinski19",
+        magicStateFactories: ["litinski19"],
       }),
       30000,
     );
@@ -114,7 +114,7 @@ describe("configToInvocation", () => {
           measurementTime: 100,
           twoQubitGateTime: null,
         },
-        magicStateFactory: "litinski19",
+        magicStateFactories: ["litinski19"],
       }),
       30000,
     );
@@ -130,7 +130,7 @@ describe("configToInvocation", () => {
           operationTime: 1000,
         },
         qecCode: "three_aux",
-        magicStateFactory: "litinski19",
+        magicStateFactories: ["litinski19"],
       }),
       30000,
     );
@@ -148,7 +148,7 @@ describe("configToInvocation", () => {
           operationTime: 1000,
         },
         qecCode: "three_aux",
-        magicStateFactory: "round_based",
+        magicStateFactories: ["round_based"],
         traceTransform: {
           type: "psspc",
           tStatesPerRotation: 5,

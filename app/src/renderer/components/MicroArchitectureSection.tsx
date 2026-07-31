@@ -25,8 +25,9 @@ import { Field } from "./Field";
  
 interface MicroArchitectureSectionProps {
   architecture: ArchitectureForm;
-  magicStateFactory: MagicStateFactoryId;
-  onMagicStateFactoryChange: (value: MagicStateFactoryId) => void;
+  /** Serialized primary magic-state factory set (multi-select, never empty). */
+  magicStateFactories: readonly MagicStateFactoryId[];
+  onMagicStateFactoriesChange: (value: MagicStateFactoryId[]) => void;
   /** Serialized secondary-factory set (multi-select). */
   secondaryFactories: readonly SecondaryFactoryId[];
   onSecondaryFactoriesChange: (value: SecondaryFactoryId[]) => void;
@@ -53,15 +54,15 @@ const QEC_CODE_OPTIONS: readonly { value: string; label: string }[] = [
  
 /**
  * Micro Architecture Settings — the consolidated QEC code, magic-state factory,
- * trace transform, and max-error controls. QEC is derived/locked; the factory
- * carries the Litinski19 fallback rule; Secondary Factory / Memory Optimization
- * are optional renderer-only placeholders (no contract field yet — not
- * serialized).
+ * trace transform, and max-error controls. QEC is derived/locked; the primary
+ * factory is a multi-select set carrying the per-architecture availability
+ * rules; Secondary Factory and Memory Optimization are serialized multi-select
+ * and single-select sets respectively.
  */
 export function MicroArchitectureSection({
   architecture,
-  magicStateFactory,
-  onMagicStateFactoryChange,
+  magicStateFactories,
+  onMagicStateFactoriesChange,
   secondaryFactories,
   onSecondaryFactoriesChange,
   memoryOptimization,
@@ -81,13 +82,15 @@ export function MicroArchitectureSection({
   const gsj24Allowed = isGsj24AllowedInForm(architecture);
  
   /**
-   * Help text under the Magic State Factory control. When Litinski19 is not
+   * Help text under the Magic State Factory control. When a factory is not
    * selectable, explain why — the availability rule is architecture- and
-   * error-rate-dependent, and a bare disabled <option> announces no reason.
+   * error-rate-dependent, and a bare disabled checkbox announces no reason.
    */
-  const factoryHelp = litinski19Allowed
-    ? "Filtered by architecture and error rate."
-    : "Litinski19 needs Superconducting hardware with error rate ≤ 1e-3, or Neutral Atom with all errors ≤ 1e-3. Using Round-Based instead.";
+  const factoryHelp = isMajorana
+    ? "Majorana supports Round-Based only. Selecting several factories asks the estimator to explore all of them and return one combined frontier."
+    : litinski19Allowed && gsj24Allowed
+      ? "Select one or more · the estimator explores every selected factory and returns one combined frontier."
+      : "Unavailable factories are filtered by architecture and error rate. Litinski19 needs Superconducting ≤ 1e-3, or Neutral Atom with all errors ≤ 1e-3. GSJ24 needs Superconducting ≤ 1e-3, or Neutral Atom with Rydberg ≤ 1e-3 and single-qubit/measurement < 1e-2.";
  
   /** Whether a given primary factory id is selectable on the current architecture. */
   const isPrimaryAllowed = (id: MagicStateFactoryId): boolean => {
@@ -96,6 +99,24 @@ export function MicroArchitectureSection({
     return true;
   };
  
+  const primarySet = new Set(magicStateFactories);
+
+  /**
+   * Toggle a primary factory. The set must never empty, so unchecking the last
+   * remaining one is refused — the user picks the replacement first, rather than
+   * passing through an invalid state the serializer would silently repair.
+   */
+  const togglePrimary = (id: MagicStateFactoryId): void => {
+    const next = new Set(primarySet);
+    if (next.has(id)) {
+      if (next.size === 1) return;
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    onMagicStateFactoriesChange(MAGIC_STATE_FACTORY_IDS.filter((f) => next.has(f)));
+  };
+
   const secondarySet = new Set(secondaryFactories);
  
   /**
@@ -182,29 +203,32 @@ export function MicroArchitectureSection({
           </select>
         </Field>
  
-        <Field
-          id="micro-factory"
-          label="Magic State Factory"
-          help={factoryHelp}
-        >
-          <select
-            id="micro-factory"
-            className="field__input"
-            value={magicStateFactory}
-            onChange={(event) => {
-              const next = event.target.value;
-              if ((MAGIC_STATE_FACTORY_IDS as readonly string[]).includes(next)) {
-                onMagicStateFactoryChange(next as MagicStateFactoryId);
-              }
-            }}
-          >
-            {MAGIC_STATE_FACTORY_IDS.map((id) => (
-              <option key={id} value={id} disabled={!isPrimaryAllowed(id)}>
-                {MAGIC_STATE_FACTORY_LABELS[id]}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {/* Multi-select (v1.2.0): the estimator unions the checked factories
+            into one ISA query, so the frontier is explored across all of them.
+            Matches the Secondary Factory control's checkbox idiom below. */}
+        <fieldset className="field" aria-labelledby="micro-factory-label">
+          <legend className="field__label" id="micro-factory-label">
+            Magic State Factory
+          </legend>
+          {MAGIC_STATE_FACTORY_IDS.map((id) => {
+            const checked = primarySet.has(id);
+            // Never let the user empty the set: the last checked factory stays
+            // checked until another is picked.
+            const isLastChecked = checked && primarySet.size === 1;
+            return (
+              <label key={id} className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!isPrimaryAllowed(id) || isLastChecked}
+                  onChange={() => togglePrimary(id)}
+                />
+                <span>{MAGIC_STATE_FACTORY_LABELS[id]}</span>
+              </label>
+            );
+          })}
+          <p className="field__help">{factoryHelp}</p>
+        </fieldset>
       </div>
  
       <hr className="micro-divider" />

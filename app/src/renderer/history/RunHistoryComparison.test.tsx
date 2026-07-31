@@ -123,6 +123,43 @@ describe("Compare Selected below the threshold", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("counts what would be COMPARED, not what is ticked, when a filter hides a run", async () => {
+    // Two ticked, then a name search matching only one. Counting checkboxes
+    // instead of resolved records navigates to a one-column "comparison".
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+
+    await userEvent.type(screen.getByLabelText(/search run name/i), "Litinski19");
+    // The button's count follows the same number the threshold uses.
+    expect(
+      await screen.findByRole("button", { name: /compare selected \(1\)/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    expect(screen.getByText(RUN_A)).toBeInTheDocument();
+    expect(screen.queryByText(/one column per run/i)).not.toBeInTheDocument();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/1 run is selected/i);
+    // …and says why, so "(1)" after ticking two boxes doesn't just look broken.
+    expect(alert).toHaveTextContent(/1 checked run is hidden by the current filter/i);
+  });
+
+  it("warns from the detail panel too, where the button is equally reachable", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    // Open a run's detail panel — it takes over the branch the list rendered in.
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("button", { name: /^view$/i }));
+    expect(screen.queryByText(/search run name/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    // A press with no visible response would be the silent no-op the enabled
+    // button was chosen to avoid.
+    expect(screen.getByRole("alert")).toHaveTextContent(/at least 2 runs/i);
+  });
+
   it("re-announces the warning on a repeated press", async () => {
     render(<ControlledHarness />);
     await rowByName(RUN_A);

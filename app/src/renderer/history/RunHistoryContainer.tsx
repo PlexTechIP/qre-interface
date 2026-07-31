@@ -315,11 +315,30 @@ export function RunHistoryContainer({
 
   const clearComparison = useCallback(() => setComparisonIds([]), []);
 
+  // The records currently chosen for comparison, in selection order, filtered
+  // to those still present (a deleted record drops out of the set, and so does
+  // one the active filter hides). This — NOT comparisonIds — is what Comparison
+  // actually renders, so it is also what the threshold and the button's count
+  // have to be measured against.
+  const comparisonRecords = useMemo(
+    () => comparisonIds.map((id) => records.find((r) => r.id === id)).filter((r): r is RunRecord => r != null),
+    [comparisonIds, records],
+  );
+
+  // Checked runs the active filter is currently hiding. They stay selected (a
+  // filter must not silently discard a selection) but cannot be compared while
+  // off-screen, so the warning has to say so — otherwise "(1)" after ticking two
+  // boxes just looks broken.
+  const hiddenComparisonCount = comparisonIds.length - comparisonRecords.length;
+
   // "Compare Selected" must not strand the user on an empty Comparison page. Below
   // the threshold we stay on History and SAY what is missing — the button stays
   // enabled, because a disabled button with no explanation is the same bug in a
   // different costume.
-  const pendingCompareWarning = compareSelectionWarning(comparisonIds.length);
+  const pendingCompareWarning = compareSelectionWarning(
+    comparisonRecords.length,
+    hiddenComparisonCount,
+  );
   const compareWarning = compareAttempts > 0 ? pendingCompareWarning : null;
 
   // Reaching the threshold retires the warning for good: without this reset the
@@ -336,13 +355,6 @@ export function RunHistoryContainer({
     }
     setView("comparison");
   }, [pendingCompareWarning, setView]);
-
-  // The records currently chosen for comparison, in selection order, filtered
-  // to those still present (a deleted record drops out of the set).
-  const comparisonRecords = useMemo(
-    () => comparisonIds.map((id) => records.find((r) => r.id === id)).filter((r): r is RunRecord => r != null),
-    [comparisonIds, records],
-  );
 
   const selectedRecord = useMemo(
     () => (selectedId == null ? null : records.find((r) => r.id === selectedId) ?? null),
@@ -391,7 +403,9 @@ export function RunHistoryContainer({
                 onClick={requestComparison}
                 aria-describedby={compareWarning ? "compare-threshold-warning" : undefined}
               >
-                Compare Selected{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+                {/* The count is the number that WOULD be compared, so it can
+                    never disagree with the threshold guard. */}
+                Compare Selected{comparisonRecords.length > 0 ? ` (${comparisonRecords.length})` : ""}
               </button>
             ) : (
               <button
@@ -429,7 +443,7 @@ export function RunHistoryContainer({
             className={view === "comparison" ? "surface-tab active" : "surface-tab"}
             onClick={() => setView("comparison")}
           >
-            Comparison{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
+            Comparison{comparisonRecords.length > 0 ? ` (${comparisonRecords.length})` : ""}
           </button>
         </div>
       )}
@@ -444,6 +458,26 @@ export function RunHistoryContainer({
         detail view (View Details). Otherwise the search + filter bar + list show.
         The Comparison tab is a pure function of the checked records.
       */}
+      {/*
+        The warning sits ABOVE the loading/detail/list switch, not inside the
+        list branch: "Compare Selected" is reachable whenever History is showing
+        — including while the detail panel owns the branch — and a press that
+        produced no visible response would be exactly the silent no-op the
+        enabled button was chosen to avoid.
+      */}
+      {view === "history" && compareWarning ? (
+        // Keyed by attempt so a repeat press mounts a NEW live-region node —
+        // an identical one is not re-announced by a screen reader.
+        <p
+          key={compareAttempts}
+          role="alert"
+          id="compare-threshold-warning"
+          className="compare-warning"
+        >
+          {compareWarning}
+        </p>
+      ) : null}
+
       {loadError ? (
         <p role="alert" className="load-error">
           {loadError}
@@ -475,18 +509,6 @@ export function RunHistoryContainer({
       ) : (
         <>
           <RunHistoryFilters allRecords={allRecords} filter={filter} onFilterChange={setFilter} />
-          {compareWarning ? (
-            // Keyed by attempt so a repeat press mounts a NEW live-region node —
-            // an identical one is not re-announced by a screen reader.
-            <p
-              key={compareAttempts}
-              role="alert"
-              id="compare-threshold-warning"
-              className="compare-warning"
-            >
-              {compareWarning}
-            </p>
-          ) : null}
           {deleteError ? (
             <p role="alert" className="load-error">
               {deleteError}

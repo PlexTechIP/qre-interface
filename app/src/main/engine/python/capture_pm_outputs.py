@@ -78,8 +78,11 @@ def cases() -> dict[str, dict]:
         "slowDownFactor": 1.0,
     }
 
-    # Formatting stress combines the widest property set QDK 1.29.1 reports
+    # Formatting stress combines the widest property set the pinned QDK reports
     # for this adapter with five rows and billion-nanosecond runtime values.
+    # Deliberately not pinned to a version number here: the captured set grows
+    # with the engine (1.30.0 reports seven properties 1.29.1 did not), and the
+    # capture is always taken against whatever QDK is installed at run time.
     formatting_stress = base_invocation()
     formatting_stress["architecture"] = {
         "type": "gateBased",

@@ -52,7 +52,7 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
   },
 
   "qecCode": "surface_code",
-  "magicStateFactory": "round_based",
+  "magicStateFactories": ["round_based"],
 
   "traceTransform": {
     "type": "psspc",
@@ -83,7 +83,7 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 | majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`** |
 | majorana `operationTime` | Default `1000`; **> 0**, serialized in ns |
 | `qecCode` | Coupled to architecture: gateBased → `surface_code`; majorana → `three_aux` |
-| `magicStateFactory` | Default `round_based`; `litinski19` only for gateBased with `errorRate <= 1e-3`; Majorana is always `round_based` |
+| `magicStateFactories` | **A non-empty, unique SET** (v1.2.0; was the single-valued `magicStateFactory`). Default `["round_based"]`; `litinski19` / `gsj24` only on gateBased with `errorRate <= 1e-3` or qualifying Neutral Atom; Majorana is always exactly `["round_based"]`. The engine unions the set into one ISA query, so the frontier is explored across every selected factory and each row names its own in `additional.magicStateFactory` |
 | PSSPC `tStatesPerRotation` | Default `20`; **5 <= x <= 20** |
 | PSSPC `ccxMagicStates` | Boolean, default `false` |
 | latticeSurgery `slowDownFactor` | Fixed `1.0` |

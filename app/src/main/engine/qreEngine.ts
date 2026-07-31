@@ -3,6 +3,7 @@ import type {
   RunConfig,
   RunResult,
 } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { configToInvocation } from "./configToInvocation.js";
 import { execute } from "./execute.js";
 import { outputToResult } from "./outputToResult.js";
@@ -30,7 +31,7 @@ export class QreEngine implements EstimatorService {
         );
         if (!preflight.ok) {
           return {
-            schemaVersion: "1.1.0",
+            schemaVersion: SCHEMA_VERSION,
             runId: config.id,
             status: "failed",
             error: { code: preflight.code, message: preflight.message },
@@ -46,7 +47,7 @@ export class QreEngine implements EstimatorService {
       const invocationResult = configToInvocation(config, this.timeoutMs);
       if (!invocationResult.ok) {
         return {
-          schemaVersion: "1.1.0",
+          schemaVersion: SCHEMA_VERSION,
           runId: config.id,
           status: "failed",
           error: invocationResult.error,
@@ -71,7 +72,7 @@ export class QreEngine implements EstimatorService {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       return {
-        schemaVersion: "1.1.0",
+        schemaVersion: SCHEMA_VERSION,
         runId: config.id,
         status: "failed",
         error: {

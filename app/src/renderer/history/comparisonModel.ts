@@ -333,17 +333,32 @@ export function buildFrontierSeries(columns: readonly ComparisonColumn[]): Front
  */
 export const COMPARE_MIN_SELECTION = 2;
 
-/** The in-place warning for a below-threshold selection; null once it is met. */
-export function compareSelectionWarning(selectedCount: number): string | null {
-  if (selectedCount >= COMPARE_MIN_SELECTION) return null;
+/**
+ * The in-place warning for a below-threshold selection; null once it is met.
+ *
+ * `comparableCount` is the number of selected runs actually present in the
+ * list — NOT the number of checkboxes ticked. `hiddenCount` is how many checked
+ * runs the active filter is currently hiding; those stay selected but cannot be
+ * compared while off-screen, and saying so is the difference between a warning
+ * that helps and one that looks wrong ("I ticked two of them").
+ */
+export function compareSelectionWarning(
+  comparableCount: number,
+  hiddenCount = 0,
+): string | null {
+  if (comparableCount >= COMPARE_MIN_SELECTION) return null;
 
-  const needed = COMPARE_MIN_SELECTION - selectedCount;
+  const needed = COMPARE_MIN_SELECTION - comparableCount;
   const have =
-    selectedCount === 0
+    comparableCount === 0
       ? "None are selected yet"
-      : `${selectedCount} run${selectedCount === 1 ? " is" : "s are"} selected`;
+      : `${comparableCount} run${comparableCount === 1 ? " is" : "s are"} selected`;
+  const hiddenNote =
+    hiddenCount > 0
+      ? ` ${hiddenCount} checked run${hiddenCount === 1 ? " is" : "s are"} hidden by the current filter — clear the filter to include ${hiddenCount === 1 ? "it" : "them"}.`
+      : "";
 
-  return `Select at least ${COMPARE_MIN_SELECTION} runs to compare. ${have} — tick ${needed} more in the list below.`;
+  return `Select at least ${COMPARE_MIN_SELECTION} runs to compare. ${have} — tick ${needed} more in the list below.${hiddenNote}`;
 }
 
 /**
