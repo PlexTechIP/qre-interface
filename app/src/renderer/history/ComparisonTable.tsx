@@ -37,6 +37,11 @@ export function ComparisonTable({ columns, hiddenKeys }: ComparisonTableProps) {
                   {" · "}
                   {col.qreVersion}
                 </span>
+                {col.selectedIndex > 0 ? (
+                  <span className="comparison-run-meta">
+                    Row {col.selectedIndex + 1} of {col.frontierCount}
+                  </span>
+                ) : null}
                 {col.failed ? <span className="status-pill failed">Failed</span> : null}
               </th>
             ))}

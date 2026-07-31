@@ -6,6 +6,7 @@ import {
   type ResultFieldDefinition,
 } from "../results/resultFields";
 import { formatMetric } from "../results/formatMetric";
+import { resolveSelectedFrontierRow } from "../results/selectedRows";
 import { ARCHITECTURE_LABELS, applicationLabel } from "./historyLabels";
 
 /**
@@ -15,10 +16,9 @@ import { ARCHITECTURE_LABELS, applicationLabel } from "./historyLabels";
  * purity holds here too). Every value the surface shows is derived from
  * `config`/`result`; nothing is duplicated onto the record.
  *
- * Each run is represented by its FIRST frontier row — the same representative-row
- * convention the History list uses (RunRecord does not persist a selected row).
- * A failed run has no frontier, so its row is null and its cells/bars read as
- * "no data" rather than crashing.
+ * Each run is represented by the frontier row selected for it in app session
+ * state, defaulting to the first row. A failed run has no frontier, so its row
+ * is null and its cells/bars read as "no data" rather than crashing.
  */
 
 /** Truncated run name for a chart's category axis; the tooltip/table carry the full name. */
@@ -35,12 +35,20 @@ export interface ComparisonColumn {
   architecture: string;
   qreVersion: string;
   failed: boolean;
-  /** The representative (first) frontier row; null on a failed run. */
+  /** Zero-based representative row index after safe fallback. */
+  selectedIndex: number;
+  /** Total frontier rows reported by this run. */
+  frontierCount: number;
+  /** The representative frontier row; null on a failed or empty-frontier run. */
   row: FrontierRow | null;
 }
 
-export function toComparisonColumn(record: RunRecord): ComparisonColumn {
+export function toComparisonColumn(
+  record: RunRecord,
+  selectedIndex = 0,
+): ComparisonColumn {
   const { config, result } = record;
+  const selected = resolveSelectedFrontierRow(result, selectedIndex);
   return {
     id: record.id,
     name: config.name,
@@ -50,7 +58,9 @@ export function toComparisonColumn(record: RunRecord): ComparisonColumn {
     // Authoritative engine version is result.qreVersion, NOT config.qreVersion.
     qreVersion: result.qreVersion,
     failed: result.status === "failed",
-    row: result.frontier?.[0] ?? null,
+    selectedIndex: selected.index,
+    frontierCount: selected.count,
+    row: selected.row,
   };
 }
 

@@ -1,10 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { InMemoryRunStore } from "../shared/runStore";
 import {
   SAMPLE_RUN_RECORDS,
+  buildFrontierRow,
+  buildRunRecord,
   buildSuccessResult,
   fakeEstimator,
 } from "../shared/testing";
@@ -94,5 +96,72 @@ describe("App shell wiring", () => {
       "aria-current",
       "page",
     );
+  });
+
+  it("keeps each run's selected frontier row across Results, History, and Comparison", async () => {
+    const selectedRun = buildRunRecord({
+      config: {
+        id: "10000000-0000-4000-8000-000000000001",
+        name: "Three-row session run",
+      },
+      result: {
+        frontier: [
+          buildFrontierRow({
+            physicalQubits: { value: 111_111, unit: "qubits", display: "ignored" },
+          }),
+          buildFrontierRow({
+            physicalQubits: { value: 222_222, unit: "qubits", display: "ignored" },
+          }),
+          buildFrontierRow({
+            physicalQubits: { value: 333_333, unit: "qubits", display: "ignored" },
+          }),
+        ],
+      },
+    });
+    const comparisonRun = buildRunRecord({
+      config: {
+        id: "10000000-0000-4000-8000-000000000002",
+        name: "Default-row comparison run",
+      },
+    });
+    window.store = new InMemoryRunStore([selectedRun, comparisonRun]);
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+
+    const selectedRunCell = await screen.findByText(selectedRun.config.name);
+    const selectedHistoryRow = selectedRunCell.closest("tr");
+    if (!selectedHistoryRow) throw new Error("Expected selected run history row.");
+    await userEvent.click(
+      within(selectedHistoryRow).getByRole("button", { name: "View" }),
+    );
+
+    const thirdFrontierRow = await screen.findByRole("row", {
+      name: /3 333,333/i,
+    });
+    await userEvent.click(thirdFrontierRow);
+
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+    const refreshedSelectedCell = await screen.findByText(selectedRun.config.name);
+    const refreshedSelectedRow = refreshedSelectedCell.closest("tr");
+    if (!refreshedSelectedRow) throw new Error("Expected refreshed history row.");
+    expect(within(refreshedSelectedRow).getByText("333,333")).toBeInTheDocument();
+
+    const defaultRunCell = screen.getByText(comparisonRun.config.name);
+    const defaultHistoryRow = defaultRunCell.closest("tr");
+    if (!defaultHistoryRow) throw new Error("Expected default comparison row.");
+    await userEvent.click(within(refreshedSelectedRow).getByRole("checkbox"));
+    await userEvent.click(within(defaultHistoryRow).getByRole("checkbox"));
+    await userEvent.click(
+      screen.getByRole("button", { name: /compare selected \(2\)/i }),
+    );
+
+    const comparisonTable = screen.getByRole("table");
+    expect(within(comparisonTable).getByText("Row 3 of 3")).toBeInTheDocument();
+    const qubitsRow = within(comparisonTable)
+      .getByText("Physical Qubits")
+      .closest("tr");
+    if (!qubitsRow) throw new Error("Expected physical-qubits comparison row.");
+    expect(within(qubitsRow).getByText("333,333")).toBeInTheDocument();
   });
 });

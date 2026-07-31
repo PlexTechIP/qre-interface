@@ -6,13 +6,21 @@ interface ResultsPageProps {
   latestRun: { config: RunConfig; result: RunResult } | null;
   /** Navigate to Run Configuration to start an estimate. */
   onRunEstimation: () => void;
+  /** Session-selected representative frontier row for the latest run. */
+  selectedIndex?: number;
+  onSelectedIndexChange?: (index: number) => void;
 }
 
 /**
  * The Results sidebar page. Shows the latest run's result (via Team 2's
  * ResultsArea), or a first-run empty state with a call to action.
  */
-export function ResultsPage({ latestRun, onRunEstimation }: ResultsPageProps): React.JSX.Element {
+export function ResultsPage({
+  latestRun,
+  onRunEstimation,
+  selectedIndex,
+  onSelectedIndexChange,
+}: ResultsPageProps): React.JSX.Element {
   if (latestRun === null) {
     return (
       <section className="empty-state" aria-labelledby="results-empty-title">
@@ -28,7 +36,15 @@ export function ResultsPage({ latestRun, onRunEstimation }: ResultsPageProps): R
     );
   }
 
-  return <ResultsArea phase="done" result={latestRun.result} config={latestRun.config} />;
+  return (
+    <ResultsArea
+      phase="done"
+      result={latestRun.result}
+      config={latestRun.config}
+      {...(selectedIndex !== undefined ? { selectedIndex } : {})}
+      {...(onSelectedIndexChange ? { onSelectedIndexChange } : {})}
+    />
+  );
 }
 
 /** Waveform glyph for the empty results state. */
