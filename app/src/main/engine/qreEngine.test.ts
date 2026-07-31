@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { RunConfig } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
 
 const PYTHON_BIN = resolvePythonBin();
+const PYTHON_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "python");
 const QRE_AVAILABLE =
   spawnSync(PYTHON_BIN, ["-c", "import qdk.qre"], { stdio: "ignore" })
     .status === 0;
@@ -95,6 +98,26 @@ const NEUTRAL_ATOM_ANCHORS = {
   large: 627_598, // numQubits 400, tCount 900,000
   gsj24: 103_733, // GSJ24 primary + both secondary factories
 } as const;
+
+/**
+ * Majorana + ThreeAux + maxError 1 — the same trio crossConfig.test.ts pins its
+ * third anchor on. `operationTime` is the field that reached every layer of the
+ * stack except the engine until it was mapped in build_architecture.
+ */
+const majorana: RunConfig = {
+  ...config,
+  id: "e6a4f5c7-8b9d-4e0f-1a2b-3c4d5e6f7a8b",
+  name: "majorana operation time",
+  architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
+  qecCode: "three_aux",
+};
+
+/**
+ * Runtime at operationTime 1000 (QDK's default and the UI's). Pinned because it
+ * is the value crossConfig.test.ts:88 already anchors — mapping `time` must not
+ * move it, which is what makes the mapping a zero-migration change.
+ */
+const MAJORANA_RUNTIME_AT_1000 = 10_602_000;
 
 describe("QreEngine", () => {
   it.runIf(QRE_AVAILABLE)(
@@ -194,6 +217,73 @@ describe("QreEngine", () => {
       );
     },
     240_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "scales Majorana runtime linearly with operationTime",
+    async () => {
+      const engine = new QreEngine(PYTHON_BIN);
+      const atDefault = await engine.run(majorana);
+      const atQuarter = await engine.run({
+        ...majorana,
+        id: "f7b5a6d8-9c0e-4f1a-2b3c-4d5e6f7a8b9c",
+        architecture: { type: "majorana", errorRate: 0.00001, operationTime: 250 },
+      });
+
+      expect(atDefault.status).toBe("succeeded");
+      expect(atQuarter.status).toBe("succeeded");
+
+      const slow = atDefault.frontier![0]!;
+      const fast = atQuarter.frontier![0]!;
+
+      // Mapping `time` must be output-identical at the default, or every
+      // existing fixture, capture and saved run silently changes meaning.
+      expect(slow.runtime.value).toBe(MAJORANA_RUNTIME_AT_1000);
+
+      // Quartering the operation time quarters the runtime exactly, and moves
+      // nothing else. A regression that drops the mapping makes these equal.
+      expect(fast.runtime.value).toBe(MAJORANA_RUNTIME_AT_1000 / 4);
+      expect(slow.runtime.value / fast.runtime.value).toBe(4);
+      expect(fast.physicalQubits.value).toBe(slow.physicalQubits.value);
+      expect(fast.totalError.value).toBe(slow.totalError.value);
+    },
+    240_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "pins the QDK NeutralAtom defaults the contract does not model",
+    () => {
+      // data_qubit_spacing and target_year are absent from the field spec, so
+      // the wrapper never sets them and we inherit whatever QDK defaults to.
+      // They are inert on 1.30.0 — that is a property of this version, not a
+      // guarantee. Pinning them makes a future bump fail here, loudly, instead
+      // of silently moving every Neutral Atom estimate.
+      const probe = spawnSync(
+        PYTHON_BIN,
+        [
+          "-c",
+          [
+            "import json",
+            "from estimate import build_architecture",
+            `arch = json.loads(${JSON.stringify(
+              JSON.stringify(manualNeutralAtom.architecture),
+            )})`,
+            "na = build_architecture(arch)",
+            "print(json.dumps({'spacing': na.data_qubit_spacing, 'year': na.target_year}))",
+          ].join("\n"),
+        ],
+        { cwd: PYTHON_DIR, encoding: "utf8" },
+      );
+
+      expect(probe.status).toBe(0);
+      const probed = JSON.parse(probe.stdout.trim()) as {
+        spacing: number;
+        year: number | null;
+      };
+      expect(probed.spacing).toBe(12.0);
+      expect(probed.year).toBeNull();
+    },
+    60_000,
   );
 
   it("resolves with INVALID_CONFIG for a bad benchmark id", async () => {
