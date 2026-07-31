@@ -39,18 +39,15 @@
   --color-chart-axis: #cbd5e1;
   --color-chart-line: #0891b2;
   --color-chart-point-stroke: #a5e8f3;
-  /* Categorical series palette for the Pareto curves — one hue per compared
-     run, eight before it wraps. Hues are widely separated and each series also
-     carries a distinct point symbol, so a curve is never identified by colour
-     alone. Both themes keep the strokes legible on their own surface. */
-  --color-series-1: #0072b2;
-  --color-series-2: #d55e00;
-  --color-series-3: #009e73;
-  --color-series-4: #7048e8;
-  --color-series-5: #b3568f;
-  --color-series-6: #8a6d00;
-  --color-series-7: #0e7490;
-  --color-series-8: #a02c2c;
+
+  /* Comparison series. Marker SHAPE also varies per series, so these never
+     carry meaning on their own — they are picked for separation on light. */
+  --color-series-1: #0e7490;
+  --color-series-2: #b45309;
+  --color-series-3: #6d28d9;
+  --color-series-4: #15803d;
+  --color-series-5: #be123c;
+  --color-series-6: #0f766e;
 
   color: var(--color-text);
   background: var(--color-bg);
@@ -100,14 +97,14 @@
   --color-chart-axis: #3a4a64;
   --color-chart-line: #22d3ee;
   --color-chart-point-stroke: #17545f;
-  --color-series-1: #56b4e9;
-  --color-series-2: #f0a35e;
-  --color-series-3: #4fd1a5;
-  --color-series-4: #b197fc;
-  --color-series-5: #f79ac9;
-  --color-series-6: #e6d264;
-  --color-series-7: #67e8f9;
-  --color-series-8: #fca5a5;
+
+  /* Same six series, lifted for contrast against the dark surface. */
+  --color-series-1: #22d3ee;
+  --color-series-2: #fbbf24;
+  --color-series-3: #c4b5fd;
+  --color-series-4: #4ade80;
+  --color-series-5: #fb7185;
+  --color-series-6: #5eead4;
 }
 
 * {
@@ -2999,6 +2996,38 @@ button.danger:hover {
   color: var(--color-danger-text);
 }
 
+/* What is being compared, before the numbers. */
+.comparison-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comparison-summary__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.comparison-summary__line strong {
+  color: var(--color-heading);
+  font-size: 15px;
+}
+
+.comparison-summary__failed {
+  color: var(--color-danger-text);
+  font-weight: 700;
+}
+
+.comparison-chip--failed {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+}
+
 .comparison-table-scroll {
   width: 100%;
   max-width: 100%;
@@ -3007,28 +3036,72 @@ button.danger:hover {
 }
 
 .comparison-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   font-size: 13px;
 }
 
+/* `border-collapse: separate` is required for the sticky column below, but it
+   makes every cell paint its own edges — so interior rules would double to 2px.
+   Each cell draws only its right/bottom edge; the table supplies the outer top
+   and left. */
 .comparison-table th,
 .comparison-table td {
-  border: 1px solid var(--color-hairline);
+  border-right: 1px solid var(--color-hairline);
+  border-bottom: 1px solid var(--color-hairline);
   padding: 8px 12px;
   text-align: left;
   vertical-align: top;
 }
 
+.comparison-table tr > *:first-child {
+  border-left: 1px solid var(--color-hairline);
+}
+
 .comparison-table thead th {
+  border-top: 1px solid var(--color-hairline);
   background: var(--color-table-head-bg);
   position: sticky;
   top: 0;
+  z-index: 1;
+  /* Keeps a 6+ run header readable. The cap lives on the inner span, not here:
+     max-width does not apply to cells under automatic table layout (CSS 2.1
+     §10.4), so setting it on the `th` would silently do nothing. */
+  min-width: 148px;
 }
 
+/* The field column stays put while runs scroll horizontally past it — this is
+   what makes 6+ runs usable rather than a header you lose track of. */
 .comparison-table .field-col {
   background: var(--color-well-bg);
   white-space: nowrap;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 0;
+}
+
+.comparison-table thead .field-col {
+  z-index: 3;
+}
+
+.comparison-run-row {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* A failed run reads as failed across its whole column, never as blank cells. */
+.comparison-table th.comparison-col-failed,
+.comparison-table td.comparison-col-failed {
+  background: var(--color-danger-bg);
+}
+
+.comparison-no-data {
+  color: var(--color-danger-text);
+  font-size: 12px;
+  font-style: italic;
+  font-variant-numeric: normal;
 }
 
 .comparison-table td.num,
@@ -3041,6 +3114,11 @@ button.danger:hover {
   display: block;
   font-weight: 700;
   color: var(--color-heading);
+  /* The real column cap. It lives on this block, not the `th`: max-width does
+     not apply to cells under automatic table layout, so a long run name would
+     otherwise stretch its column. */
+  max-width: 232px;
+  overflow-wrap: anywhere;
 }
 
 .comparison-run-meta {
@@ -3084,6 +3162,62 @@ button.danger:hover {
   font-size: 12px;
 }
 
+/* ---- Pareto curves ------------------------------------------------------- */
+
+.comparison-curves {
+  padding-bottom: 12px;
+}
+
+.comparison-curves__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 10px;
+}
+
+.comparison-curves__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.comparison-curves__legend-name {
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.comparison-curves__empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.comparison-curves__omitted {
+  margin: 8px 0 0;
+  border-top: 1px solid var(--color-hairline);
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.comparison-curves__omitted strong {
+  color: var(--color-danger-text);
+}
+
+/* Below-threshold "Compare Selected" explanation, shown in place on History. */
+.compare-warning {
+  margin: 12px 0 0;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--color-accent-bg);
+  color: var(--color-body);
+  font-size: 13px;
+}
+
 .comparison-tooltip strong {
   color: var(--color-heading);
 }
@@ -3091,94 +3225,6 @@ button.danger:hover {
 .comparison-tooltip span {
   color: var(--color-body);
   font-variant-numeric: tabular-nums;
-}
-
-/* ---- Pareto frontier curves --------------------------------------------- */
-
-.pareto-curves {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-
-.pareto-figure {
-  margin: 0;
-  min-width: 0;
-}
-
-.pareto-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 20px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 12px;
-}
-
-.pareto-legend__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.pareto-legend__glyph {
-  flex: none;
-}
-
-.pareto-legend__name {
-  font-weight: 600;
-  color: var(--color-heading);
-}
-
-.pareto-omitted,
-.pareto-empty {
-  font-size: 12px;
-  margin: 0;
-}
-
-.pareto-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px 0;
-}
-
-/* The disclosure is a .filter-toggle button (styled with the field filter's),
-   so only the gap above the revealed table belongs here. */
-.pareto-data {
-  min-width: 0;
-}
-
-.pareto-data > .comparison-table-scroll {
-  margin-top: 8px;
-}
-
-/* ---- Below-threshold comparison warnings --------------------------------- */
-
-.compare-warning,
-.comparison-notice {
-  border: 1px solid var(--color-accent-border);
-  border-radius: 10px;
-  background: var(--color-accent-bg);
-  color: var(--color-text);
-  padding: 12px 14px;
-  font-size: 13px;
-  margin: 0;
-}
-
-.comparison-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.comparison-notice p {
-  margin: 0;
 }
 
 .history-panel .empty-state,

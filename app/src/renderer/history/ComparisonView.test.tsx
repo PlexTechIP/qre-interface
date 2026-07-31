@@ -103,6 +103,111 @@ describe("Comparison surface (Part E)", () => {
     expect(within(physicalQubitsRow as HTMLElement).getAllByRole("cell")).toHaveLength(1);
   });
 
+  it("says a single run is not yet a comparison, however the user arrived here", () => {
+    // Reachable by the sidebar/tab nav, which deliberately is NOT blocked — so the
+    // below-threshold explanation has to live on this surface too, not only behind
+    // the Compare Selected button.
+    render(<ComparisonView records={[trio[0]!]} onClear={noop} onRemove={noop} onExport={noop} />);
+
+    expect(screen.getByRole("status", { name: /below the comparison threshold/i })).toHaveTextContent(
+      /at least 2 runs/i,
+    );
+  });
+
+  it("drops that notice once two runs are selected", () => {
+    render(<ComparisonView records={trio} onClear={noop} onRemove={noop} onExport={noop} />);
+
+    expect(
+      screen.queryByRole("status", { name: /below the comparison threshold/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("plots one Pareto curve per compared run, identified by name and shape", () => {
+    render(<ComparisonView records={trio} onClear={noop} onRemove={noop} onExport={noop} />);
+
+    const curves = screen.getByRole("figure", { name: /pareto frontier/i });
+    expect(curves).toBeInTheDocument();
+
+    // Each run gets a legend entry naming it and stating its marker shape, so the
+    // series are distinguishable without relying on colour.
+    for (const name of SHOR_TRIO_NAMES) {
+      const entry = within(curves).getByTestId(`curve-legend-${name}`);
+      expect(entry).toHaveTextContent(name);
+      expect(entry).toHaveTextContent(/circle|square|triangle|diamond|star|cross/i);
+    }
+  });
+
+  it("names a failed run as absent from the curves instead of dropping it silently", () => {
+    const failed = MOCK_RUN_RECORDS.find((r) => r.result.status === "failed");
+    if (!failed) throw new Error("Expected a failed mock record.");
+
+    render(
+      <ComparisonView
+        records={[trio[0]!, failed]}
+        onClear={noop}
+        onRemove={noop}
+        onExport={noop}
+      />,
+    );
+
+    const curves = screen.getByRole("figure", { name: /pareto frontier/i });
+    const omitted = within(curves).getByText(/not plotted/i).closest("p");
+    expect(omitted).toHaveTextContent(failed.config.name);
+    expect(omitted).toHaveTextContent(/run failed/i);
+  });
+
+  it("keeps the curve panel usable when nothing in the selection can be plotted", () => {
+    const failed = MOCK_RUN_RECORDS.filter((r) => r.result.status === "failed");
+    expect(failed.length).toBeGreaterThan(0);
+
+    render(<ComparisonView records={failed} onClear={noop} onRemove={noop} onExport={noop} />);
+
+    const curves = screen.getByRole("figure", { name: /pareto frontier/i });
+    expect(within(curves).getByText(/no frontier data to plot/i)).toBeInTheDocument();
+  });
+
+  it("reads a failed run's cells as failed rather than as blank dashes", () => {
+    const failed = MOCK_RUN_RECORDS.find((r) => r.result.status === "failed");
+    if (!failed) throw new Error("Expected a failed mock record.");
+
+    render(
+      <ComparisonView
+        records={[trio[0]!, failed]}
+        onClear={noop}
+        onRemove={noop}
+        onExport={noop}
+      />,
+    );
+
+    const table = screen.getByRole("table");
+    const qubitsRow = within(table).getByText("Physical Qubits").closest("tr");
+    const cells = within(qubitsRow as HTMLElement).getAllByRole("cell");
+
+    // Column 2 is the failed run: it says so, rather than showing an ambiguous "—".
+    expect(cells[1]).toHaveTextContent(/no result data/i);
+    expect(cells[1]?.textContent).not.toBe("—");
+    // The succeeded run is untouched.
+    expect(cells[0]?.textContent).not.toMatch(/no result data/i);
+  });
+
+  it("leads with a summary of what is being compared", () => {
+    const failed = MOCK_RUN_RECORDS.find((r) => r.result.status === "failed");
+    if (!failed) throw new Error("Expected a failed mock record.");
+
+    render(
+      <ComparisonView
+        records={[...trio, failed]}
+        onClear={noop}
+        onRemove={noop}
+        onExport={noop}
+      />,
+    );
+
+    const summary = screen.getByRole("status", { name: /comparison summary/i });
+    expect(summary).toHaveTextContent(/4 runs/i);
+    expect(summary).toHaveTextContent(/1 failed/i);
+  });
+
   it("wires the export and per-run remove affordances", async () => {
     const onExport = vi.fn();
     const onRemove = vi.fn();

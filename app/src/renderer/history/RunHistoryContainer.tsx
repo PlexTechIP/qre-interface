@@ -15,8 +15,8 @@ import { ExportStubDialog } from "./ExportStubDialog";
 import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
-import { belowThresholdMessage, MIN_COMPARISON_RUNS } from "./comparisonModel";
 import type { SelectedRowByRunId } from "../results/selectedRows";
+import { compareSelectionWarning } from "./comparisonModel";
 import {
   createRerunRequest,
   type RerunRequest,
@@ -91,9 +91,11 @@ export function RunHistoryContainer({
 
   // Multi-select for Comparison: the set of record ids checked in History.
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
-  // Set when "Compare Selected" was pressed below the two-run threshold; null
-  // otherwise. Shown on History rather than navigating to a non-comparison.
-  const [compareWarning, setCompareWarning] = useState<string | null>(null);
+  // Counts below-threshold Compare presses. A COUNT rather than a flag for two
+  // reasons: it keeps the warning silent until the user actually asks, and it
+  // re-keys the live region so a repeat press is announced again instead of
+  // re-rendering an identical, silent node.
+  const [compareAttempts, setCompareAttempts] = useState(0);
   // Destructive selection is deliberately separate from comparison selection:
   // checking runs to compare must never make them eligible for deletion.
   const [isDeleteSelectionMode, setIsDeleteSelectionMode] = useState(false);
@@ -316,42 +318,43 @@ export function RunHistoryContainer({
   // The records currently chosen for comparison, in selection order, filtered
   // to those still present (a deleted record drops out of the set, and so does
   // one the active filter hides). This — NOT comparisonIds — is what Comparison
-  // actually renders, so it is also what the threshold guard and the button's
-  // count have to be measured against.
+  // actually renders, so it is also what the threshold and the button's count
+  // have to be measured against.
   const comparisonRecords = useMemo(
     () => comparisonIds.map((id) => records.find((r) => r.id === id)).filter((r): r is RunRecord => r != null),
     [comparisonIds, records],
   );
 
   // Checked runs the active filter is currently hiding. They stay selected (a
-  // filter must not silently discard a selection) but they cannot be compared
-  // while they are off-screen, so the warning has to say so.
+  // filter must not silently discard a selection) but cannot be compared while
+  // off-screen, so the warning has to say so — otherwise "(1)" after ticking two
+  // boxes just looks broken.
   const hiddenComparisonCount = comparisonIds.length - comparisonRecords.length;
 
-  /**
-   * "Compare Selected" below the threshold WARNS instead of navigating: the user
-   * stays on History, where the fix is, and is told what's still needed. The
-   * button stays enabled on purpose — a disabled control with no explanation
-   * leaves the user guessing why nothing happened.
-   */
+  // "Compare Selected" must not strand the user on an empty Comparison page. Below
+  // the threshold we stay on History and SAY what is missing — the button stays
+  // enabled, because a disabled button with no explanation is the same bug in a
+  // different costume.
+  const pendingCompareWarning = compareSelectionWarning(
+    comparisonRecords.length,
+    hiddenComparisonCount,
+  );
+  const compareWarning = compareAttempts > 0 ? pendingCompareWarning : null;
+
+  // Reaching the threshold retires the warning for good: without this reset the
+  // flag would survive, and later dropping back below two would resurrect a
+  // warning the user never asked for a second time.
+  useEffect(() => {
+    if (pendingCompareWarning === null) setCompareAttempts(0);
+  }, [pendingCompareWarning]);
+
   const requestComparison = useCallback(() => {
-    if (comparisonRecords.length < MIN_COMPARISON_RUNS) {
-      setCompareWarning(
-        belowThresholdMessage(comparisonRecords.length, hiddenComparisonCount),
-      );
+    if (pendingCompareWarning !== null) {
+      setCompareAttempts((attempts) => attempts + 1);
       return;
     }
-    setCompareWarning(null);
     setView("comparison");
-  }, [comparisonRecords.length, hiddenComparisonCount, setView]);
-
-  // The warning names an exact selection ("only 1 run is selected"), so ANY
-  // change to what is selected — growing, shrinking to zero, a filter hiding a
-  // checked run, a delete — invalidates its text. Clearing on every change is
-  // what keeps it from going stale; re-pressing the button restates it.
-  useEffect(() => {
-    setCompareWarning(null);
-  }, [comparisonRecords, hiddenComparisonCount]);
+  }, [pendingCompareWarning, setView]);
 
   const selectedRecord = useMemo(
     () => (selectedId == null ? null : records.find((r) => r.id === selectedId) ?? null),
@@ -398,9 +401,10 @@ export function RunHistoryContainer({
                 type="button"
                 className="surface-action"
                 onClick={requestComparison}
+                aria-describedby={compareWarning ? "compare-threshold-warning" : undefined}
               >
                 {/* The count is the number that WOULD be compared, so it can
-                    never disagree with the threshold guard below it. */}
+                    never disagree with the threshold guard. */}
                 Compare Selected{comparisonRecords.length > 0 ? ` (${comparisonRecords.length})` : ""}
               </button>
             ) : (
@@ -445,19 +449,6 @@ export function RunHistoryContainer({
       )}
 
       {/*
-        The warning sits ABOVE the loading/detail/list switch, not inside the
-        list branch: "Compare Selected" is reachable whenever History is showing
-        — including while the detail panel owns the branch — and a press that
-        produced no visible response would be exactly the silent no-op the
-        enabled button was chosen to avoid.
-      */}
-      {view === "history" && compareWarning ? (
-        <p role="alert" className="compare-warning">
-          {compareWarning}
-        </p>
-      ) : null}
-
-      {/*
         Loading / error / content are mutually exclusive so the first open never
         shows "Loading runs…" stacked over the empty state. The loading state only
         replaces content on the very first load (hasLoaded === false); a later
@@ -467,6 +458,26 @@ export function RunHistoryContainer({
         detail view (View Details). Otherwise the search + filter bar + list show.
         The Comparison tab is a pure function of the checked records.
       */}
+      {/*
+        The warning sits ABOVE the loading/detail/list switch, not inside the
+        list branch: "Compare Selected" is reachable whenever History is showing
+        — including while the detail panel owns the branch — and a press that
+        produced no visible response would be exactly the silent no-op the
+        enabled button was chosen to avoid.
+      */}
+      {view === "history" && compareWarning ? (
+        // Keyed by attempt so a repeat press mounts a NEW live-region node —
+        // an identical one is not re-announced by a screen reader.
+        <p
+          key={compareAttempts}
+          role="alert"
+          id="compare-threshold-warning"
+          className="compare-warning"
+        >
+          {compareWarning}
+        </p>
+      ) : null}
+
       {loadError ? (
         <p role="alert" className="load-error">
           {loadError}

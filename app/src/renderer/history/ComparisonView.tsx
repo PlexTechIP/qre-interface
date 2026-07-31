@@ -5,11 +5,11 @@ import { FieldFilter } from "../results/FieldFilter";
 import type { SelectedRowByRunId } from "../results/selectedRows";
 import { ComparisonCharts } from "./ComparisonCharts";
 import { ComparisonTable } from "./ComparisonTable";
-import { ParetoCurves } from "./ParetoCurves";
+import { DEFAULT_FIELD_DEFINITIONS } from "../results/resultFields";
+import { FrontierCurves } from "./FrontierCurves";
 import {
   additionalFieldDefinitions,
-  belowThresholdMessage,
-  MIN_COMPARISON_RUNS,
+  compareSelectionWarning,
   toComparisonColumn,
 } from "./comparisonModel";
 
@@ -19,13 +19,8 @@ import {
  * History list already renders. It owns only the local field-filter view state
  * (which additional rows show), reusing Team 2's `FieldFilter` + `formatMetric`.
  *
- * States: an empty "pick runs to compare" prompt, a single-run selection (which
- * renders, but says it is below the two-run threshold), and a many-run selection
- * all render cleanly against the mock records.
- *
- * Three views of the same selection, in order: the table (one column per run,
- * one row per field), the Pareto frontier curves (every run's FULL frontier),
- * and the per-metric bars (one representative row per run).
+ * States: an empty "pick runs to compare" prompt, a single-run selection, and a
+ * many-run selection all render cleanly against the mock records.
  */
 export interface ComparisonViewProps {
   records: RunRecord[];
@@ -63,6 +58,12 @@ export function ComparisonView({
   );
   const additionalFields = useMemo(() => additionalFieldDefinitions(columns), [columns]);
   const visibleAdditionalCount = additionalFields.filter((field) => !hiddenKeys.has(field.key)).length;
+  const failedCount = columns.filter((col) => col.failed).length;
+  const visibleFieldCount = DEFAULT_FIELD_DEFINITIONS.length + visibleAdditionalCount;
+  // The sidebar and tab nav reach this surface directly, and are deliberately NOT
+  // blocked — navigation should not dead-end. So the below-threshold explanation
+  // has to live here too, not only behind the Compare Selected button.
+  const thresholdNotice = compareSelectionWarning(records.length);
 
   const toggleField = (key: string) =>
     setHiddenKeys((previous) => {
@@ -127,37 +128,54 @@ export function ComparisonView({
         </div>
       ) : (
         <>
-          {/*
-            Below the threshold the surface still renders — a one-column view is
-            more useful than a blank page — but it says plainly that this is not
-            yet a comparison. Reaching Comparison with one run selected must
-            never look like a finished comparison of one.
-          */}
-          {records.length < MIN_COMPARISON_RUNS ? (
-            <div className="comparison-notice" role="alert">
-              <p>{belowThresholdMessage(records.length)}</p>
-              {onGoToHistory ? (
-                <button type="button" className="surface-action" onClick={onGoToHistory}>
-                  Go to Run History
-                </button>
+          {/* Hierarchy: what is being compared → the numbers → the charts. */}
+          <div className="comparison-summary">
+            <p
+              className="comparison-summary__line"
+              role="status"
+              aria-label="Comparison summary"
+            >
+              <strong>
+                Comparing {columns.length} run{columns.length === 1 ? "" : "s"}
+              </strong>
+              {failedCount > 0 ? (
+                <span className="comparison-summary__failed">
+                  {" · "}
+                  {failedCount} failed
+                </span>
               ) : null}
-            </div>
-          ) : null}
-
-          <div className="comparison-chips" aria-label="Selected runs">
-            {columns.map((col) => (
-              <span key={col.id} className="comparison-chip">
-                {col.name}
-                <button
-                  type="button"
-                  className="chip-remove"
-                  onClick={() => onRemove(col.id)}
-                  aria-label={`Remove ${col.name} from comparison`}
-                >
-                  ×
-                </button>
+              <span className="muted">
+                {" · "}
+                {visibleFieldCount} field{visibleFieldCount === 1 ? "" : "s"} shown
               </span>
-            ))}
+            </p>
+            {thresholdNotice ? (
+              <p
+                className="compare-warning"
+                role="status"
+                aria-label="Below the comparison threshold"
+              >
+                {thresholdNotice}
+              </p>
+            ) : null}
+            <div className="comparison-chips" aria-label="Selected runs">
+              {columns.map((col) => (
+                <span
+                  key={col.id}
+                  className={`comparison-chip${col.failed ? " comparison-chip--failed" : ""}`}
+                >
+                  {col.name}
+                  <button
+                    type="button"
+                    className="chip-remove"
+                    onClick={() => onRemove(col.id)}
+                    aria-label={`Remove ${col.name} from comparison`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
 
           <section className="panel">
@@ -199,20 +217,23 @@ export function ComparisonView({
               <div>
                 <h3>Pareto frontiers</h3>
                 <p>
-                  Every selected run's full frontier as its own curve — physical
-                  qubits against runtime. The table above shows only each run's
-                  representative row.
+                  Each run's whole frontier as its own curve — where two curves cross is
+                  where the better architecture changes. The table above is the text
+                  equivalent.
                 </p>
               </div>
             </div>
-            <ParetoCurves records={records} selectedRowByRunId={selectedRowByRunId} />
+            <FrontierCurves columns={columns} />
           </section>
 
           <section className="panel">
             <div className="panel-header">
               <div>
                 <h3>Per-metric bars</h3>
-                <p>One bar per run; the table above is the text equivalent.</p>
+                <p>
+                  One bar per run at its representative row; the table above is the text
+                  equivalent.
+                </p>
               </div>
             </div>
             <ComparisonCharts columns={columns} />
