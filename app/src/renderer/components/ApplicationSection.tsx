@@ -9,6 +9,7 @@ import type {
   ManualCountsForm,
   SavedProgram,
 } from "../state/formState";
+import { resolveUploadPath } from "../state/uploadPath";
 import type { FieldErrors } from "../state/validation";
 import { HyperparametersPanel } from "./HyperparametersPanel";
 import { NumberField } from "./NumberField";
@@ -70,6 +71,8 @@ export function ApplicationSection({
   const [query, setQuery] = useState("");
   const [savedQuery, setSavedQuery] = useState("");
   const [dragging, setDragging] = useState(false);
+  /** Why the last pick/drop could not be turned into a real path, if it couldn't. */
+  const [pathError, setPathError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -96,19 +99,36 @@ export function ApplicationSection({
     });
   };
 
-  const onPickFile = (filePath: string): void => {
-    const format = inferFormat(filePath);
-    patch({ upload: { ...value.upload, filePath, format } });
+  /**
+   * Take a picked or dropped File and store the path the engine can open. The
+   * browser filename is never used as a path: it is a basename, and storing one
+   * yields a config that validates and then fails at Run with "File not found".
+   */
+  const onPickFile = (file: File): void => {
+    const resolved = resolveUploadPath(file);
+    if (!resolved.ok) {
+      setPathError(resolved.message);
+      return;
+    }
+    setPathError(null);
+    patch({
+      upload: {
+        ...value.upload,
+        filePath: resolved.filePath,
+        format: inferFormat(resolved.filePath),
+      },
+    });
   };
 
   const onDrop = (event: React.DragEvent<HTMLLabelElement>): void => {
     event.preventDefault();
     setDragging(false);
     const file = event.dataTransfer.files?.[0];
-    if (file) onPickFile(file.name);
+    if (file) onPickFile(file);
   };
 
   const clearUpload = (): void => {
+    setPathError(null);
     patch({ upload: { ...value.upload, filePath: "" } });
   };
 
@@ -322,7 +342,7 @@ export function ApplicationSection({
               accept=".qs,.qasm,.ll,.bc"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) onPickFile(file.name);
+                if (file) onPickFile(file);
               }}
             />
             <UploadIcon />
@@ -332,7 +352,11 @@ export function ApplicationSection({
           {value.upload.filePath ? (
             <div className="file-pill">
               <FileIcon className="file-pill__icon" />
-              <span className="file-pill__name">{value.upload.filePath}</span>
+              {/* Name for reading, full path on hover — an absolute path is too
+                  long for the pill but is what actually gets estimated. */}
+              <span className="file-pill__name" title={value.upload.filePath}>
+                {basename(value.upload.filePath)}
+              </span>
               <button
                 type="button"
                 className="file-pill__save"
@@ -343,7 +367,7 @@ export function ApplicationSection({
               <button
                 type="button"
                 className="file-pill__remove"
-                aria-label={`Remove ${value.upload.filePath}`}
+                aria-label={`Remove ${basename(value.upload.filePath)}`}
                 onClick={clearUpload}
               >
                 ×
@@ -355,7 +379,11 @@ export function ApplicationSection({
             Supported: .qs (Q#), .qasm (OpenQASM), .ll / .bc (QIR)
           </p>
 
-          {errors.uploadFilePath ? (
+          {pathError ? (
+            <p className="field__error" role="alert">
+              {pathError}
+            </p>
+          ) : errors.uploadFilePath ? (
             <p className="field__error" role="alert">
               {errors.uploadFilePath}
             </p>

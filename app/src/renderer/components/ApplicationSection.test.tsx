@@ -1,0 +1,137 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createInitialFormState, type ApplicationForm } from "../state/formState";
+import { ApplicationSection } from "./ApplicationSection";
+
+afterEach(() => {
+  cleanup();
+  delete window.files;
+});
+
+const ABSOLUTE = "/Users/analyst/programs/shor.qs";
+
+function uploadForm(): ApplicationForm {
+  return { ...createInitialFormState().application, type: "uploaded" };
+}
+
+/** Render the upload tab and hand back the change spy. */
+function renderUpload(): {
+  onChange: ReturnType<typeof vi.fn>;
+  rerenderWith: (value: ApplicationForm) => void;
+} {
+  const onChange = vi.fn();
+  const { rerender } = render(
+    <ApplicationSection value={uploadForm()} errors={{}} onChange={onChange} />,
+  );
+  return {
+    onChange,
+    rerenderWith: (value) =>
+      rerender(
+        <ApplicationSection value={value} errors={{}} onChange={onChange} />,
+      ),
+  };
+}
+
+function fileInput(): HTMLInputElement {
+  return document.querySelector<HTMLInputElement>("input[type='file']")!;
+}
+
+function pick(name: string): void {
+  fireEvent.change(fileInput(), {
+    target: { files: [new File(["// program"], name)] },
+  });
+}
+
+describe("upload picker resolves a real filesystem path", () => {
+  it("stores the absolute path, not the bare filename", () => {
+    // The engine stat()s and readFile()s application.filePath. A basename
+    // resolves against the process CWD, so every upload outside it failed with
+    // "File not found".
+    window.files = { getPathForFile: () => ABSOLUTE };
+    const { onChange } = renderUpload();
+
+    pick("shor.qs");
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]![0].upload.filePath).toBe(ABSOLUTE);
+  });
+
+  it("stores the absolute path for a dropped file too", () => {
+    window.files = { getPathForFile: () => ABSOLUTE };
+    const { onChange } = renderUpload();
+
+    fireEvent.drop(document.querySelector(".dropzone")!, {
+      dataTransfer: { files: [new File(["// program"], "shor.qs")] },
+    });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]![0].upload.filePath).toBe(ABSOLUTE);
+  });
+
+  it("infers the format from the resolved path, not the browser filename", () => {
+    window.files = { getPathForFile: () => "/Users/analyst/circuit.qasm" };
+    const { onChange } = renderUpload();
+
+    pick("circuit.qasm");
+
+    expect(onChange.mock.calls[0]![0].upload.format).toBe("openqasm");
+  });
+
+  it("reports an actionable error and stores nothing when the path cannot be resolved", () => {
+    window.files = { getPathForFile: () => "" };
+    const { onChange } = renderUpload();
+
+    pick("shor.qs");
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/could not be resolved/i);
+  });
+
+  it("reports an actionable error when the preload bridge is missing", () => {
+    const { onChange } = renderUpload();
+
+    pick("shor.qs");
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("clears a previous resolution error once a file resolves", () => {
+    const { onChange, rerenderWith } = renderUpload();
+
+    pick("shor.qs");
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    window.files = { getPathForFile: () => ABSOLUTE };
+    pick("shor.qs");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const next = onChange.mock.calls[0]![0] as ApplicationForm;
+    rerenderWith(next);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("upload pill", () => {
+  it("shows the file's name, not the whole absolute path", () => {
+    const value = uploadForm();
+    value.upload = { ...value.upload, filePath: ABSOLUTE, format: "qsharp" };
+
+    render(<ApplicationSection value={value} errors={{}} onChange={vi.fn()} />);
+
+    expect(screen.getByText("shor.qs")).toBeInTheDocument();
+    expect(screen.queryByText(ABSOLUTE)).not.toBeInTheDocument();
+  });
+
+  it("keeps the full path reachable for the analyst", () => {
+    const value = uploadForm();
+    value.upload = { ...value.upload, filePath: ABSOLUTE, format: "qsharp" };
+
+    render(<ApplicationSection value={value} errors={{}} onChange={vi.fn()} />);
+
+    expect(screen.getByText("shor.qs")).toHaveAttribute("title", ABSOLUTE);
+  });
+});
