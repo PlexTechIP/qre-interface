@@ -19,6 +19,11 @@ namespace PhaseEstimation {
     /// `precision` counting qubits read out the phase of a `registerSize`-qubit
     /// eigenstate, so Precision sets both the readout width and the depth while
     /// Register Size sets the width of each controlled application.
+    ///
+    /// REQUIRES precision <= 63, which the contract enforces (see the
+    /// `precision` max in shared/benchmarkParams.ts): `1 <<< i` below overflows
+    /// Int64 to a negative power at i = 63, and `for _ in 1..power` then skips
+    /// that term instead of failing.
     operation Run(precision : Int, registerSize : Int) : Result[] {
         use counting = Qubit[precision];
         use target = Qubit[registerSize];

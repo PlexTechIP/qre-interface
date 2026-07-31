@@ -30,17 +30,34 @@ interface BaseParam {
   help?: string;
 }
 
-/** A whole-number argument, emitted as a Q# `Int`. */
+/**
+ * A whole-number argument, emitted as a Q# `Int`.
+ *
+ * `max` is REQUIRED, and deliberately so. An unbounded int is what let three
+ * separate silent-wrong-answer bugs through: Grover's iteration count, Phase
+ * Estimation's `1 <<< i`, and the Trotter step count each overflow Int64 for
+ * large-but-accepted inputs, and each then reports a circuit orders of
+ * magnitude smaller than the one asked for. A required bound makes that
+ * unreachable, and makes it impossible to add a new parameter without deciding
+ * where its arithmetic stops being valid. It also keeps every emittable value
+ * in plain decimal — `String(1e21)` is "1e+21", which Q# rejects as an `Int`.
+ */
 export interface IntParam extends BaseParam {
   kind: "int";
   /** Inclusive lower bound. */
   min: number;
-  /** Inclusive upper bound, if any. */
-  max?: number;
+  /** Inclusive upper bound. Required — see above. */
+  max: number;
   default: number;
 }
 
-/** A real-valued argument, emitted as a Q# `Double`. */
+/**
+ * A real-valued argument, emitted as a Q# `Double`.
+ *
+ * Doubles do not have the Int literal problem (Q# accepts exponent notation),
+ * but a double that a benchmark turns into an integer COUNT has the same
+ * overflow exposure — see `totalTime` / `trotterStep` below.
+ */
 export interface DoubleParam extends BaseParam {
   kind: "double";
   min?: number;
@@ -93,8 +110,27 @@ export const BENCHMARK_ENTRY_OPERATION: Record<BenchmarkId, string> = {
  */
 export const BENCHMARK_PARAMS: Record<BenchmarkId, readonly BenchmarkParamSpec[]> = {
   "shors-factoring": [
-    { kind: "int", key: "bitSize", label: "Bit Size", min: 2, default: 31, help: "Integer ≥ 2" },
-    { kind: "int", key: "generator", label: "Generator", min: 2, default: 11, help: "Integer ≥ 2" },
+    {
+      kind: "int",
+      key: "bitSize",
+      label: "Bit Size",
+      min: 2,
+      // Past the widest RSA modulus anyone publishes estimates for. Values far
+      // below this already exceed the run timeout, which is the honest answer;
+      // the bound exists so nothing silently overflows instead.
+      max: 8192,
+      default: 31,
+      help: "Integer 2–8192",
+    },
+    {
+      kind: "int",
+      key: "generator",
+      label: "Generator",
+      min: 2,
+      max: 65535,
+      default: 11,
+      help: "Integer 2–65535",
+    },
   ],
   "ekera-hastad-factoring": [
     {
@@ -108,29 +144,59 @@ export const BENCHMARK_PARAMS: Record<BenchmarkId, readonly BenchmarkParamSpec[]
       ],
       default: "rsa-100",
     },
-    { kind: "int", key: "generator", label: "Generator", min: 2, default: 7, help: "Integer ≥ 2" },
+    {
+      kind: "int",
+      key: "generator",
+      label: "Generator",
+      min: 2,
+      max: 65535,
+      default: 7,
+      help: "Integer 2–65535",
+    },
   ],
   "quantum-dynamics": [
-    { kind: "int", key: "latticeN1", label: "Lattice N₁", min: 1, default: 10, help: "Integer ≥ 1" },
-    { kind: "int", key: "latticeN2", label: "Lattice N₂", min: 1, default: 10, help: "Integer ≥ 1" },
+    {
+      kind: "int",
+      key: "latticeN1",
+      label: "Lattice N₁",
+      min: 1,
+      max: 1000,
+      default: 10,
+      help: "Integer 1–1000",
+    },
+    {
+      kind: "int",
+      key: "latticeN2",
+      label: "Lattice N₂",
+      min: 1,
+      max: 1000,
+      default: 10,
+      help: "Integer 1–1000",
+    },
+    // Total Time and Trotter Step are bounded TOGETHER: the Q# derives its step
+    // count as Ceiling(totalTime / trotterStep), which overflows Int64 past
+    // ~9.2e18 and then reports a ONE-step evolution (verified: 1e19 / 1.0
+    // traced a single step). These bounds cap the worst-case ratio at 1e12
+    // steps — still far past what the estimator can trace in the run timeout,
+    // which is the honest failure, but safely inside Int64.
     {
       kind: "double",
       key: "totalTime",
       label: "Total Time",
       min: 0,
       exclusiveMin: true,
+      max: 1e6,
       default: 30.0,
-      help: "Greater than 0",
+      help: "Greater than 0, up to 1e6",
     },
     {
       kind: "double",
       key: "trotterStep",
       label: "Trotter Step",
-      min: 0,
-      exclusiveMin: true,
+      min: 1e-6,
       maxFromKey: "totalTime",
       default: 0.9,
-      help: "0 < Trotter Step ≤ Total Time",
+      help: "1e-6 ≤ Trotter Step ≤ Total Time",
     },
     { kind: "double", key: "couplingJ", label: "Coupling J", default: 1.0, help: "Any real number" },
     { kind: "double", key: "fieldG", label: "Field g", default: 1.0, help: "Any real number" },
@@ -141,8 +207,13 @@ export const BENCHMARK_PARAMS: Record<BenchmarkId, readonly BenchmarkParamSpec[]
       key: "searchQubits",
       label: "Search Qubits",
       min: 1,
+      // The Q# derives iterations as Round(PI()/4 * 2^(n/2)). That exceeds Int64
+      // above ~126 qubits and collapses to 1, so a 200-qubit search used to
+      // return a fast, confident, 19-orders-of-magnitude-wrong estimate.
+      // 63 keeps the count near 2.4e9 — unreachably slow to trace, but correct.
+      max: 63,
       default: 5,
-      help: "Integer ≥ 1",
+      help: "Integer 1–63",
     },
     {
       kind: "computed",
@@ -152,14 +223,26 @@ export const BENCHMARK_PARAMS: Record<BenchmarkId, readonly BenchmarkParamSpec[]
     },
   ],
   "phase-estimation": [
-    { kind: "int", key: "precision", label: "Precision", min: 1, default: 6, help: "Integer ≥ 1" },
+    {
+      kind: "int",
+      key: "precision",
+      label: "Precision",
+      min: 1,
+      // The Q# applies U^(1 <<< i) for i in 0..precision-1. `1 <<< 63` overflows
+      // Int64 to a negative power, whose loop body never runs — the highest
+      // order term would silently vanish. i tops out at 62 here.
+      max: 63,
+      default: 6,
+      help: "Integer 1–63",
+    },
     {
       kind: "int",
       key: "registerSize",
       label: "Register Size",
       min: 1,
+      max: 1000,
       default: 3,
-      help: "Integer ≥ 1",
+      help: "Integer 1–1000",
     },
   ],
 };

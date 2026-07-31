@@ -167,3 +167,103 @@ describe("defaultBenchmarkParameters", () => {
     }
   });
 });
+
+describe("every integer parameter is bounded", () => {
+  it("declares a finite max, so no value can overflow the Q# it feeds", () => {
+    // Unbounded ints are the root cause of three separate silent-wrong-answer
+    // bugs: Grover's iteration count, Phase Estimation's 1 <<< i, and the
+    // Trotter step count. A max is what makes them unreachable.
+    for (const id of BENCHMARK_IDS) {
+      for (const param of BENCHMARK_PARAMS[id]) {
+        if (param.kind !== "int") continue;
+        expect(Number.isFinite(param.max)).toBe(true);
+        expect(param.max).toBeGreaterThanOrEqual(param.min);
+        expect(param.default).toBeLessThanOrEqual(param.max);
+      }
+    }
+  });
+
+  it("emits every in-range integer as a plain decimal literal", () => {
+    // String(1e21) is "1e+21", which Q# rejects as an Int literal. Bounding the
+    // params keeps every emittable value in plain decimal.
+    for (const id of BENCHMARK_IDS) {
+      for (const param of BENCHMARK_PARAMS[id]) {
+        if (param.kind !== "int") continue;
+        for (const value of [param.min, param.default, param.max]) {
+          expect(String(value)).toMatch(/^-?\d+$/);
+        }
+      }
+    }
+  });
+});
+
+describe("bounds that stop an overflow becoming a wrong answer", () => {
+  it("rejects a Grover search width whose iteration count would overflow", () => {
+    // Round(PI()/4 * 2^(n/2)) exceeds Int64 above ~126 qubits and collapses to
+    // 1, so the engine used to return a fast, confident, 19-orders-of-magnitude
+    // wrong estimate. Verified against the compiler: n=200 traced 1 iteration.
+    const result = buildBenchmarkEntryExpr("grovers-search", { searchQubits: 200 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("Search Qubits");
+  });
+
+  it("accepts the largest search width that still computes honestly", () => {
+    const result = buildBenchmarkEntryExpr("grovers-search", { searchQubits: 63 });
+    expect(result).toEqual({ ok: true, entryExpr: "GroversSearch.Run(63)" });
+  });
+
+  it("rejects a precision whose controlled-unitary power would overflow", () => {
+    // ControlledUnitary(1 <<< i, ...) overflows Int64 at i = 63.
+    const result = buildBenchmarkEntryExpr("phase-estimation", { precision: 64 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("Precision");
+  });
+
+  it("accepts the largest precision that keeps 1 <<< i in range", () => {
+    const result = buildBenchmarkEntryExpr("phase-estimation", {
+      precision: 63,
+      registerSize: 3,
+    });
+    expect(result).toEqual({ ok: true, entryExpr: "PhaseEstimation.Run(63, 3)" });
+  });
+
+  it("rejects an integer too large to write as a Q# Int literal", () => {
+    // Number.isInteger(1e21) is true and String() yields "1e+21", which the Q#
+    // compiler rejects with a type error rather than the intended INVALID_CONFIG.
+    const result = buildBenchmarkEntryExpr("shors-factoring", { bitSize: 1e21 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("Bit Size");
+  });
+
+  it("rejects a Total Time whose Trotter step count would overflow", () => {
+    // Ceiling(totalTime / trotterStep) overflows Int64 past ~9.2e18 and
+    // MaxI(1, ...) then reports a ONE-step evolution. Verified against the
+    // compiler: totalTime 1e19 / step 1.0 traced 1 step.
+    const result = buildBenchmarkEntryExpr("quantum-dynamics", {
+      totalTime: 1e19,
+      trotterStep: 1.0,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("Total Time");
+  });
+
+  it("rejects a Trotter step so small the step count would overflow", () => {
+    const result = buildBenchmarkEntryExpr("quantum-dynamics", {
+      totalTime: 1.0,
+      trotterStep: 1e-25,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("Trotter Step");
+  });
+
+  it("keeps the worst in-range Trotter step count inside Int64", () => {
+    const params = BENCHMARK_PARAMS["quantum-dynamics"];
+    const totalTime = params.find((p) => p.key === "totalTime");
+    const trotterStep = params.find((p) => p.key === "trotterStep");
+    if (totalTime?.kind !== "double" || trotterStep?.kind !== "double") {
+      throw new Error("expected both to be double params");
+    }
+    const worstCaseSteps = totalTime.max! / trotterStep.min!;
+    expect(worstCaseSteps).toBeLessThan(Number.MAX_SAFE_INTEGER);
+  });
+});

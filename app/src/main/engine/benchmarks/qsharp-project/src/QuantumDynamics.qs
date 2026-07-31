@@ -38,6 +38,11 @@ namespace QuantumDynamics {
     /// The lattice holds N₁ × N₂ sites and the evolution runs
     /// ceil(totalTime / trotterStep) steps, so the hyperparameters set both the
     /// width and the depth of the circuit.
+    ///
+    /// REQUIRES totalTime / trotterStep to stay inside Int64, which the contract
+    /// enforces by bounding both (see shared/benchmarkParams.ts). `Ceiling` of a
+    /// larger ratio overflows and `MaxI(1, ...)` turns it into a silent
+    /// one-step evolution.
     operation Run(
         n1 : Int,
         n2 : Int,

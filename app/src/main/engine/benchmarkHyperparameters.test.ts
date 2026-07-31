@@ -116,6 +116,28 @@ describe("benchmark hyperparameters change the estimate", () => {
     expect(second).toBe(first);
   }, 120_000);
 
+  it("refuses a search width whose iteration count would overflow", async () => {
+    // Regression guard for the worst shape of this bug: not "the same answer
+    // for every input" but a DIFFERENT, confidently wrong one. Grover's
+    // iteration count overflowed Int64 above ~126 qubits and clamped to 1, so
+    // searchQubits 200 returned a succeeded estimate for a one-iteration
+    // circuit in under a second. It must be refused before the engine spawns.
+    const result = await new QreEngine(PYTHON_BIN).run(
+      config("grovers-search", { searchQubits: 200 }),
+    );
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INVALID_CONFIG");
+    expect(result.frontier).toBeNull();
+  }, 30_000);
+
+  it("refuses a Trotter step count that would overflow", async () => {
+    const result = await new QreEngine(PYTHON_BIN).run(
+      config("quantum-dynamics", { totalTime: 1e19, trotterStep: 1.0 }),
+    );
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INVALID_CONFIG");
+  }, 30_000);
+
   it("fails soft with INVALID_CONFIG on an out-of-spec hyperparameter", async () => {
     const result = await new QreEngine(PYTHON_BIN).run(
       config("shors-factoring", { bitSize: 0, generator: 11 }),

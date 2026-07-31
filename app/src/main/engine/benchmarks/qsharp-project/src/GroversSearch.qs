@@ -26,6 +26,13 @@ namespace GroversSearch {
     /// derived here rather than passed in, so it can never disagree with the
     /// register width. Computed in floating point so a wide register does not
     /// overflow a 64-bit `2^n`.
+    ///
+    /// REQUIRES searchQubits <= 63, which the contract enforces (see the
+    /// `searchQubits` max in shared/benchmarkParams.ts). The floating-point
+    /// amplitude does not overflow, but `Round` of it does above ~126 qubits,
+    /// and `MaxI(1, ...)` would then turn that into a silent one-iteration
+    /// circuit rather than an error. Do not relax the bound without replacing
+    /// the clamp.
     function GroverIterations(searchQubits : Int) : Int {
         let amplitude = 2.0^(IntAsDouble(searchQubits) / 2.0);
         return MaxI(1, Round(PI() / 4.0 * amplitude));
