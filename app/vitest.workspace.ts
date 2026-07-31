@@ -37,6 +37,16 @@ export default defineConfig({
           exclude: ["src/main/engine/**"], // engine tests run via test:engine
         },
       },
+      {
+        // The contract layer both processes import. Without this project its
+        // tests match no include pattern and silently never run.
+        test: {
+          name: "shared",
+          environment: "node",
+          globals: true,
+          include: ["src/shared/**/*.test.ts"],
+        },
+      },
     ],
   },
 });
