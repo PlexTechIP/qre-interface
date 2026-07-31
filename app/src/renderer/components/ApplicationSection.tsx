@@ -87,6 +87,17 @@ export function ApplicationSection({
 
   const patch = (next: Partial<ApplicationForm>): void => onChange({ ...value, ...next });
 
+  /**
+   * Change application type. Clears any upload path error on the way out: this
+   * component stays mounted across type changes, so the error would otherwise
+   * still be on screen when the user came back to the Upload tab having picked
+   * nothing this visit.
+   */
+  const setType = (next: ApplicationFormType): void => {
+    if (next !== value.type) setPathError(null);
+    patch({ type: next });
+  };
+
   const setHyperparam = (key: string, next: HyperparamValue): void => {
     patch({
       hyperparams: {
@@ -196,7 +207,7 @@ export function ApplicationSection({
               role="radio"
               aria-checked={value.type === option.value}
               className={`seg__btn${value.type === option.value ? " seg__btn--active" : ""}`}
-              onClick={() => patch({ type: option.value })}
+              onClick={() => setType(option.value)}
             >
               {option.label}
             </button>
@@ -265,7 +276,7 @@ export function ApplicationSection({
               <button
                 type="button"
                 className="saved-empty__link"
-                onClick={() => patch({ type: "uploaded" })}
+                onClick={() => setType("uploaded")}
               >
                 Upload a program →
               </button>
@@ -342,6 +353,12 @@ export function ApplicationSection({
               accept=".qs,.qasm,.ll,.bc"
               onChange={(event) => {
                 const file = event.target.files?.[0];
+                // Clear the input before handling: a file input fires `change`
+                // only when the selection changes, so keeping the last file in
+                // it makes re-picking that same file a silent no-op — which is
+                // precisely what the user does after a failed resolution, or
+                // after clearing the pill and choosing the same file again.
+                event.target.value = "";
                 if (file) onPickFile(file);
               }}
             />

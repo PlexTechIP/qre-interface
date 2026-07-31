@@ -135,3 +135,65 @@ describe("upload pill", () => {
     expect(screen.getByText("shor.qs")).toHaveAttribute("title", ABSOLUTE);
   });
 });
+
+/**
+ * Watch writes to the file input's `value`.
+ *
+ * A real browser fires `change` only when the selection CHANGES, so leaving the
+ * previous file in the input makes re-picking that same file a silent no-op —
+ * which is exactly what a user does after a failed resolution. Resetting
+ * `value` to "" is what restores the event. jsdom cannot reproduce the
+ * suppressed event (fireEvent dispatches unconditionally), so this asserts the
+ * reset itself rather than pretending to observe the browser behaviour.
+ */
+function watchValueWrites(input: HTMLInputElement): string[] {
+  const writes: string[] = [];
+  Object.defineProperty(input, "value", {
+    configurable: true,
+    get: () => "",
+    set: (next: string) => writes.push(next),
+  });
+  return writes;
+}
+
+describe("retrying an upload after a failure", () => {
+  it("clears the input after a failed pick, so re-picking the same file fires", () => {
+    const { onChange } = renderUpload();
+    const writes = watchValueWrites(fileInput());
+
+    pick("shor.qs");
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(writes).toContain("");
+  });
+
+  it("clears the input after a successful pick too, so re-picking a cleared file fires", () => {
+    window.files = { getPathForFile: () => ABSOLUTE };
+    const { onChange } = renderUpload();
+    const writes = watchValueWrites(fileInput());
+
+    pick("shor.qs");
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(writes).toContain("");
+  });
+});
+
+describe("switching application type", () => {
+  it("drops a stale path error", () => {
+    // The component stays mounted across type changes, so pathError survived
+    // and reappeared on returning to the Upload tab with nothing picked.
+    const { onChange, rerenderWith } = renderUpload();
+
+    pick("shor.qs");
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Benchmark" }));
+    const switched = onChange.mock.calls.at(-1)![0] as ApplicationForm;
+    rerenderWith(switched);
+    rerenderWith({ ...switched, type: "uploaded" });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
