@@ -178,10 +178,21 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 | Magic Up-to-Clifford | NOT compatible with Majorana architecture |
 | GSJ24 CCX Factory | Bound to CCX Magic States |
 
-### Memory Optimization (optional, default = None)
+### Memory Optimization (default = None) — **unavailable in this build**
 
 - 1D Yoked Surface Code
 - 2D Yoked Surface Code
+
+The control is present but disabled, and the field is still recorded on
+`RunConfig`. Selecting a yoked code cannot change an estimate here: the yoked
+codes *provide* a `MEMORY` instruction, and nothing in the current pipeline
+*demands* one. `MEMORY` demand comes only from `READ_FROM_MEMORY` /
+`WRITE_TO_MEMORY` trace gates, which are emitted by the `DynamicMemoryCompute`
+trace transform (slated for removal — see [Notes § Teams TO-DO](#teams-to-do))
+or by `LogicalCounts` keys the contract does not carry. Measured on qdk 1.30.0:
+layering either yoked code onto the ISA query returns identical estimates.
+
+Re-enabling it needs a memory/compute-split workload first, not a wiring change.
 
 ### Trace Transform
 

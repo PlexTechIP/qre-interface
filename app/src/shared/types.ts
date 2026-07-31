@@ -209,6 +209,18 @@ export type SecondaryFactoryId = (typeof SECONDARY_FACTORY_IDS)[number];
 /**
  * Memory optimization (v1.1.0) — optional; "none" is the default. The two yoked
  * codes trade compute for a smaller memory footprint.
+ *
+ * RECORDED ONLY, AND THE UI SAYS SO. This field does not reach the engine, and
+ * wiring it up would not change any estimate: `OneDimensionalYokedSurfaceCode`
+ * and `TwoDimensionalYokedSurfaceCode` are ISATransforms that PROVIDE a MEMORY
+ * instruction, and nothing in this pipeline demands one. MEMORY demand comes
+ * only from READ_FROM_MEMORY / WRITE_TO_MEMORY trace gates, emitted either by
+ * the `DynamicMemoryCompute` trace transform (deliberately excluded — see
+ * features-and-fields.md § Teams TO-DO) or by LogicalCounts keys this contract
+ * does not carry (numComputeQubits, readFromMemoryCount, writeToMemoryCount).
+ * Measured on qdk 1.30.0: layering either yoked code onto the ISA query returns
+ * byte-identical estimates. The form's control is disabled and explains this;
+ * `memoryOptimization.test.ts` holds the claim to account.
  */
 export const MEMORY_OPTIMIZATION_IDS = [
   "none",

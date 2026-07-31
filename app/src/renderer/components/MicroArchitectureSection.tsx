@@ -52,10 +52,13 @@ const QEC_CODE_OPTIONS: readonly { value: string; label: string }[] = [
  
 /**
  * Micro Architecture Settings — the consolidated QEC code, magic-state factory,
- * trace transform, and max-error controls. QEC is derived/locked; the factory
- * carries the Litinski19 fallback rule; Secondary Factory / Memory Optimization
- * are optional renderer-only placeholders (no contract field yet — not
- * serialized).
+ * secondary factories, memory optimization, trace transform, and max-error
+ * controls.
+ *
+ * QEC is derived from the architecture and locked. The primary factory carries
+ * the Litinski19 / GSJ24 availability rules. Secondary factories reach the
+ * engine. Memory Optimization is serialized but DISABLED and labelled
+ * unavailable — see the control below for why.
  */
 export function MicroArchitectureSection({
   architecture,
@@ -225,20 +228,21 @@ export function MicroArchitectureSection({
           })}
         </fieldset>
  
-        <Field
-          id="micro-memory-opt"
-          label={
-            <>
-              Memory Optimization{" "}
-              <span className="field-eyebrow__optional">(optional)</span>
-            </>
-          }
-          help="Optional · defaults to None"
-        >
+        {/* Unavailable rather than optional. The yoked codes only PROVIDE a
+            MEMORY instruction; nothing in this build demands one, so selecting
+            them is measurably a no-op (memoryOptimization.test.ts). An enabled
+            control that silently changes nothing is worse than a disabled one
+            that says why. */}
+        <div className="field">
+          <label className="field__label" htmlFor="micro-memory-opt">
+            Memory Optimization{" "}
+            <span className="field-eyebrow__optional">(unavailable)</span>
+          </label>
           <select
             id="micro-memory-opt"
             className="field__input"
             value={memoryOptimization}
+            disabled
             onChange={(event) => {
               const next = event.target.value;
               if ((MEMORY_OPTIMIZATION_IDS as readonly string[]).includes(next)) {
@@ -252,7 +256,17 @@ export function MicroArchitectureSection({
               </option>
             ))}
           </select>
-        </Field>
+          <p
+            className="field__help"
+            id="micro-memory-opt-help"
+            data-testid="memory-opt-help"
+          >
+            Unavailable in this build. The yoked surface codes only take effect
+            for a workload that separates memory from compute, which the current
+            estimation pipeline does not produce — selecting one would not change
+            any estimate.
+          </p>
+        </div>
       </div>
  
       <hr className="micro-divider" />
