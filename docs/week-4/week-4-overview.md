@@ -72,7 +72,7 @@ trust the tool. That is the bug we are fixing.
 |---|---|---|
 | **Team 1** (Sun Min + Emma) | **Run Configuration — make every control real** | Delete what the engine can't do, add **Manual Logical Counts** as an Application Type, enable what the engine supports (**Neutral Atom**, Low-Move QEC, GSJ24 / GSJ24 CCX, Magic Up-to-Clifford, Yoked), fix the factory coupling + multi-select rules, and get hyperparameters into `RunConfig` |
 | **Team 2** (Melody + Rishabh) | **Results · History · Comparison — make it read like a product** | Pareto curves per compared run, the selected frontier row driving what a run *means*, Export + Rerun on the results page, bulk delete, a real warning instead of an empty compare page, and comparison-page visual polish |
-| **Team 3** (Neil + Jessie) | **The engine upgrade, then documentation** | Land the **qdk 1.30.0 upgrade** first (their one code task — Team 1 builds on it), then architecture documentation of the engine/IPC/store so anyone can work on them, a setup + troubleshooting guide that actually gets a new machine running, and the **agentic-integration design memo** Microsoft raised at the Jul 24 POC |
+| **Team 3** | **The engine upgrade, then documentation** | Land the **qdk 1.30.0 upgrade** first (their one code task — Team 1 builds on it), then architecture documentation of the engine/IPC/store so anyone can work on them, a setup + troubleshooting guide that actually gets a new machine running, and the **agentic-integration design memo** Microsoft raised at the Jul 24 POC |
 
 ### Why this shape
 

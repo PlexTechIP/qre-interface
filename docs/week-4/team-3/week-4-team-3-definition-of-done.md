@@ -1,4 +1,4 @@
-# Week 4 — Team 3 (Neil + Jessie) — Definition of Done: Engine Upgrade + Documentation
+# Week 4 — Team 3 — Definition of Done: Engine Upgrade + Documentation
 
 The bar for **Wed Jul 29 EOD**. Demoed from `main`, not a branch.
 
