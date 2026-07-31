@@ -119,7 +119,16 @@ def build_architecture(architecture: dict[str, Any]):
             two_qubit_gate_time=architecture.get("twoQubitGateTime"),
         )
     if arch_type == "majorana":
-        return Majorana(error_rate=architecture["errorRate"])
+        # `time` is the contract's "Operation Time" (features-and-fields.md:112).
+        # QDK's default and the UI default are both 1000, so mapping it is
+        # output-identical for every existing run; the only behaviour it changes
+        # is the case that is wrong today, where a user types 250 and silently
+        # gets the answer for 1000. `t_error_rate` and `target_year` are
+        # deliberately not mapped — neither appears in the field spec.
+        return Majorana(
+            error_rate=architecture["errorRate"],
+            time=architecture["operationTime"],
+        )
     if arch_type == "neutralAtom":
         # Field names follow the 1.30.0 NeutralAtom model. Times are integer
         # nanoseconds; the three error rates and the motion parameters map 1:1
