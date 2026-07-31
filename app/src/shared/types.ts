@@ -1,5 +1,5 @@
 /**
- * Contract types — RunConfig & RunResult (v1.0.0).
+ * Contract types — RunConfig & RunResult (v1.1.0).
  *
  * CANONICAL, PM-owned, frozen with the schemas in this folder. Import these
  * types (copy this file into your workspace verbatim until the shared app
@@ -8,15 +8,24 @@
  * report it in the channel.
  *
  * Changes only via the contract-change process (docs/engineering-workflow.md).
+ *
+ * v1.1.0 (additive, backward-compatible): Neutral Atom architecture; Low-Move
+ * Surface Code QEC (paired with Neutral Atom); GSJ24 / GSJ24 CCX / Magic
+ * Up-to-Clifford factory values; secondary factories and memory optimization as
+ * optional sets; an optional `parameters` field carrying benchmark
+ * hyperparameters; Litinski19 availability widened to Neutral Atom. The primary
+ * `magicStateFactory` field remains a single value in this version — the
+ * multi-select migration is tracked separately (see PR notes) because it changes
+ * an existing field's shape and touches the store and Team 2's consumers.
  */
-
+ 
 /** Contract version stamped into every RunConfig and RunResult. */
-export const SCHEMA_VERSION = "1.0.0";
-
+export const SCHEMA_VERSION = "1.1.0";
+ 
 // ---------------------------------------------------------------------------
 // RunConfig — what a configured run looks like going in (Team 1 → engine)
 // ---------------------------------------------------------------------------
-
+ 
 export const BENCHMARK_IDS = [
   "shors-factoring",
   "ekera-hastad-factoring",
@@ -25,16 +34,16 @@ export const BENCHMARK_IDS = [
   "phase-estimation",
 ] as const;
 export type BenchmarkId = (typeof BENCHMARK_IDS)[number];
-
+ 
 export const UPLOADED_PROGRAM_FORMATS = ["qsharp", "openqasm", "qir"] as const;
 export type UploadedProgramFormat = (typeof UPLOADED_PROGRAM_FORMATS)[number];
-
+ 
 export interface BenchmarkApplication {
   type: "benchmark";
   /** A benchmark id from contracts/benchmarks.json. */
   benchmarkId: string;
 }
-
+ 
 export interface UploadedApplication {
   type: "uploaded";
   /** Absolute or app-resolved path selected by the user. */
@@ -43,12 +52,45 @@ export interface UploadedApplication {
   /** Mirrors the "Add Program" option in the upload flow. */
   addToLibrary: boolean;
 }
-
-export type Application = BenchmarkApplication | UploadedApplication;
-
-export const ARCHITECTURE_TYPES = ["gateBased", "majorana"] as const;
+ 
+/**
+ * Manual Logical Counts — a program described directly by its logical resource
+ * counts, with no source file. The seven fields map one-to-one onto qdk's
+ * `LogicalCounts` keys; the engine builds a `QSharpApplication` whose
+ * `entry_expr` is that `LogicalCounts`, skipping Q# compilation entirely.
+ * All counts are non-negative integers; numQubits is >= 1 and rotationDepth is
+ * bounded by rotationCount (0 <= rotationDepth <= rotationCount).
+ */
+export interface ManualCountsApplication {
+  type: "manualCounts";
+  /** Number of Qubits — integer >= 1. */
+  numQubits: number;
+  /** T Count — integer >= 0. */
+  tCount: number;
+  /** Rotation Count — integer >= 0. */
+  rotationCount: number;
+  /** Rotation Depth — integer, 0 <= rotationDepth <= rotationCount. */
+  rotationDepth: number;
+  /** CCZ Count — integer >= 0. */
+  cczCount: number;
+  /** CCiX Count — integer >= 0. */
+  ccixCount: number;
+  /** Measurement Count — integer >= 0. */
+  measurementCount: number;
+}
+ 
+export type Application =
+  | BenchmarkApplication
+  | UploadedApplication
+  | ManualCountsApplication;
+ 
+export const ARCHITECTURE_TYPES = [
+  "gateBased",
+  "majorana",
+  "neutralAtom",
+] as const;
 export type ArchitectureType = (typeof ARCHITECTURE_TYPES)[number];
-
+ 
 export interface GateBasedArchitecture {
   type: "gateBased";
   /** Default UI value: 1e-4. Valid range: 0 < errorRate < 0.01. */
@@ -60,7 +102,7 @@ export interface GateBasedArchitecture {
   /** Nanoseconds. Optional; null means use the engine/default model. */
   twoQubitGateTime?: number | null;
 }
-
+ 
 export interface MajoranaArchitecture {
   type: "majorana";
   /** UI select value: 1e-4, 1e-5, or 1e-6. Default UI value: 1e-5. */
@@ -68,26 +110,149 @@ export interface MajoranaArchitecture {
   /** Nanoseconds. Default UI value: 1000. */
   operationTime: number;
 }
-
-export type Architecture = GateBasedArchitecture | MajoranaArchitecture;
-
-export const QEC_CODE_IDS = ["surface_code", "three_aux"] as const;
+ 
+/**
+ * Neutral Atom architecture (v1.1.0). Field set, ranges, and defaults per the
+ * Features and Fields Google Doc's QPU Specification tab. Unlike GateBased,
+ * every field has a UI default, so none is nullable at the contract level. The
+ * three error rates each fall in [0, 0.01); times are integer nanoseconds; the
+ * two Surface Code time factors are integers >= 1 and feed the Low-Move Surface
+ * Code pairing. Pairs with qecCode "low_move_surface_code".
+ */
+export interface NeutralAtomArchitecture {
+  type: "neutralAtom";
+  /** Rydberg Time (ns) — integer > 0. Default 500. */
+  rydbergTime: number;
+  /** Rydberg Error — float [0, 0.01). Default 1e-3. */
+  rydbergError: number;
+  /** Single-Qubit Time (ns) — integer > 0. Default 1000. */
+  singleQubitTime: number;
+  /** Single-Qubit Error — float [0, 0.01). Default 1e-4. */
+  singleQubitError: number;
+  /** Measurement Time (ns) — integer > 0. Default 10000. */
+  measurementTime: number;
+  /** Measurement Error — float [0, 0.01). Default 1e-4. */
+  measurementError: number;
+  /** Handoff Time (ns) — integer >= 0. Default 0. */
+  handoffTime: number;
+  /** Atom Spacing (µm) — float > 0. Default 3.0. */
+  atomSpacing: number;
+  /** Max Velocity (m/s) — float > 0. Default 0.25. */
+  maxVelocity: number;
+  /** Max Acceleration (m/s²) — float > 0. Default 5000.0. */
+  maxAcceleration: number;
+  /** Surface Code Single-Qubit Time Factor — integer >= 1. Default 1. */
+  surfaceCodeOneQubitTimeFactor: number;
+  /** Surface Code Two-Qubit Time Factor — integer >= 1. Default 1. */
+  surfaceCodeTwoQubitTimeFactor: number;
+}
+ 
+export type Architecture =
+  | GateBasedArchitecture
+  | MajoranaArchitecture
+  | NeutralAtomArchitecture;
+ 
+export const QEC_CODE_IDS = [
+  "surface_code",
+  "three_aux",
+  "low_move_surface_code",
+] as const;
 export type QecCodeId = (typeof QEC_CODE_IDS)[number];
-
+ 
+/**
+ * QEC code is derived from the architecture, one-to-one:
+ *   gateBased   -> surface_code
+ *   majorana    -> three_aux
+ *   neutralAtom -> low_move_surface_code   (v1.1.0)
+ * The switch is exhaustive over ArchitectureType; adding an architecture without
+ * a pairing here is a compile error, which is the point.
+ */
 export function expectedQecCode(architecture: Architecture): QecCodeId {
-  return architecture.type === "gateBased" ? "surface_code" : "three_aux";
+  switch (architecture.type) {
+    case "gateBased":
+      return "surface_code";
+    case "majorana":
+      return "three_aux";
+    case "neutralAtom":
+      return "low_move_surface_code";
+  }
 }
-
-export const MAGIC_STATE_FACTORY_IDS = ["round_based", "litinski19"] as const;
+ 
+export const MAGIC_STATE_FACTORY_IDS = [
+  "round_based",
+  "litinski19",
+  "gsj24",
+] as const;
 export type MagicStateFactoryId = (typeof MAGIC_STATE_FACTORY_IDS)[number];
-
+ 
+/**
+ * Secondary factories (v1.1.0) — an optional, independent set layered on top of
+ * the primary magic-state factory. Empty by default. `magic_up_to_clifford` is
+ * incompatible with Majorana; `gsj24_ccx` is bound to the PSSPC ccxMagicStates
+ * flag (turning either on turns the other on).
+ */
+export const SECONDARY_FACTORY_IDS = [
+  "magic_up_to_clifford",
+  "gsj24_ccx",
+] as const;
+export type SecondaryFactoryId = (typeof SECONDARY_FACTORY_IDS)[number];
+ 
+/**
+ * Memory optimization (v1.1.0) — optional; "none" is the default. The two yoked
+ * codes trade compute for a smaller memory footprint.
+ */
+export const MEMORY_OPTIMIZATION_IDS = [
+  "none",
+  "yoked_1d",
+  "yoked_2d",
+] as const;
+export type MemoryOptimizationId = (typeof MEMORY_OPTIMIZATION_IDS)[number];
+ 
+/**
+ * Litinski19 availability (v1.1.0, widened per spec). Allowed on:
+ *   - Superconducting (gateBased) with errorRate <= 1e-3, or
+ *   - Neutral Atom with rydbergError, singleQubitError, measurementError
+ *     all <= 1e-3.
+ * Majorana never qualifies.
+ */
 export function isLitinski19Allowed(architecture: Architecture): boolean {
-  return architecture.type === "gateBased" && architecture.errorRate <= 0.001;
+  if (architecture.type === "gateBased") {
+    return architecture.errorRate <= 0.001;
+  }
+  if (architecture.type === "neutralAtom") {
+    return (
+      architecture.rydbergError <= 0.001 &&
+      architecture.singleQubitError <= 0.001 &&
+      architecture.measurementError <= 0.001
+    );
+  }
+  return false;
 }
-
+ 
+/**
+ * GSJ24 availability (v1.1.0, per spec). Allowed on:
+ *   - Superconducting (gateBased) with errorRate <= 1e-3, or
+ *   - Neutral Atom with rydbergError <= 1e-3 and both singleQubitError and
+ *     measurementError < 1e-2 (looser than Litinski19's Neutral Atom rule).
+ * Majorana never qualifies.
+ */
+export function isGsj24Allowed(architecture: Architecture): boolean {
+  if (architecture.type === "gateBased") {
+    return architecture.errorRate <= 0.001;
+  }
+  if (architecture.type === "neutralAtom") {
+    return (
+      architecture.rydbergError <= 0.001 &&
+      architecture.singleQubitError < 0.01 &&
+      architecture.measurementError < 0.01
+    );
+  }
+  return false;
+}
+ 
 export const TRACE_TRANSFORM_TYPES = ["psspc", "latticeSurgery"] as const;
 export type TraceTransformType = (typeof TRACE_TRANSFORM_TYPES)[number];
-
+ 
 export interface PsspcTraceTransform {
   type: "psspc";
   /** Default UI value: 20. Valid range: 5 <= value <= 20. */
@@ -95,15 +260,27 @@ export interface PsspcTraceTransform {
   /** Default UI value: false. */
   ccxMagicStates: boolean;
 }
-
+ 
 export interface LatticeSurgeryTraceTransform {
   type: "latticeSurgery";
   /** Fixed at 1.0 (optimistic); no other values are contract-valid. */
   slowDownFactor: 1.0;
 }
-
+ 
 export type TraceTransform = PsspcTraceTransform | LatticeSurgeryTraceTransform;
-
+ 
+/**
+ * Benchmark hyperparameter values carried on the config (v1.1.0). A flat map of
+ * parameter key -> value for the selected benchmark (e.g. bitSize, generator,
+ * searchQubits). RECORDED-ONLY this version: serializing these makes the saved
+ * record complete and reproducible (History, Comparison, Rerun, export tell the
+ * truth about what was configured), but does NOT change any estimate — the
+ * bundled Q# benchmarks hardcode their sizes. Per-benchmark analytic mappings
+ * that would make these move the numbers are explicitly out of scope for v1.1.0.
+ * Absent/empty when the application is not a benchmark.
+ */
+export type HyperparameterValues = Record<string, number | string>;
+ 
 export interface RunConfig {
   schemaVersion: typeof SCHEMA_VERSION;
   /** UUID v4, stamped at Run-click (not while editing). */
@@ -116,9 +293,32 @@ export interface RunConfig {
   architecture: Architecture;
   /** Derived from architecture: GateBased -> surface_code; Majorana -> three_aux. */
   qecCode: QecCodeId;
-  /** round_based by default; litinski19 only for qualifying GateBased runs. */
+  /**
+   * Primary magic-state factory. round_based by default; litinski19 and gsj24
+   * only for qualifying architectures (see isLitinski19Allowed / isGsj24Allowed).
+   * NOTE (v1.1.0): still a single value. The spec calls for multi-select; that
+   * migration (magicStateFactory -> magicStateFactories: MagicStateFactoryId[])
+   * is deferred to its own contract change because it reshapes an existing field
+   * that the store and Team 2's history/results consumers read.
+   */
   magicStateFactory: MagicStateFactoryId;
+  /**
+   * Secondary factories (v1.1.0). Optional; omitted or [] means none. Multi-select
+   * set, independent of the primary factory. Absent on v1.0.0 records.
+   */
+  secondaryFactories?: SecondaryFactoryId[];
+  /**
+   * Memory optimization (v1.1.0). Optional; omitted is equivalent to "none".
+   * Absent on v1.0.0 records.
+   */
+  memoryOptimization?: MemoryOptimizationId;
   traceTransform: TraceTransform;
+  /**
+   * Benchmark hyperparameter values (v1.1.0). Optional; present only for
+   * benchmark applications. Recorded-only — does not influence the estimate this
+   * version (see HyperparameterValues).
+   */
+  parameters?: HyperparameterValues;
   /** Cap on total logical error probability. Valid range: 0 < maxError <= 1. */
   maxError: number;
   /**
@@ -128,11 +328,11 @@ export interface RunConfig {
    */
   qreVersion: string;
 }
-
+ 
 // ---------------------------------------------------------------------------
 // RunResult — what comes out (engine → Team 2)
 // ---------------------------------------------------------------------------
-
+ 
 /**
  * One displayable result field. `display` is the producer's human-friendly
  * rendering; consumers may show it but never parse it. Numeric fields use a
@@ -143,18 +343,18 @@ export interface FieldMetric<TValue = unknown> {
   unit: string;
   display: string;
 }
-
+ 
 export type NumericMetric = FieldMetric<number>;
-
+ 
 export interface FactoryUse {
   /** Magic-state type, for example "T" or "CCX". */
   stateType: string;
   /** Number of factory copies of this state type used at the frontier point. */
   copies: number;
 }
-
+ 
 export type FactoryMetric = FieldMetric<FactoryUse[]>;
-
+ 
 export const DEFAULT_RESULT_FIELD_KEYS = [
   "physicalQubits",
   "runtime",
@@ -164,7 +364,7 @@ export const DEFAULT_RESULT_FIELD_KEYS = [
   "codeDistance",
 ] as const;
 export type DefaultResultFieldKey = (typeof DEFAULT_RESULT_FIELD_KEYS)[number];
-
+ 
 export const RESULT_FIELD_KEYS = [
   "physicalQubits",
   "runtime",
@@ -205,7 +405,7 @@ export const RESULT_FIELD_KEYS = [
   "molecule",
 ] as const;
 export type ResultFieldKey = (typeof RESULT_FIELD_KEYS)[number];
-
+ 
 export interface FrontierRow {
   physicalQubits: NumericMetric;
   runtime: NumericMetric;
@@ -216,7 +416,7 @@ export interface FrontierRow {
   /** Optional fields reported for this row, keyed by RESULT_FIELD_KEYS where possible. */
   additional?: Record<string, FieldMetric>;
 }
-
+ 
 /**
  * Canonical error codes the engine emits (docs/data-contracts.md documents
  * when each fires). `RunError.code` is typed `string`, not this union: new
@@ -231,14 +431,14 @@ export const ERROR_CODES = [
   "ENGINE_CRASH",
 ] as const;
 export type KnownErrorCode = (typeof ERROR_CODES)[number];
-
+ 
 export interface RunError {
   /** One of ERROR_CODES from conformant producers; consumers tolerate unknown strings. */
   code: string;
   /** Analyst-facing explanation with a suggested next step. */
   message: string;
 }
-
+ 
 export interface RunResult {
   schemaVersion: typeof SCHEMA_VERSION;
   /** Matches the RunConfig.id that produced this result. */
@@ -261,18 +461,18 @@ export interface RunResult {
   startedAt: string;
   completedAt: string;
 }
-
+ 
 /** Narrowing helper: does this result carry displayable frontier rows? */
 export function isSucceeded(
   result: RunResult,
 ): result is RunResult & { status: "succeeded"; error: null; frontier: FrontierRow[]; raw: Record<string, unknown> } {
   return result.status === "succeeded" && result.error === null && result.frontier !== null && result.raw !== null;
 }
-
+ 
 // ---------------------------------------------------------------------------
 // The estimation boundary (renderer ⇄ main process)
 // ---------------------------------------------------------------------------
-
+ 
 /**
  * The ONE interface UI code talks to. Week 2: `MockEngine implements
  * EstimatorService` (Team 1 builds it to the spec in their technical brief).
@@ -287,11 +487,11 @@ export function isSucceeded(
 export interface EstimatorService {
   run(config: RunConfig): Promise<RunResult>;
 }
-
+ 
 // ---------------------------------------------------------------------------
 // The Results seam (Team 1 ⇄ Team 2) — canonical prop contract
 // ---------------------------------------------------------------------------
-
+ 
 /**
  * Parent-owned rendering phase for the Results surface. Deliberately coarse:
  * `done` covers BOTH succeeded and failed runs — the Results surface reads
@@ -299,7 +499,7 @@ export interface EstimatorService {
  * track a richer internal lifecycle; it must collapse to this at the seam.)
  */
 export type ResultsPhase = "idle" | "running" | "done";
-
+ 
 /**
  * The exact props of the Results surface (Team 2's component). Team 1's parent
  * supplies them; Team 2 renders EVERY state from them — empty, running,
@@ -312,11 +512,11 @@ export interface ResultsAreaProps {
   /** The producing config, for the configuration summary. Pass it when available. */
   config?: RunConfig | null;
 }
-
+ 
 // ---------------------------------------------------------------------------
 // RunRecord — an immutable saved run (Part 2: persistence, history, rerun)
 // ---------------------------------------------------------------------------
-
+ 
 /**
  * A saved run: the producing RunConfig, its RunResult, and when it was
  * persisted. IMMUTABLE — a record is never edited after it is written; to
@@ -337,7 +537,7 @@ export interface RunRecord {
   /** ISO 8601 UTC, stamped when the record is persisted. */
   savedAt: string;
 }
-
+ 
 /**
  * Assemble an immutable RunRecord from a finished run. THROWS on a mismatched
  * (config, result) pair — `result.runId` MUST equal `config.id`, or these did
@@ -353,7 +553,7 @@ export function makeRunRecord(config: RunConfig, result: RunResult, savedAt: str
   }
   return { schemaVersion: SCHEMA_VERSION, id: config.id, config, result, savedAt };
 }
-
+ 
 /**
  * The filter set the Run History surface exposes (SOW Part 2). Every field is
  * optional; an omitted field does not constrain. `nameSearch` is a
@@ -369,18 +569,20 @@ export interface RunFilter {
   magicStateFactory?: MagicStateFactoryId;
   qreVersion?: string;
 }
-
+ 
 /**
  * The stable key the Application filter groups by: the benchmark id for
- * benchmark runs, or `uploaded:<filePath>` for uploaded programs. Team 1 builds
- * the filter's option list from the distinct keys present across the records.
+ * benchmark runs, `uploaded:<filePath>` for uploaded programs, or
+ * `manual-counts` for Manual Logical Counts runs (which have no source). Team 1
+ * builds the filter's option list from the distinct keys present in the records.
  */
 export function applicationKey(config: RunConfig): string {
-  return config.application.type === "benchmark"
-    ? config.application.benchmarkId
-    : `uploaded:${config.application.filePath}`;
+  const app = config.application;
+  if (app.type === "benchmark") return app.benchmarkId;
+  if (app.type === "uploaded") return `uploaded:${app.filePath}`;
+  return "manual-counts";
 }
-
+ 
 /** Does a record satisfy every constraint in the filter? Pure — the reference match semantics. */
 export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean {
   const { config, result } = record;
@@ -395,7 +597,7 @@ export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean 
   if (filter.qreVersion !== undefined && result.qreVersion !== filter.qreVersion) return false;
   return true;
 }
-
+ 
 /**
  * Newest-first ordering used by list()/query(): by the run's launch time
  * (`config.createdAt`) descending, tie-broken by `savedAt` then `id` so the
@@ -408,7 +610,7 @@ export function sortRunRecordsNewestFirst(records: readonly RunRecord[]): RunRec
     return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 }
-
+ 
 /**
  * Apply a filter and return the matches newest-first. Pure — the canonical
  * query semantics a real store (SQLite) must reproduce.
@@ -416,11 +618,11 @@ export function sortRunRecordsNewestFirst(records: readonly RunRecord[]): RunRec
 export function queryRunRecords(records: readonly RunRecord[], filter: RunFilter = {}): RunRecord[] {
   return sortRunRecordsNewestFirst(records.filter((r) => matchesRunFilter(r, filter)));
 }
-
+ 
 // ---------------------------------------------------------------------------
 // RunStore — the persistence/query boundary (Team 1 UI ⇄ Team 2 store)
 // ---------------------------------------------------------------------------
-
+ 
 /**
  * The ONE interface the Run History UI talks to. Week 3: Team 1 builds against
  * `InMemoryRunStore` (mock records, see app/src/shared/runStore.ts); Team 2
@@ -439,7 +641,7 @@ export interface RunStore {
   delete(id: string): Promise<void>;
   query(filter: RunFilter): Promise<RunRecord[]>;
 }
-
+ 
 /**
  * Reconstruct a config that pre-fills the Run Configuration form for a Rerun.
  * Rerun makes a NEW run, so the caller supplies a fresh `id`/`createdAt` stamp;

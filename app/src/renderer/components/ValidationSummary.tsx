@@ -1,23 +1,41 @@
 import type { FieldErrors } from "../state/validation";
-
+ 
 interface ValidationSummaryProps {
   errors: FieldErrors;
   pending?: boolean;
 }
-
+ 
 const LABELS: Record<Exclude<keyof FieldErrors, "hyperparams">, string> = {
   benchmarkId: "Benchmark",
   savedProgram: "Saved program",
   uploadFilePath: "Program file",
+  numQubits: "Number of qubits",
+  tCount: "T count",
+  rotationCount: "Rotation count",
+  rotationDepth: "Rotation depth",
+  cczCount: "CCZ count",
+  ccixCount: "CCiX count",
+  measurementCount: "Measurement count",
   errorRate: "Error rate",
   gateTime: "Gate time",
   measurementTime: "Measurement time",
   twoQubitGateTime: "Two-qubit gate time",
   operationTime: "Operation time",
+  rydbergTime: "Rydberg time",
+  rydbergError: "Rydberg error",
+  singleQubitTime: "Single-qubit time",
+  singleQubitError: "Single-qubit error",
+  measurementError: "Measurement error",
+  handoffTime: "Handoff time",
+  atomSpacing: "Atom spacing",
+  maxVelocity: "Max velocity",
+  maxAcceleration: "Max acceleration",
+  surfaceCodeOneQubitTimeFactor: "Surface code 1-qubit time factor",
+  surfaceCodeTwoQubitTimeFactor: "Surface code 2-qubit time factor",
   tStatesPerRotation: "T states per rotation",
   maxError: "Max error",
 };
-
+ 
 /** Inline error box — lists every unresolved field so there's no dead end. */
 export function ValidationSummary({
   errors,
@@ -25,7 +43,7 @@ export function ValidationSummary({
 }: ValidationSummaryProps): React.JSX.Element {
   const { hyperparams, ...scalarErrors } = errors;
   const entries: { key: string; label: string; message: string }[] = [];
-
+ 
   for (const key of Object.keys(scalarErrors) as (keyof typeof scalarErrors)[]) {
     const message = scalarErrors[key];
     if (message) entries.push({ key, label: LABELS[key], message });
@@ -34,7 +52,7 @@ export function ValidationSummary({
   for (const error of hyperparams ?? []) {
     entries.push({ key: `hyperparam-${error.key}`, label: error.label, message: error.message });
   }
-
+ 
   if (entries.length === 0) {
     return (
       <div className="validation-box validation-box--ok" role="status">
@@ -42,7 +60,7 @@ export function ValidationSummary({
       </div>
     );
   }
-
+ 
   return (
     <div
       className={`validation-box ${

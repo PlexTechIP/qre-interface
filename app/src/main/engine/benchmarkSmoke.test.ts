@@ -9,7 +9,7 @@ const IDS = Object.keys(BENCHMARK_REGISTRY);
 
 function config(benchmarkId: string, index: number): RunConfig {
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     id: `80000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     name: `benchmark smoke: ${benchmarkId}`,
     createdAt: "2026-07-15T23:00:00Z",

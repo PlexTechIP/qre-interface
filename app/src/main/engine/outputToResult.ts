@@ -121,7 +121,7 @@ function failed(
   completedAt: string,
 ): RunResult {
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     runId: config.id,
     status: "failed",
     error: { code, message },
@@ -273,7 +273,7 @@ export function outputToResult(
   }
 
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     runId: config.id,
     status: "succeeded",
     error: null,

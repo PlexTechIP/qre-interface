@@ -7,7 +7,7 @@ const PYTHON_BIN = resolvePythonBin();
 
 function config(id: string, benchmarkId: string): RunConfig {
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     id,
     name: "robustness test",
     createdAt: "2026-07-09T18:22:00Z",
