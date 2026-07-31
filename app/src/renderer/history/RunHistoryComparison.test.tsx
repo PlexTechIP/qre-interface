@@ -53,3 +53,124 @@ describe("History → Comparison hand-off (Part E)", () => {
     expect(within(screen.getByRole("table")).getByText(RUN_B)).toBeInTheDocument();
   });
 });
+
+/**
+ * Controlled (app-shell) mode: the sidebar owns the page, so the surface header's
+ * "Compare Selected" button is the hand-off under test.
+ */
+function ControlledHarness() {
+  const [store] = useState(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
+  const [view, setView] = useState<"history" | "comparison">("history");
+  return <RunHistoryContainer store={store} view={view} onViewChange={setView} />;
+}
+
+describe("Compare Selected below the threshold", () => {
+  it("stays on History and says what is needed when nothing is selected", async () => {
+    render(<ControlledHarness />);
+    await rowByName(RUN_A);
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/at least 2 runs/i);
+    // Still on History — the list is present and no comparison table appeared.
+    expect(screen.getByText(RUN_A)).toBeInTheDocument();
+    expect(screen.queryByText(/one column per run/i)).not.toBeInTheDocument();
+  });
+
+  it("says how many more are needed with a single run ticked", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/1 more/i);
+    expect(screen.queryByText(/one column per run/i)).not.toBeInTheDocument();
+  });
+
+  it("navigates once two runs are selected, and clears the warning", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    // Ticking a second run resolves the warning in place, without another click.
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+    expect(await screen.findByText(/one column per run/i)).toBeInTheDocument();
+  });
+
+  it("keeps the button enabled so the explanation is reachable", async () => {
+    render(<ControlledHarness />);
+    await rowByName(RUN_A);
+
+    expect(screen.getByRole("button", { name: /compare selected/i })).toBeEnabled();
+  });
+
+  it("stops warning once the selection recovers, even without pressing again", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    // Reaching the threshold retires the warning...
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    // ...and dropping back below it must NOT resurrect an unprompted warning.
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("counts what would be COMPARED, not what is ticked, when a filter hides a run", async () => {
+    // Two ticked, then a name search matching only one. Counting checkboxes
+    // instead of resolved records navigates to a one-column "comparison".
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+
+    await userEvent.type(screen.getByLabelText(/search run name/i), "Litinski19");
+    // The button's count follows the same number the threshold uses.
+    expect(
+      await screen.findByRole("button", { name: /compare selected \(1\)/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    expect(screen.getByText(RUN_A)).toBeInTheDocument();
+    expect(screen.queryByText(/one column per run/i)).not.toBeInTheDocument();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/1 run is selected/i);
+    // …and says why, so "(1)" after ticking two boxes doesn't just look broken.
+    expect(alert).toHaveTextContent(/1 checked run is hidden by the current filter/i);
+  });
+
+  it("warns from the detail panel too, where the button is equally reachable", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    // Open a run's detail panel — it takes over the branch the list rendered in.
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("button", { name: /^view$/i }));
+    expect(screen.queryByText(/search run name/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    // A press with no visible response would be the silent no-op the enabled
+    // button was chosen to avoid.
+    expect(screen.getByRole("alert")).toHaveTextContent(/at least 2 runs/i);
+  });
+
+  it("re-announces the warning on a repeated press", async () => {
+    render(<ControlledHarness />);
+    await rowByName(RUN_A);
+    const button = screen.getByRole("button", { name: /compare selected/i });
+
+    await userEvent.click(button);
+    const first = screen.getByRole("alert");
+
+    await userEvent.click(button);
+    // A screen reader only re-announces a live region when the node changes, so a
+    // second press must produce a fresh element rather than an identical one.
+    expect(screen.getByRole("alert")).not.toBe(first);
+  });
+});

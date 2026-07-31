@@ -25,7 +25,7 @@ function config(traceTransform: TraceTransform): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform,
     parameters: {
       latticeN1: 3,

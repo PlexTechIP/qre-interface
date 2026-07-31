@@ -27,7 +27,7 @@ const config: RunConfig = {
     twoQubitGateTime: null,
   },
   qecCode: "surface_code",
-  magicStateFactory: "round_based",
+  magicStateFactories: ["round_based"],
   traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
@@ -73,7 +73,7 @@ const manualNeutralAtom: RunConfig = {
     surfaceCodeTwoQubitTimeFactor: 1,
   },
   qecCode: "low_move_surface_code",
-  magicStateFactory: "round_based",
+  magicStateFactories: ["round_based"],
   traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 0.01,
   qreVersion: "qdk-qre-v1-fixture",
@@ -203,7 +203,7 @@ describe("QreEngine", () => {
       const gsj24 = await engine.run({
         ...manualNeutralAtom,
         id: "d5f3e4b6-7a8c-4d9e-0f1a-2b3c4d5e6f7a",
-        magicStateFactory: "gsj24",
+        magicStateFactories: ["gsj24"],
         secondaryFactories: ["magic_up_to_clifford", "gsj24_ccx"],
         // gsj24_ccx is yoked to this flag — turning either on turns the other on.
         traceTransform: { tStatesPerRotation: 20, ccxMagicStates: true, slowDownFactor: 1.0 },

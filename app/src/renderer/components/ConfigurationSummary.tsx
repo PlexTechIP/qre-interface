@@ -46,8 +46,10 @@ export function ConfigurationSummary({
     { label: "Architecture", value: ARCHITECTURE_LABELS[state.architecture.type] },
     { label: "QEC Code", value: QEC_LABELS[deriveQecCode(state.architecture)] },
     {
-      label: "Factory",
-      value: `${MAGIC_STATE_FACTORY_LABELS[state.magicStateFactory]} Factory`,
+      label: state.magicStateFactories.length > 1 ? "Factories" : "Factory",
+      value: state.magicStateFactories
+        .map((factory) => `${MAGIC_STATE_FACTORY_LABELS[factory]} Factory`)
+        .join(" + "),
     },
     {
       // Both stages, not a single name: the old row read as a selection.

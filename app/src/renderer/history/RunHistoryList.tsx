@@ -6,7 +6,7 @@ import {
 } from "../results/selectedRows";
 import {
   ARCHITECTURE_LABELS,
-  FACTORY_LABELS,
+  factorySetLabel,
   QEC_LABELS,
   applicationLabel,
 } from "./historyLabels";
@@ -250,7 +250,7 @@ export function RunHistoryList({
                           {" · "}
                           {QEC_LABELS[config.qecCode] ?? config.qecCode}
                           {" · "}
-                          {FACTORY_LABELS[config.magicStateFactory] ?? config.magicStateFactory}
+                          {factorySetLabel(config)}
                         </span>
                       </div>
                     </td>

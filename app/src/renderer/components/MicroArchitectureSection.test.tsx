@@ -14,8 +14,8 @@ function renderSection(memoryOptimization: MemoryOptimizationId = "none"): void 
   render(
     <MicroArchitectureSection
       architecture={state.architecture}
-      magicStateFactory={state.magicStateFactory}
-      onMagicStateFactoryChange={vi.fn()}
+      magicStateFactories={state.magicStateFactories}
+      onMagicStateFactoriesChange={vi.fn()}
       secondaryFactories={state.secondaryFactories}
       onSecondaryFactoriesChange={vi.fn()}
       memoryOptimization={memoryOptimization}

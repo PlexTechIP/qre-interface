@@ -30,7 +30,7 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform: {
       tStatesPerRotation: 20,
       ccxMagicStates: false,

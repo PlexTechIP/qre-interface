@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://qre-dashboard.plextech.dev/contracts/runresult.schema.json",
   "title": "RunResult",
-  "description": "CANONICAL contract schema (v1.1.0), frozen by the PMs. RunResult flows from the engine to consumers, so this schema is deliberately tolerant of EXTRA top-level fields (forward compatibility: consumers must not crash on unknowns) while every required field must be present. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
+  "description": "CANONICAL contract schema (v1.2.0), frozen by the PMs. RunResult flows from the engine to consumers, so this schema is deliberately tolerant of EXTRA top-level fields (forward compatibility: consumers must not crash on unknowns) while every required field must be present. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.2.0",
+      "const": "1.3.0",
       "description": "Contract version."
     },
     "runId": {

@@ -34,7 +34,7 @@ function invocation(overrides: Partial<QreInvocation> = {}): QreInvocation {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     timeoutMs: 30_000,

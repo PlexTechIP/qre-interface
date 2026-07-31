@@ -17,6 +17,7 @@ export default defineConfig({
       "src/main/engine/uploadedProgram.test.ts",
       "src/main/engine/robustness.test.ts",
       "src/main/engine/crossConfig.test.ts",
+      "src/main/engine/magicStateFactories.test.ts",
       "src/main/engine/execute.test.ts",
       "src/main/engine/qreEngine.test.ts",
     ],

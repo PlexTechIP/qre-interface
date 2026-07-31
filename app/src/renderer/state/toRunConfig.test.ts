@@ -45,7 +45,7 @@ describe("toRunConfig — defaults path", () => {
 
   it("serializes to a schema-valid RunConfig once the two required times are entered", () => {
     const config = expectSchemaValid(validGateBasedDraft());
-    expect(config.schemaVersion).toBe("1.2.0");
+    expect(config.schemaVersion).toBe("1.3.0");
     expect(config.application).toEqual({
       type: "benchmark",
       benchmarkId: "shors-factoring",
@@ -58,7 +58,7 @@ describe("toRunConfig — defaults path", () => {
       twoQubitGateTime: null,
     });
     expect(config.qecCode).toBe("surface_code");
-    expect(config.magicStateFactory).toBe("round_based");
+    expect(config.magicStateFactories).toEqual(["round_based"]);
     expect(config.maxError).toBe(1.0);
   });
 
@@ -185,10 +185,10 @@ describe("toRunConfig — Majorana cases", () => {
 
   it("derives Three-Aux QEC regardless of factory selection", () => {
     const s = majoranaDraft();
-    s.magicStateFactory = "litinski19"; // not allowed on Majorana
+    s.magicStateFactories = ["litinski19"]; // not allowed on Majorana
     const config = expectSchemaValid(s);
     expect(config.qecCode).toBe("three_aux");
-    expect(config.magicStateFactory).toBe("round_based");
+    expect(config.magicStateFactories).toEqual(["round_based"]);
   });
 
   it("auto-names a Majorana run with its derived architecture + QEC", () => {
@@ -263,15 +263,15 @@ describe("toRunConfig — Litinski19 factory coupling", () => {
   it("keeps Litinski19 for qualifying GateBased runs (errorRate <= 1e-3)", () => {
     const s = validGateBasedDraft();
     s.architecture.gateBased.errorRate = 0.0001;
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("litinski19");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["litinski19"]);
   });
 
   it("falls back to Round-Based when Litinski19 isn't allowed (Majorana)", () => {
     const s = createInitialFormState();
     s.architecture.type = "majorana";
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("round_based");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["round_based"]);
   });
 });
 

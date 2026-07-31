@@ -18,6 +18,9 @@ interface ApplicationSectionProps {
   value: ApplicationForm;
   errors: FieldErrors;
   onChange: (value: ApplicationForm) => void;
+  /** True while the chosen program file is being pre-flighted. Run is gated on
+   *  it, so the wait needs to be visible rather than looking like a dead button. */
+  isCheckingFile?: boolean;
 }
 
 const TYPE_OPTIONS: readonly { value: ApplicationFormType; label: string }[] = [
@@ -67,6 +70,7 @@ export function ApplicationSection({
   value,
   errors,
   onChange,
+  isCheckingFile = false,
 }: ApplicationSectionProps): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [savedQuery, setSavedQuery] = useState("");
@@ -329,6 +333,11 @@ export function ApplicationSection({
               </div>
             </>
           )}
+          {isCheckingFile ? (
+            <p className="field__help" role="status">
+              Checking file…
+            </p>
+          ) : null}
           {errors.savedProgram ? (
             <p className="field__error" role="alert">
               {errors.savedProgram}
@@ -396,9 +405,16 @@ export function ApplicationSection({
             Supported: .qs (Q#), .qasm (OpenQASM), .ll / .bc (QIR)
           </p>
 
+          {/* Precedence matters: a path that could not be resolved has nothing
+              to pre-flight, so its error outranks both the progress line and the
+              pre-flight's own verdict. */}
           {pathError ? (
             <p className="field__error" role="alert">
               {pathError}
+            </p>
+          ) : isCheckingFile ? (
+            <p className="field__help" role="status">
+              Checking file…
             </p>
           ) : errors.uploadFilePath ? (
             <p className="field__error" role="alert">

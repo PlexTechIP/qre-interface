@@ -2,15 +2,14 @@
  * Pure serialization: FormState -> RunConfig (or null when the draft can't form
  * a structurally complete config). Value-range validity is the schema's job
  * (see schemaValidation.ts); this module only assembles the object and derives
- * the coupled fields (qecCode, magicStateFactory) so the output is never
+ * the coupled fields (qecCode, magicStateFactories) so the output is never
  * internally inconsistent with the architecture.
  */
  
 import {
   SCHEMA_VERSION,
   expectedQecCode,
-  isGsj24Allowed,
-  isLitinski19Allowed,
+  isMagicStateFactoryAllowed,
   type Application,
   type Architecture,
   type BenchmarkId,
@@ -145,24 +144,23 @@ function buildArchitecture(arch: ArchitectureForm): Architecture | null {
 }
  
 /**
- * A non-round_based primary factory survives serialization only when the
- * architecture actually permits it (litinski19 / gsj24 each have their own
- * availability rule); otherwise it falls back to round_based so the output always
- * satisfies the schema's factory/architecture coupling. This mirrors
- * `normalizeFormState`'s form-side rule, so the serialized config never disagrees
- * with what the UI showed. The UI surfaces the fallback visibly.
+ * The primary factory SET that survives serialization. A non-round_based member
+ * survives only when the architecture actually permits it (litinski19 / gsj24
+ * each have their own availability rule). This mirrors `normalizeFormState`'s
+ * form-side rule, so the serialized config never disagrees with what the UI
+ * showed. The UI surfaces the fallback visibly.
  */
-function effectiveFactory(
-  selected: MagicStateFactoryId,
+function effectiveFactories(
+  selected: readonly MagicStateFactoryId[],
   architecture: Architecture,
-): MagicStateFactoryId {
-  if (selected === "litinski19" && isLitinski19Allowed(architecture)) {
-    return "litinski19";
-  }
-  if (selected === "gsj24" && isGsj24Allowed(architecture)) {
-    return "gsj24";
-  }
-  return "round_based";
+): MagicStateFactoryId[] {
+  // Order preserved, duplicates removed, ineligible members dropped. The schema
+  // requires a NON-EMPTY set, so an empty result falls back to round_based —
+  // the one factory every architecture accepts.
+  const kept = [...new Set(selected)].filter((factory) =>
+    isMagicStateFactoryAllowed(factory, architecture),
+  );
+  return kept.length > 0 ? kept : ["round_based"];
 }
  
 /**
@@ -286,7 +284,9 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
     application,
     architecture,
     qecCode: expectedQecCode(architecture),
-    magicStateFactory: effectiveFactory(state.magicStateFactory, architecture),
+    magicStateFactories: effectiveFactories(state.magicStateFactories, architecture),
+    // The form draft IS the contract shape now that the transform is one
+    // pipeline object, so there is nothing left to build — just copy it.
     traceTransform: { ...state.traceTransform },
     maxError: state.maxError,
     qreVersion: QRE_VERSION,

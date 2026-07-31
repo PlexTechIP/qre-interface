@@ -6,6 +6,7 @@ import {
   normalizeTraceTransform,
   parseTraceTransform,
 } from "./traceTransform";
+import { SCHEMA_VERSION } from "./types";
 import type { RunConfig } from "./types";
 
 describe("the trace transform is a pipeline, not a choice", () => {
@@ -98,7 +99,7 @@ describe("the JSON Schema follows the types", () => {
       "../renderer/state/schemaValidation"
     );
     const base = {
-      schemaVersion: "1.2.0",
+      schemaVersion: SCHEMA_VERSION,
       id: "00000000-0000-4000-8000-000000000000",
       name: "schema probe",
       createdAt: "2026-07-31T00:00:00.000Z",
@@ -111,7 +112,7 @@ describe("the JSON Schema follows the types", () => {
         twoQubitGateTime: null,
       },
       qecCode: "surface_code",
-      magicStateFactory: "round_based",
+      magicStateFactories: ["round_based"],
       maxError: 1,
       qreVersion: "qdk-qre-v1-fixture",
     };

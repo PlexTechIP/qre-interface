@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://qre-dashboard.plextech.dev/contracts/runconfig.schema.json",
   "title": "RunConfig",
-  "description": "CANONICAL contract schema (v1.1.0), frozen by the PMs. RunConfig is fully app-controlled, so this schema is deliberately strict (additionalProperties: false, closed enums where the product owns the choice set): a producer typo should fail fast here, not inside the engine. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
+  "description": "CANONICAL contract schema (v1.2.0), frozen by the PMs. RunConfig is fully app-controlled, so this schema is deliberately strict (additionalProperties: false, closed enums where the product owns the choice set): a producer typo should fail fast here, not inside the engine. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,14 +13,14 @@
     "application",
     "architecture",
     "qecCode",
-    "magicStateFactory",
+    "magicStateFactories",
     "traceTransform",
     "maxError",
     "qreVersion"
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.2.0",
+      "const": "1.3.0",
       "description": "Contract version."
     },
     "id": {
@@ -321,14 +321,19 @@
         "low_move_surface_code"
       ]
     },
-    "magicStateFactory": {
-      "type": "string",
-      "description": "round_based by default. litinski19 is allowed on Superconducting (errorRate <= 1e-3) or Neutral Atom (all three errors <= 1e-3). gsj24 is allowed on Superconducting (errorRate <= 1e-3) or Neutral Atom (rydbergError <= 1e-3, single-qubit and measurement error < 1e-2). Still a single value in v1.1.0; multi-select is a separate contract change.",
-      "enum": [
-        "round_based",
-        "litinski19",
-        "gsj24"
-      ]
+    "magicStateFactories": {
+      "type": "array",
+      "description": "Primary magic-state factories (v1.2.0) — a non-empty, unique set; was the single-valued magicStateFactory through v1.1.0. Defaults to [\"round_based\"]. litinski19 is allowed on Superconducting (errorRate <= 1e-3) or Neutral Atom (all three errors <= 1e-3). gsj24 is allowed on Superconducting (errorRate <= 1e-3) or Neutral Atom (rydbergError <= 1e-3, single-qubit and measurement error < 1e-2). Majorana admits round_based alone. The engine unions the set into one ISA query, producing a single frontier explored across every selected factory.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "round_based",
+          "litinski19",
+          "gsj24"
+        ]
+      }
     },
     "secondaryFactories": {
       "type": "array",
@@ -449,8 +454,10 @@
           "qecCode": {
             "const": "three_aux"
           },
-          "magicStateFactory": {
-            "const": "round_based"
+          "magicStateFactories": {
+            "items": {
+              "const": "round_based"
+            }
           }
         }
       }
@@ -484,11 +491,13 @@
     {
       "if": {
         "required": [
-          "magicStateFactory"
+          "magicStateFactories"
         ],
         "properties": {
-          "magicStateFactory": {
-            "const": "litinski19"
+          "magicStateFactories": {
+            "contains": {
+              "const": "litinski19"
+            }
           }
         }
       },
@@ -540,11 +549,13 @@
     {
       "if": {
         "required": [
-          "magicStateFactory"
+          "magicStateFactories"
         ],
         "properties": {
-          "magicStateFactory": {
-            "const": "gsj24"
+          "magicStateFactories": {
+            "contains": {
+              "const": "gsj24"
+            }
           }
         }
       },

@@ -82,6 +82,23 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     program = { sourcePath: config.application.filePath, format: config.application.format, entryExpr: "" };
   }
  
+  // --- magic state factory set: SHAPE first ---
+  // These run before the architecture switch because that switch reads the set
+  // (Majorana admits round_based alone). Validating shape afterwards left a
+  // malformed config dereferencing `undefined` inside the switch, which
+  // QreEngine's catch then reported as ENGINE_CRASH "verify the Python
+  // environment" — pointing at Python for a bad config. Eligibility, which needs
+  // the architecture, stays below.
+  const magicStateFactories = config.magicStateFactories;
+  if (!Array.isArray(magicStateFactories) || magicStateFactories.length === 0) {
+    return invalid("At least one magic state factory must be selected.");
+  }
+  if (new Set(magicStateFactories).size !== magicStateFactories.length) {
+    return invalid(
+      `Duplicate magic state factories: [${magicStateFactories.join(", ")}]. The set must be unique.`,
+    );
+  }
+
   // --- architecture <-> qecCode coupling ---
   const architecture = config.architecture;
   const expectedQec = expectedQecCode(architecture);
@@ -110,7 +127,7 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     if (!(architecture.operationTime > 0)) {
       return invalid(`Majorana operationTime must be > 0, got ${architecture.operationTime}.`);
     }
-    if (config.magicStateFactory !== "round_based") {
+    if (magicStateFactories.some((factory) => factory !== "round_based")) {
       return invalid(`Majorana architectures only support magicStateFactory "round_based".`);
     }
   } else {
@@ -147,12 +164,12 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
   }
  
   // --- magic state factory eligibility (delegates to the contract rules) ---
-  if (config.magicStateFactory === "litinski19" && !isLitinski19Allowed(architecture)) {
+  if (magicStateFactories.includes("litinski19") && !isLitinski19Allowed(architecture)) {
     return invalid(
       "litinski19 magic state factory requires Superconducting (errorRate <= 1e-3) or Neutral Atom (all errors <= 1e-3).",
     );
   }
-  if (config.magicStateFactory === "gsj24" && !isGsj24Allowed(architecture)) {
+  if (magicStateFactories.includes("gsj24") && !isGsj24Allowed(architecture)) {
     return invalid(
       "gsj24 magic state factory requires Superconducting (errorRate <= 1e-3) or Neutral Atom (rydberg <= 1e-3, single-qubit and measurement < 1e-2).",
     );
@@ -216,7 +233,7 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
                 surfaceCodeTwoQubitTimeFactor: architecture.surfaceCodeTwoQubitTimeFactor,
               },
       qecCode: config.qecCode,
-      magicStateFactory: config.magicStateFactory,
+      magicStateFactories,
       secondaryFactories: config.secondaryFactories ?? [],
       traceTransform,
       maxError: config.maxError,

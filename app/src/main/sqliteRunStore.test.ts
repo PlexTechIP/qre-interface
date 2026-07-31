@@ -1,8 +1,8 @@
 // @vitest-environment node
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -87,6 +87,11 @@ function mintFromFixture(
   return makeRunRecord(config, result, savedAt);
 }
 
+/** The store's constructor creates the parent dir; a hand-seeded DB needs it first. */
+function mkdirIfNeeded(databasePath: string): void {
+  mkdirSync(dirname(databasePath), { recursive: true });
+}
+
 function makeDatabasePath(): string {
   const directory = mkdtempSync(join(tmpdir(), "qre-run-store-"));
   temporaryDirectories.push(directory);
@@ -118,7 +123,7 @@ describe("SqliteRunStore schema", () => {
       .map((row) => row.name);
     database.close();
 
-    expect(version?.user_version).toBe(1);
+    expect(version?.user_version).toBe(2);
     expect(indexes).toEqual(
       expect.arrayContaining([
         "run_records_name_idx",
@@ -517,5 +522,151 @@ describe("Part C — query parity and deterministic ordering", () => {
     expect((await store.query({})).map((record) => record.id)).toEqual(
       expected,
     );
+  });
+});
+
+/**
+ * Contract v1.2.0 turned `magicStateFactory` into the set `magicStateFactories`,
+ * and turned the derived filter column into a delimited encoding of that set.
+ * Databases written by earlier builds still hold the old row shape, so both
+ * halves of the migration are proved here: the column is re-encoded in place,
+ * and the stored JSON — which is NOT rewritten — is lifted on read.
+ */
+describe("v1.2.0 magic-state-factory migration", () => {
+  /** Write a v1-shaped database by hand: bare factory column, singular JSON. */
+  function seedLegacyDatabase(databasePath: string, factory: string): string {
+    const id = "abcdabcd-abcd-4bcd-8bcd-abcdabcdabcd";
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE run_records (
+        id TEXT PRIMARY KEY NOT NULL,
+        schema_version TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        name TEXT NOT NULL,
+        application TEXT NOT NULL,
+        architecture TEXT NOT NULL,
+        qec_code TEXT NOT NULL,
+        magic_state_factory TEXT NOT NULL,
+        qre_version TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        saved_at TEXT NOT NULL
+      ) STRICT;
+    `);
+    // The legacy row is deliberately NOT a v1.2.0 RunRecord — that's the point —
+    // so it is built through a shape that admits the old field and drops the new.
+    const legacyRecord = structuredClone(MOCK_RUN_RECORDS[0]) as unknown as Omit<
+      RunRecord,
+      "config"
+    > & {
+      config: Omit<RunRecord["config"], "magicStateFactories" | "schemaVersion"> & {
+        schemaVersion: string;
+        magicStateFactories?: unknown;
+        magicStateFactory?: string;
+      };
+    };
+    legacyRecord.id = id;
+    legacyRecord.config.id = id;
+    legacyRecord.result.runId = id;
+    (legacyRecord as { schemaVersion: string }).schemaVersion = "1.1.0";
+    legacyRecord.config.schemaVersion = "1.1.0";
+    delete legacyRecord.config.magicStateFactories;
+    legacyRecord.config.magicStateFactory = factory;
+
+    database
+      .prepare(
+        `INSERT INTO run_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        "1.1.0",
+        JSON.stringify(legacyRecord),
+        legacyRecord.config.name,
+        "quantum-dynamics",
+        legacyRecord.config.architecture.type,
+        legacyRecord.config.qecCode,
+        factory,
+        legacyRecord.result.qreVersion,
+        legacyRecord.config.createdAt,
+        legacyRecord.savedAt,
+      );
+    database.exec("PRAGMA user_version = 1");
+    database.close();
+    return id;
+  }
+
+  it("re-encodes a legacy factory column as a one-element set", () => {
+    const databasePath = makeDatabasePath();
+    mkdirIfNeeded(databasePath);
+    seedLegacyDatabase(databasePath, "litinski19");
+
+    const store = new SqliteRunStore(databasePath);
+    stores.push(store);
+
+    const database = new DatabaseSync(databasePath);
+    const row = database
+      .prepare("SELECT magic_state_factory AS factory FROM run_records")
+      .get() as { factory: string };
+    const version = database.prepare("PRAGMA user_version").get() as {
+      user_version: number;
+    };
+    database.close();
+
+    expect(row.factory).toBe("|litinski19|");
+    expect(version.user_version).toBe(2);
+  });
+
+  it("reads a legacy record back in the v1.2.0 shape without rewriting its JSON", async () => {
+    const databasePath = makeDatabasePath();
+    mkdirIfNeeded(databasePath);
+    const id = seedLegacyDatabase(databasePath, "litinski19");
+
+    const store = new SqliteRunStore(databasePath);
+    stores.push(store);
+    const record = await store.get(id);
+
+    expect(record?.config.magicStateFactories).toEqual(["litinski19"]);
+    expect(
+      (record?.config as { magicStateFactory?: string }).magicStateFactory,
+    ).toBeUndefined();
+    // The record still says which version configured it — the upgrade is a read
+    // shim, not a claim that this run was configured under 1.2.0.
+    expect(record?.config.schemaVersion).toBe("1.1.0");
+
+    const database = new DatabaseSync(databasePath);
+    const stored = database
+      .prepare("SELECT record_json AS json FROM run_records")
+      .get() as { json: string };
+    database.close();
+    expect(JSON.parse(stored.json).config.magicStateFactory).toBe("litinski19");
+  });
+
+  it("filters a migrated legacy record by its factory", async () => {
+    const databasePath = makeDatabasePath();
+    mkdirIfNeeded(databasePath);
+    const id = seedLegacyDatabase(databasePath, "litinski19");
+
+    const store = new SqliteRunStore(databasePath);
+    stores.push(store);
+
+    expect((await store.query({ magicStateFactory: "litinski19" })).map((r) => r.id)).toEqual([id]);
+    expect(await store.query({ magicStateFactory: "gsj24" })).toEqual([]);
+  });
+
+  it("matches a multi-factory run on ANY of its factories", async () => {
+    const store = new SqliteRunStore(makeDatabasePath());
+    stores.push(store);
+
+    const source = MOCK_RUN_RECORDS[0]!;
+    const id = "12341234-1234-4234-8234-123412341234";
+    const config = structuredClone(source.config);
+    config.id = id;
+    config.magicStateFactories = ["round_based", "gsj24"];
+    const result = structuredClone(source.result);
+    result.runId = id;
+    await store.save(makeRunRecord(config, result, source.savedAt));
+
+    expect((await store.query({ magicStateFactory: "gsj24" })).map((r) => r.id)).toEqual([id]);
+    expect((await store.query({ magicStateFactory: "round_based" })).map((r) => r.id)).toEqual([id]);
+    expect(await store.query({ magicStateFactory: "litinski19" })).toEqual([]);
   });
 });

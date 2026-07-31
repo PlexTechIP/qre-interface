@@ -221,10 +221,12 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       value: QEC_LABELS[config.qecCode] ?? humanizeIdentifier(config.qecCode),
     },
     {
-      label: "Factory",
-      value:
-        MAGIC_STATE_FACTORY_LABELS[config.magicStateFactory] ??
-        humanizeIdentifier(config.magicStateFactory),
+      // A set as of v1.2.0 — every selected factory is named, so the summary
+      // never implies a single choice the run did not make.
+      label: config.magicStateFactories.length > 1 ? "Factories" : "Factory",
+      value: config.magicStateFactories
+        .map((factory) => MAGIC_STATE_FACTORY_LABELS[factory] ?? humanizeIdentifier(factory))
+        .join(" + "),
     },
     {
       // Reads a stored config of any contract version: v1.1.0 records carry the
