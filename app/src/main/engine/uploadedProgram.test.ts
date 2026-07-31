@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { QreEngine } from "./qreEngine.js";
 import type { RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -10,7 +11,7 @@ const PYTHON_BIN = resolvePythonBin();
 
 function uploadConfig(filePath: string): RunConfig {
   return {
-    schemaVersion: "1.2.0",
+    schemaVersion: SCHEMA_VERSION,
     id: "b1a2c3d4-0000-4000-8000-000000000001",
     name: "upload test",
     createdAt: "2026-07-09T18:22:00Z",
@@ -29,11 +30,7 @@ function uploadConfig(filePath: string): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactories: ["round_based"],
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
   };

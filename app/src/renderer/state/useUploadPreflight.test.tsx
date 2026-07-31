@@ -21,6 +21,7 @@ import { buildSuccessResult, fakeEstimator } from "../../shared/testing";
 afterEach(() => {
   cleanup();
   delete (window as { uploads?: unknown }).uploads;
+  delete (window as { files?: unknown }).files;
 });
 
 function stubPreflight(result: { ok: true } | { ok: false; code: "INVALID_CONFIG"; message: string }) {
@@ -37,8 +38,21 @@ async function fillRequiredTimes(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole("textbox", { name: /^measurement time/i }), "100");
 }
 
-/** Pick a file in the Upload Program File tab. */
+/**
+ * Pick a file in the Upload Program File tab.
+ *
+ * Stubs the webUtils bridge unless a test set its own: the renderer resolves the
+ * real filesystem path through it and REFUSES to fall back to `file.name`, so
+ * without a bridge nothing gets selected at all. The packaged app always has it
+ * — the preload exposes it unconditionally — so stubbing it here is the
+ * faithful default, not a convenience.
+ */
 async function chooseFile(user: ReturnType<typeof userEvent.setup>, name: string) {
+  if (!(window as { files?: unknown }).files) {
+    (window as { files?: unknown }).files = {
+      getPathForFile: (file: File) => `/Users/me/programs/${file.name}`,
+    };
+  }
   await user.click(screen.getByRole("radio", { name: /upload program file/i }));
   const input = document.querySelector<HTMLInputElement>("#upload-file");
   if (!input) throw new Error("upload input not found");
@@ -153,21 +167,28 @@ describe("upload pre-flight in the form", () => {
     expect(preflight).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the basename when Electron reports no filesystem path", async () => {
+  it("refuses a File with no filesystem path, and says why", async () => {
     // webUtils.getPathForFile returns an EMPTY STRING (not null) for a File with
-    // no path on disk. `??` would let that through, clearing the selection and
-    // making the drop look like a no-op.
+    // no path on disk. This used to fall back to `file.name` so the selection
+    // still rendered — but a basename is not a path: the config then held a
+    // filePath the engine cannot open, and "Save Program" would persist it to
+    // the library. Refusing keeps the bad path out of the record entirely.
+    //
+    // It is not a silent no-op either: the reason appears in the form, which is
+    // the concern the old fallback existed to address.
     (window as { files?: unknown }).files = { getPathForFile: () => "" };
     stubPreflight({ ok: true });
     const user = userEvent.setup();
     render(<RunConfiguration />);
     await chooseFile(user, "no-disk-path.qasm");
 
-    // The pill renders, so a file is still selected.
+    // Surfaces at the field and again in the validation summary, as the other
+    // form messages do.
+    const shown = await screen.findAllByText(/could not be resolved/i);
+    expect(shown.length).toBeGreaterThan(0);
     expect(
-      await screen.findByRole("button", { name: /remove no-disk-path\.qasm/i }),
-    ).toBeInTheDocument();
-    delete (window as { files?: unknown }).files;
+      screen.queryByRole("button", { name: /remove no-disk-path\.qasm/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("prefers the absolute path Electron resolves", async () => {
@@ -187,9 +208,11 @@ describe("upload pre-flight in the form", () => {
     delete (window as { files?: unknown }).files;
   });
 
-  it("does not gate the form when the bridge is absent", async () => {
+  it("does not gate the form when the pre-flight bridge is absent", async () => {
     // No window.uploads: isolated component tests must not be blocked, and must
-    // not report a false failure either.
+    // not report a false failure either. (chooseFile still stubs window.files —
+    // that is a different bridge, and without a real path there is nothing to
+    // pre-flight in the first place.)
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 5 });
     const user = userEvent.setup();
     render(<RunConfiguration />);

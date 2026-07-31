@@ -4,6 +4,8 @@ import {
   isGsj24Allowed,
   isLitinski19Allowed,
 } from "../../shared/types.js";
+import { buildBenchmarkEntryExpr } from "../../shared/benchmarkParams.js";
+import { parseTraceTransform } from "../../shared/traceTransform.js";
 import type { QreInvocation } from "./invocation.js";
 import { resolveBenchmark } from "./benchmarkRegistry.js";
  
@@ -25,7 +27,20 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
         `Unknown benchmark id "${config.application.benchmarkId}". Choose one of the starter benchmarks or upload a program.`,
       );
     }
-    program = { sourcePath: entry.sourcePath, format: entry.format, entryExpr: entry.entryExpr };
+    // The recorded hyperparameters become the entry operation's arguments, so
+    // they size the circuit the estimator actually traces. Anything outside its
+    // spec is refused here rather than emitted into Q# source.
+    const built = buildBenchmarkEntryExpr(entry.id, config.parameters);
+    if (!built.ok) {
+      return invalid(
+        `${built.message} Correct the benchmark hyperparameter and retry.`,
+      );
+    }
+    program = {
+      sourcePath: entry.sourcePath,
+      format: entry.format,
+      entryExpr: built.entryExpr,
+    };
   } else if (config.application.type === "manualCounts") {
     const c = config.application;
     const counts: Record<string, number> = {
@@ -167,18 +182,19 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     return invalid("magic_up_to_clifford secondary factory is not compatible with Majorana architectures.");
   }
  
-  // --- trace transform ---
-  const traceTransform = config.traceTransform;
-  if (traceTransform.type === "psspc") {
-    if (!(traceTransform.tStatesPerRotation >= 5 && traceTransform.tStatesPerRotation <= 20)) {
-      return invalid(
-        `PSSPC tStatesPerRotation must be in [5, 20], got ${traceTransform.tStatesPerRotation}.`,
-      );
-    }
-  } else {
-    if (traceTransform.slowDownFactor !== 1.0) {
-      return invalid(`latticeSurgery slowDownFactor must be 1.0, got ${traceTransform.slowDownFactor}.`);
-    }
+  // --- trace transform (one pipeline; both stages always run) ---
+  // Parsed strictly, NOT normalized: normalization repairs a malformed record
+  // so the UI can still render it, and repairing on the way into the engine
+  // would run a configuration the saved record does not describe.
+  const parsedTransform = parseTraceTransform(config.traceTransform);
+  if (!parsedTransform.ok) {
+    return invalid(parsedTransform.message);
+  }
+  const traceTransform = parsedTransform.transform;
+  if (!(traceTransform.tStatesPerRotation >= 5 && traceTransform.tStatesPerRotation <= 20)) {
+    return invalid(
+      `PSSPC tStatesPerRotation must be in [5, 20], got ${traceTransform.tStatesPerRotation}.`,
+    );
   }
  
   // --- maxError: range-checked only; unsatisfiability is NOT validated here ---
@@ -219,10 +235,7 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       qecCode: config.qecCode,
       magicStateFactories,
       secondaryFactories: config.secondaryFactories ?? [],
-      traceTransform:
-        traceTransform.type === "psspc"
-          ? { type: "psspc", tStatesPerRotation: traceTransform.tStatesPerRotation, ccxMagicStates: traceTransform.ccxMagicStates }
-          : { type: "latticeSurgery", slowDownFactor: 1.0 },
+      traceTransform,
       maxError: config.maxError,
       timeoutMs,
     },

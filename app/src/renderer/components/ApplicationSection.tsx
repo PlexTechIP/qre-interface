@@ -9,6 +9,7 @@ import type {
   ManualCountsForm,
   SavedProgram,
 } from "../state/formState";
+import { resolveUploadPath } from "../state/uploadPath";
 import type { FieldErrors } from "../state/validation";
 import { HyperparametersPanel } from "./HyperparametersPanel";
 import { NumberField } from "./NumberField";
@@ -74,6 +75,8 @@ export function ApplicationSection({
   const [query, setQuery] = useState("");
   const [savedQuery, setSavedQuery] = useState("");
   const [dragging, setDragging] = useState(false);
+  /** Why the last pick/drop could not be turned into a real path, if it couldn't. */
+  const [pathError, setPathError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -88,6 +91,17 @@ export function ApplicationSection({
 
   const patch = (next: Partial<ApplicationForm>): void => onChange({ ...value, ...next });
 
+  /**
+   * Change application type. Clears any upload path error on the way out: this
+   * component stays mounted across type changes, so the error would otherwise
+   * still be on screen when the user came back to the Upload tab having picked
+   * nothing this visit.
+   */
+  const setType = (next: ApplicationFormType): void => {
+    if (next !== value.type) setPathError(null);
+    patch({ type: next });
+  };
+
   const setHyperparam = (key: string, next: HyperparamValue): void => {
     patch({
       hyperparams: {
@@ -100,34 +114,36 @@ export function ApplicationSection({
     });
   };
 
-  const onPickFile = (filePath: string): void => {
-    const format = inferFormat(filePath);
-    patch({ upload: { ...value.upload, filePath, format } });
-  };
-
   /**
-   * The ABSOLUTE path, not `file.name`. A browser File only exposes its
-   * basename, which the engine cannot open and the form pre-flight would always
-   * report as missing; Electron's webUtils bridge gives the real path.
-   *
-   * Electron returns an EMPTY STRING — not null — for a File with no filesystem
-   * path (a synthesized or drag-from-web File), so the fallback is a truthiness
-   * check, not `??`. An empty path would clear the selection outright and make
-   * the drop look like a no-op.
+   * Take a picked or dropped File and store the path the engine can open. The
+   * browser filename is never used as a path: it is a basename, and storing one
+   * yields a config that validates and then fails at Run with "File not found".
    */
-  const pathOf = (file: File): string => {
-    const resolved = window.files?.getPathForFile(file);
-    return resolved !== undefined && resolved.length > 0 ? resolved : file.name;
+  const onPickFile = (file: File): void => {
+    const resolved = resolveUploadPath(file);
+    if (!resolved.ok) {
+      setPathError(resolved.message);
+      return;
+    }
+    setPathError(null);
+    patch({
+      upload: {
+        ...value.upload,
+        filePath: resolved.filePath,
+        format: inferFormat(resolved.filePath),
+      },
+    });
   };
 
   const onDrop = (event: React.DragEvent<HTMLLabelElement>): void => {
     event.preventDefault();
     setDragging(false);
     const file = event.dataTransfer.files?.[0];
-    if (file) onPickFile(pathOf(file));
+    if (file) onPickFile(file);
   };
 
   const clearUpload = (): void => {
+    setPathError(null);
     patch({ upload: { ...value.upload, filePath: "" } });
   };
 
@@ -195,7 +211,7 @@ export function ApplicationSection({
               role="radio"
               aria-checked={value.type === option.value}
               className={`seg__btn${value.type === option.value ? " seg__btn--active" : ""}`}
-              onClick={() => patch({ type: option.value })}
+              onClick={() => setType(option.value)}
             >
               {option.label}
             </button>
@@ -264,7 +280,7 @@ export function ApplicationSection({
               <button
                 type="button"
                 className="saved-empty__link"
-                onClick={() => patch({ type: "uploaded" })}
+                onClick={() => setType("uploaded")}
               >
                 Upload a program →
               </button>
@@ -346,7 +362,13 @@ export function ApplicationSection({
               accept=".qs,.qasm,.ll,.bc"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) onPickFile(pathOf(file));
+                // Clear the input before handling: a file input fires `change`
+                // only when the selection changes, so keeping the last file in
+                // it makes re-picking that same file a silent no-op — which is
+                // precisely what the user does after a failed resolution, or
+                // after clearing the pill and choosing the same file again.
+                event.target.value = "";
+                if (file) onPickFile(file);
               }}
             />
             <UploadIcon />
@@ -356,6 +378,8 @@ export function ApplicationSection({
           {value.upload.filePath ? (
             <div className="file-pill">
               <FileIcon className="file-pill__icon" />
+              {/* Name for reading, full path on hover — an absolute path is too
+                  long for the pill but is what actually gets estimated. */}
               <span className="file-pill__name" title={value.upload.filePath}>
                 {basename(value.upload.filePath)}
               </span>
@@ -369,7 +393,7 @@ export function ApplicationSection({
               <button
                 type="button"
                 className="file-pill__remove"
-                aria-label={`Remove ${value.upload.filePath}`}
+                aria-label={`Remove ${basename(value.upload.filePath)}`}
                 onClick={clearUpload}
               >
                 ×
@@ -381,12 +405,18 @@ export function ApplicationSection({
             Supported: .qs (Q#), .qasm (OpenQASM), .ll / .bc (QIR)
           </p>
 
-          {isCheckingFile ? (
+          {/* Precedence matters: a path that could not be resolved has nothing
+              to pre-flight, so its error outranks both the progress line and the
+              pre-flight's own verdict. */}
+          {pathError ? (
+            <p className="field__error" role="alert">
+              {pathError}
+            </p>
+          ) : isCheckingFile ? (
             <p className="field__help" role="status">
               Checking file…
             </p>
-          ) : null}
-          {errors.uploadFilePath ? (
+          ) : errors.uploadFilePath ? (
             <p className="field__error" role="alert">
               {errors.uploadFilePath}
             </p>

@@ -1,4 +1,3 @@
-
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://qre-dashboard.plextech.dev/contracts/runconfig.schema.json",
@@ -21,7 +20,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.2.0",
+      "const": "1.3.0",
       "description": "Contract version."
     },
     "id": {
@@ -211,8 +210,8 @@
               "type": "number",
               "enum": [
                 0.0001,
-                0.00001,
-                0.000001
+                1e-05,
+                1e-06
               ],
               "description": "Default UI value: 1e-5; select-only."
             },
@@ -368,50 +367,30 @@
       }
     },
     "traceTransform": {
-      "description": "Trace transform settings, discriminated by type. PSSPC is the default transform.",
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "type",
-            "tStatesPerRotation",
-            "ccxMagicStates"
-          ],
-          "properties": {
-            "type": {
-              "const": "psspc"
-            },
-            "tStatesPerRotation": {
-              "type": "integer",
-              "minimum": 5,
-              "maximum": 20,
-              "description": "Default UI value: 20."
-            },
-            "ccxMagicStates": {
-              "type": "boolean",
-              "description": "Default UI value: false."
-            }
-          }
+      "description": "Trace transform pipeline settings. PSSPC and Lattice Surgery are sequential stages that BOTH run on every estimate, not alternatives; this object carries each stage's parameters.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tStatesPerRotation",
+        "ccxMagicStates",
+        "slowDownFactor"
+      ],
+      "properties": {
+        "tStatesPerRotation": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 20,
+          "description": "PSSPC: T states per arbitrary rotation. Default UI value: 20."
         },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "type",
-            "slowDownFactor"
-          ],
-          "properties": {
-            "type": {
-              "const": "latticeSurgery"
-            },
-            "slowDownFactor": {
-              "const": 1,
-              "description": "Fixed optimistic slowdown factor; no other values are selectable."
-            }
-          }
+        "ccxMagicStates": {
+          "type": "boolean",
+          "description": "PSSPC: synthesize CCX from magic states. Default UI value: false. Bound to the GSJ24 CCX secondary factory."
+        },
+        "slowDownFactor": {
+          "const": 1,
+          "description": "Lattice Surgery: fixed optimistic slowdown factor; no other value is selectable."
         }
-      ]
+      }
     },
     "maxError": {
       "type": "number",

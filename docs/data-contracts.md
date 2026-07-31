@@ -1,7 +1,7 @@
 # Data Contracts — RunConfig & RunResult
 
-> **STATUS: v1.0.0 FROZEN.** This document describes the canonical estimation
-> boundary for week 2. The committed artifacts under `contracts/` — JSON
+> **STATUS: v1.2.0.** This document describes the canonical estimation
+> boundary. The committed artifacts under `contracts/` — JSON
 > Schemas, `types.ts`, `benchmarks.json`, and fixtures — are the source of
 > truth. Changes go through the contract-change process in
 > `engineering-workflow.md`.
@@ -54,13 +54,12 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
   "qecCode": "surface_code",
   "magicStateFactories": ["round_based"],
 
+  // A PIPELINE, not a choice. qdk applies PSSPC and then Lattice Surgery on
+  // every estimate; each field below belongs to one of the two stages.
   "traceTransform": {
-    "type": "psspc",
-    "tStatesPerRotation": 20,
-    "ccxMagicStates": false
-    // latticeSurgery variant:
-    // "type": "latticeSurgery",
-    // "slowDownFactor": 1.0
+    "tStatesPerRotation": 20,   // PSSPC
+    "ccxMagicStates": false,    // PSSPC
+    "slowDownFactor": 1.0       // Lattice Surgery, fixed
   },
 
   "maxError": 1.0,
@@ -84,9 +83,9 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 | majorana `operationTime` | Default `1000`; **> 0**, serialized in ns |
 | `qecCode` | Coupled to architecture: gateBased → `surface_code`; majorana → `three_aux` |
 | `magicStateFactories` | **A non-empty, unique SET** (v1.2.0; was the single-valued `magicStateFactory`). Default `["round_based"]`; `litinski19` / `gsj24` only on gateBased with `errorRate <= 1e-3` or qualifying Neutral Atom; Majorana is always exactly `["round_based"]`. The engine unions the set into one ISA query, so the frontier is explored across every selected factory and each row names its own in `additional.magicStateFactory` |
-| PSSPC `tStatesPerRotation` | Default `20`; **5 <= x <= 20** |
-| PSSPC `ccxMagicStates` | Boolean, default `false` |
-| latticeSurgery `slowDownFactor` | Fixed `1.0` |
+| `traceTransform.tStatesPerRotation` | PSSPC stage. Default `20`; **5 <= x <= 20**. A sparse `5` is in range but has no feasible frontier point on qdk 1.30.0 — that is a failed run, not a validation error |
+| `traceTransform.ccxMagicStates` | PSSPC stage. Boolean, default `false`; bound to the GSJ24 CCX secondary factory |
+| `traceTransform.slowDownFactor` | Lattice Surgery stage. Fixed `1.0` |
 | `maxError` | Default `1.0`; **0 < x <= 1**. In-range values can still be unsatisfiable; that is a failed run, not a validation error |
 | `name` | Optional in the UI; when blank, auto-generate and serialize the generated value |
 
@@ -161,6 +160,25 @@ A typical run reports **~10-15 fields** per row out of **37 possible**.
 Everything beyond the six defaults is optional per row and lives in
 `frontier[].additional`; filtering chooses what is in view, and `raw` always
 has the complete engine output.
+
+## Versioning note — v1.2.0 and the trace transform
+
+`traceTransform` was a `psspc` | `latticeSurgery` discriminated union through
+v1.1.0, which said the analyst picks one transform. They do not. PSSPC and
+Lattice Surgery are sequential stages of one pipeline and qdk runs both on every
+estimate — `PSSPC.q()` alone yields an empty frontier, and composing them in the
+other order raises `unsupported instruction LATTICE_SURGERY in trace
+transformation 'PSSPC'`. No UI control ever set the discriminant, and the
+`latticeSurgery` branch silently discarded the T-states and CCX values the form
+had collected.
+
+v1.2.0 replaces the union with one object carrying both stages' parameters.
+
+**Nothing migrates on disk.** Records are validated on save and never on read,
+and they are immutable (Rerun mints a new record). Stored v1.1.0 records
+therefore keep loading; History, Comparison, Rerun and the engine all read them
+through `normalizeTraceTransform`, which maps a legacy `latticeSurgery` record
+onto the PSSPC defaults it actually ran.
 
 ## Contract Rules
 

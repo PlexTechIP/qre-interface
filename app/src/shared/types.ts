@@ -1,5 +1,5 @@
 /**
- * Contract types — RunConfig & RunResult (v1.2.0).
+ * Contract types — RunConfig & RunResult (v1.3.0).
  *
  * CANONICAL, PM-owned, frozen with the schemas in this folder. Import these
  * types (copy this file into your workspace verbatim until the shared app
@@ -8,6 +8,18 @@
  * report it in the channel.
  *
  * Changes only via the contract-change process (docs/engineering-workflow.md).
+ *
+ * v1.3.0 (BREAKING, one field): `traceTransform` becomes a single object
+ * carrying both pipeline stages' parameters — { tStatesPerRotation,
+ * ccxMagicStates, slowDownFactor } — instead of a `psspc` | `latticeSurgery`
+ * discriminated union. The union claimed the analyst picks one transform; qdk
+ * always runs both, no UI control ever set the discriminant, and the
+ * latticeSurgery branch silently discarded the PSSPC values the form collected.
+ *
+ * This landed alongside v1.2.0's factory change rather than inside it: two
+ * different breaking shapes must never both answer to "1.2.0", or a record's
+ * version stops identifying its shape. Records saved under any earlier version
+ * are read back through `upgradeRunConfig`, which now absorbs BOTH differences.
  *
  * v1.2.0 (BREAKING — reshapes one existing field): `magicStateFactory:
  * MagicStateFactoryId` becomes `magicStateFactories: MagicStateFactoryId[]`,
@@ -33,11 +45,11 @@
  * Every contract version this build can READ. New records are always stamped
  * with SCHEMA_VERSION; older values appear only on records loaded from the store.
  */
-export const SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0"] as const;
+export const SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0"] as const;
 export type SchemaVersion = (typeof SCHEMA_VERSIONS)[number];
 
 /** Contract version stamped into every RunConfig and RunResult written today. */
-export const SCHEMA_VERSION: SchemaVersion = "1.2.0";
+export const SCHEMA_VERSION: SchemaVersion = "1.3.0";
  
 // ---------------------------------------------------------------------------
 // RunConfig — what a configured run looks like going in (Team 1 → engine)
@@ -217,6 +229,18 @@ export type SecondaryFactoryId = (typeof SECONDARY_FACTORY_IDS)[number];
 /**
  * Memory optimization (v1.1.0) — optional; "none" is the default. The two yoked
  * codes trade compute for a smaller memory footprint.
+ *
+ * RECORDED ONLY, AND THE UI SAYS SO. This field does not reach the engine, and
+ * wiring it up would not change any estimate: `OneDimensionalYokedSurfaceCode`
+ * and `TwoDimensionalYokedSurfaceCode` are ISATransforms that PROVIDE a MEMORY
+ * instruction, and nothing in this pipeline demands one. MEMORY demand comes
+ * only from READ_FROM_MEMORY / WRITE_TO_MEMORY trace gates, emitted either by
+ * the `DynamicMemoryCompute` trace transform (deliberately excluded — see
+ * features-and-fields.md § Teams TO-DO) or by LogicalCounts keys this contract
+ * does not carry (numComputeQubits, readFromMemoryCount, writeToMemoryCount).
+ * Measured on qdk 1.30.0: layering either yoked code onto the ISA query returns
+ * byte-identical estimates. The form's control is disabled and explains this;
+ * `memoryOptimization.test.ts` holds the claim to account.
  */
 export const MEMORY_OPTIMIZATION_IDS = [
   "none",
@@ -299,33 +323,31 @@ export function allowedMagicStateFactories(
   );
 }
 
-export const TRACE_TRANSFORM_TYPES = ["psspc", "latticeSurgery"] as const;
-export type TraceTransformType = (typeof TRACE_TRANSFORM_TYPES)[number];
- 
-export interface PsspcTraceTransform {
-  type: "psspc";
-  /** Default UI value: 20. Valid range: 5 <= value <= 20. */
-  tStatesPerRotation: number;
-  /** Default UI value: false. */
-  ccxMagicStates: boolean;
-}
- 
-export interface LatticeSurgeryTraceTransform {
-  type: "latticeSurgery";
-  /** Fixed at 1.0 (optimistic); no other values are contract-valid. */
-  slowDownFactor: 1.0;
-}
- 
-export type TraceTransform = PsspcTraceTransform | LatticeSurgeryTraceTransform;
+/**
+ * The trace transform (v1.3.0). PSSPC and Lattice Surgery are stages of one
+ * pipeline that always both run, not alternatives — see traceTransform.ts for
+ * the shape, the defaults, and the pre-v1.3.0 read path. The v1.0.0–v1.2.0
+ * `psspc` | `latticeSurgery` union is gone from the type surface; it survives
+ * only as an input `parseTraceTransform` still accepts.
+ */
+import { normalizeTraceTransform, type TraceTransform } from "./traceTransform";
+
+export {
+  DEFAULT_TRACE_TRANSFORM,
+  describeTraceTransform,
+  normalizeTraceTransform,
+  parseTraceTransform,
+  type TraceTransform,
+} from "./traceTransform";
  
 /**
  * Benchmark hyperparameter values carried on the config (v1.1.0). A flat map of
  * parameter key -> value for the selected benchmark (e.g. bitSize, generator,
- * searchQubits). RECORDED-ONLY this version: serializing these makes the saved
- * record complete and reproducible (History, Comparison, Rerun, export tell the
- * truth about what was configured), but does NOT change any estimate — the
- * bundled Q# benchmarks hardcode their sizes. Per-benchmark analytic mappings
- * that would make these move the numbers are explicitly out of scope for v1.1.0.
+ * searchQubits). These ARE inputs to the estimate: the engine turns them into
+ * the arguments of the benchmark's Q# entry operation, so they size the circuit
+ * that gets traced. Values are validated against the shared spec
+ * (shared/benchmarkParams.ts) before they reach the compiler; an omitted key
+ * means "use that parameter's default", which is what the engine then runs.
  * Absent/empty when the application is not a benchmark.
  */
 export type HyperparameterValues = Record<string, number | string>;
@@ -367,8 +389,7 @@ export interface RunConfig {
   traceTransform: TraceTransform;
   /**
    * Benchmark hyperparameter values (v1.1.0). Optional; present only for
-   * benchmark applications. Recorded-only — does not influence the estimate this
-   * version (see HyperparameterValues).
+   * benchmark applications. Drives the estimate — see HyperparameterValues.
    */
   parameters?: HyperparameterValues;
   /** Cap on total logical error probability. Valid range: 0 < maxError <= 1. */
@@ -607,27 +628,49 @@ export function makeRunRecord(config: RunConfig, result: RunResult, savedAt: str
 }
  
 /**
- * Reading a record saved before v1.2.0.
+ * Reading a record saved before v1.3.0.
  *
- * The only shape difference this build has to absorb is the factory field, so
- * that is all this touches: a singular `magicStateFactory` becomes a
- * one-element `magicStateFactories`. `schemaVersion` is deliberately LEFT AS
- * SAVED — a run configured under 1.1.0 must keep saying 1.1.0 in History and in
- * exports; claiming 1.2.0 would be a lie about what the user actually chose.
+ * Two shape differences have to be absorbed, and this is the one place that
+ * knows about either:
  *
- * Pure and idempotent: a record already in v1.2.0 shape passes through as-is.
- * Applied at the store's read boundary, so nothing downstream needs to know two
- * shapes exist. Nothing rewrites stored JSON in place.
+ *  - v1.2.0 turned a singular `magicStateFactory` into the `magicStateFactories`
+ *    set. A pre-1.2.0 record is lifted to a one-element set.
+ *  - v1.3.0 turned the `psspc` | `latticeSurgery` `traceTransform` union into
+ *    one pipeline object. A pre-1.3.0 record is read through
+ *    `normalizeTraceTransform`, which resolves either legacy variant to the
+ *    parameters that variant actually ran.
+ *
+ * `schemaVersion` is deliberately LEFT AS SAVED — a run configured under 1.1.0
+ * must keep saying 1.1.0 in History and in exports; claiming a later version
+ * would be a lie about what the user actually chose.
+ *
+ * Pure and idempotent: a record already in v1.3.0 shape passes through as-is.
+ * Applied at the store's read boundary, so nothing downstream needs to know
+ * several shapes exist. Nothing rewrites stored JSON in place.
  */
 export function upgradeRunConfig(config: RunConfig): RunConfig {
-  if (Array.isArray(config.magicStateFactories)) return config;
+  const needsFactorySet = !Array.isArray(config.magicStateFactories);
+  // The union carried a discriminant; the pipeline object has none.
+  const needsPipeline =
+    typeof config.traceTransform === "object" &&
+    config.traceTransform !== null &&
+    "type" in config.traceTransform;
 
-  const legacy = (config as { magicStateFactory?: MagicStateFactoryId })
-    .magicStateFactory;
-  const { magicStateFactory: _dropped, ...rest } = config as RunConfig & {
+  if (!needsFactorySet && !needsPipeline) return config;
+
+  const { magicStateFactory: legacyFactory, ...rest } = config as RunConfig & {
     magicStateFactory?: MagicStateFactoryId;
   };
-  return { ...rest, magicStateFactories: [legacy ?? "round_based"] };
+
+  return {
+    ...rest,
+    magicStateFactories: needsFactorySet
+      ? [legacyFactory ?? "round_based"]
+      : config.magicStateFactories,
+    traceTransform: needsPipeline
+      ? normalizeTraceTransform(config.traceTransform)
+      : config.traceTransform,
+  };
 }
 
 /** `upgradeRunConfig` applied to a record's config. Pure; idempotent. */

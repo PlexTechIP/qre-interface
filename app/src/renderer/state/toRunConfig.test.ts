@@ -45,7 +45,7 @@ describe("toRunConfig — defaults path", () => {
 
   it("serializes to a schema-valid RunConfig once the two required times are entered", () => {
     const config = expectSchemaValid(validGateBasedDraft());
-    expect(config.schemaVersion).toBe("1.2.0");
+    expect(config.schemaVersion).toBe("1.3.0");
     expect(config.application).toEqual({
       type: "benchmark",
       benchmarkId: "shors-factoring",
@@ -73,7 +73,7 @@ describe("toRunConfig — name generation", () => {
   it("auto-generates a deterministic name when blank", () => {
     const config = serialize(validGateBasedDraft());
     expect(config?.name).toBe(
-      "Shor's Factoring · Superconducting · Surface Code · PSSPC",
+      "Shor's Factoring · Superconducting · Surface Code · PSSPC 20 T/rot",
     );
   });
 
@@ -115,14 +115,14 @@ describe("toRunConfig — each input changed", () => {
     expect(expectSchemaValid(s).maxError).toBe(1.0);
   });
 
-  it("carries the PSSPC knobs", () => {
+  it("carries both pipeline stages' knobs", () => {
     const s = validGateBasedDraft();
-    s.traceTransform.psspc.tStatesPerRotation = 12;
-    s.traceTransform.psspc.ccxMagicStates = true;
+    s.traceTransform.tStatesPerRotation = 12;
+    s.traceTransform.ccxMagicStates = true;
     expect(expectSchemaValid(s).traceTransform).toEqual({
-      type: "psspc",
       tStatesPerRotation: 12,
       ccxMagicStates: true,
+      slowDownFactor: 1.0,
     });
   });
 });
@@ -193,17 +193,16 @@ describe("toRunConfig — Majorana cases", () => {
 
   it("auto-names a Majorana run with its derived architecture + QEC", () => {
     expect(serialize(majoranaDraft())?.name).toBe(
-      "Shor's Factoring · Majorana · Three-Aux · PSSPC",
+      "Shor's Factoring · Majorana · Three-Aux · PSSPC 20 T/rot",
     );
   });
 
-  it("serializes Majorana with the Lattice Surgery transform", () => {
-    const s = majoranaDraft();
-    s.traceTransform.type = "latticeSurgery";
-    const config = expectSchemaValid(s);
+  it("serializes Majorana with the full trace pipeline", () => {
+    const config = expectSchemaValid(majoranaDraft());
     expect(config.architecture.type).toBe("majorana");
     expect(config.traceTransform).toEqual({
-      type: "latticeSurgery",
+      tStatesPerRotation: 20,
+      ccxMagicStates: false,
       slowDownFactor: 1.0,
     });
   });
@@ -224,20 +223,21 @@ describe("toRunConfig — Majorana cases", () => {
   });
 });
 
-describe("toRunConfig — transform variants", () => {
-  it("serializes PSSPC (default)", () => {
-    expect(expectSchemaValid(validGateBasedDraft()).traceTransform.type).toBe(
-      "psspc",
-    );
-  });
-
-  it("serializes Lattice Surgery with the fixed 1.0 slowdown", () => {
-    const s = validGateBasedDraft();
-    s.traceTransform.type = "latticeSurgery";
-    expect(expectSchemaValid(s).traceTransform).toEqual({
-      type: "latticeSurgery",
+describe("toRunConfig - the trace transform is one pipeline", () => {
+  it("always serializes both stages' parameters", () => {
+    // There is no variant to choose. qdk runs PSSPC then Lattice Surgery on
+    // every estimate, so every config carries both stages' settings.
+    expect(expectSchemaValid(validGateBasedDraft()).traceTransform).toEqual({
+      tStatesPerRotation: 20,
+      ccxMagicStates: false,
       slowDownFactor: 1.0,
     });
+  });
+
+  it("keeps the Lattice Surgery slowdown pinned at the contract's 1.0", () => {
+    const s = validGateBasedDraft();
+    s.traceTransform.tStatesPerRotation = 5;
+    expect(expectSchemaValid(s).traceTransform.slowDownFactor).toBe(1.0);
   });
 });
 

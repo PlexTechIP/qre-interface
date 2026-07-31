@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { configToInvocation } from "./configToInvocation.js";
 import type { RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import {
   buildBenchmarkConfig,
   buildFailingConfig,
@@ -10,7 +11,7 @@ import {
 
 function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
-    schemaVersion: "1.2.0",
+    schemaVersion: SCHEMA_VERSION,
     id: "acaf1c0e-a716-41bc-9774-598cacee033f",
     name: "test",
     createdAt: "2026-07-09T18:22:00Z",
@@ -24,11 +25,7 @@ function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactories: ["round_based"],
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
     ...overrides,
@@ -52,7 +49,9 @@ describe("configToInvocation", () => {
     const result = configToInvocation(baseGateBasedConfig(), 30000);
     expect(result.ok).toBe(true);
     if (result.ok && result.invocation.program.format === "qsharp") {
-      expect(result.invocation.program.entryExpr).toBe("QuantumDynamics.Run()");
+      expect(result.invocation.program.entryExpr).toBe(
+        "QuantumDynamics.Run(10, 10, 30.0, 0.9, 1.0, 1.0)",
+      );
       expect(result.invocation.program.format).toBe("qsharp");
       expect(result.invocation.architecture).toEqual({
         type: "gateBased",
@@ -149,11 +148,7 @@ describe("configToInvocation", () => {
         },
         qecCode: "three_aux",
         magicStateFactories: ["round_based"],
-        traceTransform: {
-          type: "psspc",
-          tStatesPerRotation: 5,
-          ccxMagicStates: false,
-        },
+        traceTransform: { tStatesPerRotation: 5, ccxMagicStates: false, slowDownFactor: 1.0 },
       }),
       30000,
     );
@@ -173,11 +168,7 @@ describe("configToInvocation", () => {
   it("rejects PSSPC tStatesPerRotation out of [5,20] with INVALID_CONFIG", () => {
     const result = configToInvocation(
       baseGateBasedConfig({
-        traceTransform: {
-          type: "psspc",
-          tStatesPerRotation: 21,
-          ccxMagicStates: false,
-        },
+        traceTransform: { tStatesPerRotation: 21, ccxMagicStates: false, slowDownFactor: 1.0 },
       }),
       30000,
     );
@@ -246,5 +237,180 @@ describe("configToInvocation — Manual Logical Counts", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+});
+
+/** The entry expression a benchmark config translates to, or "" if it failed. */
+function entryExprFor(config: RunConfig): string {
+  const result = configToInvocation(config, 30_000);
+  if (!result.ok) return "";
+  const { program } = result.invocation;
+  return program.format === "logicalCounts" ? "" : program.entryExpr;
+}
+
+describe("benchmark hyperparameters reach the entry expression", () => {
+  it("passes the recorded values as arguments to the entry operation", () => {
+    expect(
+      entryExprFor(
+        baseGateBasedConfig({
+          application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
+          parameters: {
+            latticeN1: 4,
+            latticeN2: 6,
+            totalTime: 12.0,
+            trotterStep: 0.5,
+            couplingJ: 1.0,
+            fieldG: 1.0,
+          },
+        }),
+      ),
+    ).toBe("QuantumDynamics.Run(4, 6, 12.0, 0.5, 1.0, 1.0)");
+  });
+
+  it("uses the spec defaults when the config records no parameters", () => {
+    expect(
+      entryExprFor(
+        baseGateBasedConfig({
+          application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
+        }),
+      ),
+    ).toBe("QuantumDynamics.Run(10, 10, 30.0, 0.9, 1.0, 1.0)");
+  });
+
+  it("gives two different parameter sets two different entry expressions", () => {
+    const small = entryExprFor(
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "grovers-search" },
+        parameters: { searchQubits: 3 },
+      }),
+    );
+    const large = entryExprFor(
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "grovers-search" },
+        parameters: { searchQubits: 9 },
+      }),
+    );
+    expect(small).toBe("GroversSearch.Run(3)");
+    expect(large).toBe("GroversSearch.Run(9)");
+  });
+
+  it("rejects an out-of-spec hyperparameter with INVALID_CONFIG", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: { type: "benchmark", benchmarkId: "shors-factoring" },
+        parameters: { bitSize: 0 },
+      }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_CONFIG");
+      expect(result.error.message).toContain("Bit Size");
+    }
+  });
+
+  it("refuses to interpolate an unrecognised choice value into Q# source", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: {
+          type: "benchmark",
+          benchmarkId: "ekera-hastad-factoring",
+        },
+        parameters: { rsaInstance: "rsa-100); Message(\"pwned\"); (" },
+      }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("ignores hyperparameters recorded against a non-benchmark application", () => {
+    const result = configToInvocation(
+      baseGateBasedConfig({
+        application: {
+          type: "manualCounts",
+          numQubits: 100,
+          tCount: 20000,
+          rotationCount: 500,
+          rotationDepth: 50,
+          cczCount: 0,
+          ccixCount: 0,
+          measurementCount: 10,
+        },
+        parameters: { bitSize: 31 },
+      }),
+      30_000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.invocation.program.format).toBe("logicalCounts");
+  });
+});
+
+describe("the trace transform is validated as recorded, not as repaired", () => {
+  const transform = (value: unknown): RunConfig =>
+    ({ ...baseGateBasedConfig(), traceTransform: value }) as unknown as RunConfig;
+
+  it("rejects a slowDownFactor other than 1.0 instead of rewriting it to 1.0", () => {
+    // The contract fixes this at 1.0 and qdk genuinely honours it — a 2.0 run
+    // takes twice the runtime. Silently normalizing it means the saved record
+    // says 2.0 and the estimate is for 1.0.
+    const result = configToInvocation(
+      transform({ tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 2.0 }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_CONFIG");
+      expect(result.error.message).toContain("slowDownFactor");
+    }
+  });
+
+  it("rejects a structurally incomplete transform instead of running defaults", () => {
+    const result = configToInvocation(transform({}), 30_000);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("rejects a wrong-typed tStatesPerRotation instead of running defaults", () => {
+    const result = configToInvocation(
+      transform({ tStatesPerRotation: "20", ccxMagicStates: false, slowDownFactor: 1.0 }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("rejects a missing transform outright", () => {
+    const result = configToInvocation(transform(undefined), 30_000);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("still accepts a stored v1.1.0 psspc record and honours its values", () => {
+    // Records are immutable and validated on save only, so v1.1.0 shapes reach
+    // the engine through History and Rerun and must keep working.
+    const result = configToInvocation(
+      transform({ type: "psspc", tStatesPerRotation: 12, ccxMagicStates: true }),
+      30_000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.invocation.traceTransform).toEqual({
+        tStatesPerRotation: 12,
+        ccxMagicStates: true,
+        slowDownFactor: 1.0,
+      });
+    }
+  });
+
+  it("still accepts a stored v1.1.0 latticeSurgery record", () => {
+    const result = configToInvocation(
+      transform({ type: "latticeSurgery", slowDownFactor: 1.0 }),
+      30_000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.invocation.traceTransform.tStatesPerRotation).toBe(20);
+    }
   });
 });

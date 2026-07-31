@@ -9,6 +9,7 @@
  * `id`/`createdAt` are NOT stored here — they're stamped at Run-click.
  */
  
+import { DEFAULT_TRACE_TRANSFORM, normalizeTraceTransform } from "../../shared/traceTransform";
 import {
   BENCHMARK_IDS,
   expectedQecCode,
@@ -22,7 +23,6 @@ import {
   type QecCodeId,
   type RunConfig,
   type SecondaryFactoryId,
-  type TraceTransformType,
   type UploadedProgramFormat,
 } from "../../shared/types";
 import {
@@ -139,15 +139,18 @@ export interface ApplicationForm {
   manualCounts: ManualCountsForm;
 }
  
-export interface PsspcForm {
-  /** Default 20. Valid: 5 <= x <= 20. */
-  tStatesPerRotation: number;
-  ccxMagicStates: boolean;
-}
- 
+/**
+ * The trace-transform draft. There is no variant to pick: PSSPC and Lattice
+ * Surgery are sequential stages that both run on every estimate (see
+ * shared/traceTransform.ts), so the form edits one object of parameters.
+ */
 export interface TraceTransformForm {
-  type: TraceTransformType;
-  psspc: PsspcForm;
+  /** PSSPC. Default 20. Valid: 5 <= x <= 20. */
+  tStatesPerRotation: number;
+  /** PSSPC. Default false; bound to the GSJ24 CCX secondary factory. */
+  ccxMagicStates: boolean;
+  /** Lattice Surgery. Fixed at 1.0. */
+  slowDownFactor: 1.0;
 }
  
 export interface FormState {
@@ -226,10 +229,7 @@ export function createInitialFormState(): FormState {
     magicStateFactories: ["round_based"],
     secondaryFactories: [],
     memoryOptimization: "none",
-    traceTransform: {
-      type: "psspc",
-      psspc: { tStatesPerRotation: 20, ccxMagicStates: false },
-    },
+    traceTransform: { ...DEFAULT_TRACE_TRANSFORM },
     maxError: 1.0,
   };
 }
@@ -322,16 +322,9 @@ export function formStateFromRunConfig(config: RunConfig): FormState {
     magicStateFactories: [...config.magicStateFactories],
     secondaryFactories: config.secondaryFactories ?? [],
     memoryOptimization: config.memoryOptimization ?? "none",
-    traceTransform: {
-      type: config.traceTransform.type,
-      psspc:
-        config.traceTransform.type === "psspc"
-          ? {
-              tStatesPerRotation: config.traceTransform.tStatesPerRotation,
-              ccxMagicStates: config.traceTransform.ccxMagicStates,
-            }
-          : initial.traceTransform.psspc,
-    },
+    // Rerun of a v1.1.0 record goes through the same read path as History and
+    // Comparison, so an old psspc/latticeSurgery record rehydrates correctly.
+    traceTransform: normalizeTraceTransform(config.traceTransform),
     maxError: config.maxError,
   });
 }

@@ -16,10 +16,11 @@ interface HyperparametersPanelProps {
 
 /**
  * The collapsible per-benchmark hyperparameter panel. Fields, bounds, and
- * defaults come from the benchmark's schema (constants/hyperparameters.ts);
- * this component only renders + raises changes. Values live in FormState and
- * are validated there — they are not yet serialized into the contract RunConfig
- * (the frozen BenchmarkApplication has no field for them).
+ * defaults come from the shared benchmark spec (shared/benchmarkParams.ts) by
+ * way of constants/hyperparameters.ts; this component only renders + raises
+ * changes. The values are serialized onto `RunConfig.parameters` and become the
+ * arguments of the benchmark's Q# entry operation, so they size the circuit the
+ * estimator traces.
  */
 export function HyperparametersPanel({
   benchmarkId,
@@ -94,7 +95,7 @@ function HyperparamControl({ field, value, onChange }: HyperparamControlProps): 
     );
   }
 
-  if (field.kind === "select") {
+  if (field.kind === "choice") {
     return (
       <select
         id={id}
@@ -118,8 +119,8 @@ function HyperparamControl({ field, value, onChange }: HyperparamControlProps): 
       type="number"
       inputMode={field.kind === "int" ? "numeric" : "decimal"}
       step={field.kind === "int" ? 1 : "any"}
-      {...(field.min !== undefined ? { min: field.min } : {})}
-      {...(field.max !== undefined ? { max: field.max } : {})}
+      {...(field.min === undefined ? {} : { min: field.min })}
+      {...(field.max === undefined ? {} : { max: field.max })}
       value={value === null || value === undefined ? "" : String(value)}
       onChange={(event) =>
         onChange(event.target.value === "" ? null : Number(event.target.value))

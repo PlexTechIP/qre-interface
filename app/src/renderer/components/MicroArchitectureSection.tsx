@@ -18,7 +18,6 @@ import {
   isGsj24AllowedInForm,
   isLitinski19AllowedInForm,
   type ArchitectureForm,
-  type PsspcForm,
   type TraceTransformForm,
 } from "../state/formState";
 import { Field } from "./Field";
@@ -54,10 +53,14 @@ const QEC_CODE_OPTIONS: readonly { value: string; label: string }[] = [
  
 /**
  * Micro Architecture Settings — the consolidated QEC code, magic-state factory,
- * trace transform, and max-error controls. QEC is derived/locked; the primary
- * factory is a multi-select set carrying the per-architecture availability
- * rules; Secondary Factory and Memory Optimization are serialized multi-select
- * and single-select sets respectively.
+ * secondary factories, memory optimization, trace transform, and max-error
+ * controls.
+ *
+ * QEC is derived from the architecture and locked. The primary factory is a
+ * multi-select set carrying the per-architecture availability rules. Secondary
+ * factories are a multi-select set and reach the engine. Memory Optimization is
+ * serialized but DISABLED and labelled unavailable — see the control below for
+ * why. The trace transform is one two-stage pipeline, not a choice.
  */
 export function MicroArchitectureSection({
   architecture,
@@ -135,16 +138,13 @@ export function MicroArchitectureSection({
  
     if (id === "gsj24_ccx") {
       const turningOn = next.has("gsj24_ccx");
-      if (traceTransform.psspc.ccxMagicStates !== turningOn) {
-        onTraceTransformChange({
-          ...traceTransform,
-          psspc: { ...traceTransform.psspc, ccxMagicStates: turningOn },
-        });
+      if (traceTransform.ccxMagicStates !== turningOn) {
+        onTraceTransformChange({ ...traceTransform, ccxMagicStates: turningOn });
       }
     }
   };
  
-  const setPsspc = (patch: Partial<PsspcForm>): void => {
+  const setTransform = (patch: Partial<TraceTransformForm>): void => {
     // CCX Magic States is bound to the GSJ24 CCX secondary factory: keep them in
     // sync when the flag is toggled directly.
     if (patch.ccxMagicStates !== undefined) {
@@ -157,13 +157,10 @@ export function MicroArchitectureSection({
         onSecondaryFactoriesChange(SECONDARY_FACTORY_IDS.filter((f) => next.has(f)));
       }
     }
-    onTraceTransformChange({
-      ...traceTransform,
-      psspc: { ...traceTransform.psspc, ...patch },
-    });
+    onTraceTransformChange({ ...traceTransform, ...patch });
   };
  
-  const tStates = traceTransform.psspc.tStatesPerRotation;
+  const tStates = traceTransform.tStatesPerRotation;
  
   // Percent of the track filled left of the thumb, used to paint the accent fill.
   const tStatesFill = ((tStates - 5) / (20 - 5)) * 100;
@@ -256,20 +253,21 @@ export function MicroArchitectureSection({
           })}
         </fieldset>
  
-        <Field
-          id="micro-memory-opt"
-          label={
-            <>
-              Memory Optimization{" "}
-              <span className="field-eyebrow__optional">(optional)</span>
-            </>
-          }
-          help="Optional · defaults to None"
-        >
+        {/* Unavailable rather than optional. The yoked codes only PROVIDE a
+            MEMORY instruction; nothing in this build demands one, so selecting
+            them is measurably a no-op (memoryOptimization.test.ts). An enabled
+            control that silently changes nothing is worse than a disabled one
+            that says why. */}
+        <div className="field">
+          <label className="field__label" htmlFor="micro-memory-opt">
+            Memory Optimization{" "}
+            <span className="field-eyebrow__optional">(unavailable)</span>
+          </label>
           <select
             id="micro-memory-opt"
             className="field__input"
             value={memoryOptimization}
+            disabled
             onChange={(event) => {
               const next = event.target.value;
               if ((MEMORY_OPTIMIZATION_IDS as readonly string[]).includes(next)) {
@@ -283,17 +281,35 @@ export function MicroArchitectureSection({
               </option>
             ))}
           </select>
-        </Field>
+          <p
+            className="field__help"
+            id="micro-memory-opt-help"
+            data-testid="memory-opt-help"
+          >
+            Unavailable in this build. The yoked surface codes only take effect
+            for a workload that separates memory from compute, which the current
+            estimation pipeline does not produce — selecting one would not change
+            any estimate.
+          </p>
+        </div>
       </div>
  
       <hr className="micro-divider" />
  
       <div className="field-block">
         <span className="field-eyebrow">Trace Transform</span>
- 
+        {/* Not a choice: qdk runs PSSPC and then Lattice Surgery on every
+            estimate. Saying so stops the two parameter groups reading as
+            alternatives, one of which is "off". */}
+        <p className="field__help">
+          A two-stage pipeline — <strong>PSSPC → Lattice Surgery</strong>. Both
+          stages run on every estimate; each group below sets one stage&apos;s
+          parameters.
+        </p>
+
         <div className="micro-transform">
         <div className="micro-subgroup">
-          <span className="micro-subgroup__label">PSSPC Parameters</span>
+          <span className="micro-subgroup__label">Stage 1 · PSSPC</span>
           <div className="field">
             <label className="field__label" htmlFor="micro-tstates">
               T States / Rotation
@@ -309,7 +325,7 @@ export function MicroArchitectureSection({
                 step={1}
                 value={tStates}
                 onChange={(event) =>
-                  setPsspc({ tStatesPerRotation: Number(event.target.value) })
+                  setTransform({ tStatesPerRotation: Number(event.target.value) })
                 }
               />
               <input
@@ -323,7 +339,7 @@ export function MicroArchitectureSection({
                 onChange={(event) => {
                   const next = Number(event.target.value);
                   if (Number.isFinite(next)) {
-                    setPsspc({
+                    setTransform({
                       tStatesPerRotation: Math.min(20, Math.max(5, next)),
                     });
                   }
@@ -341,22 +357,22 @@ export function MicroArchitectureSection({
             <button
               type="button"
               role="switch"
-              aria-checked={traceTransform.psspc.ccxMagicStates}
-              className={`toggle${traceTransform.psspc.ccxMagicStates ? " toggle--on" : ""}`}
+              aria-checked={traceTransform.ccxMagicStates}
+              className={`toggle${traceTransform.ccxMagicStates ? " toggle--on" : ""}`}
               onClick={() =>
-                setPsspc({ ccxMagicStates: !traceTransform.psspc.ccxMagicStates })
+                setTransform({ ccxMagicStates: !traceTransform.ccxMagicStates })
               }
             >
               <span className="toggle__knob" />
             </button>
             <span className="toggle-field__state">
-              {traceTransform.psspc.ccxMagicStates ? "On" : "Off"}
+              {traceTransform.ccxMagicStates ? "On" : "Off"}
             </span>
           </label>
         </div>
  
         <div className="micro-subgroup">
-          <span className="micro-subgroup__label">Lattice Surgery Parameters</span>
+          <span className="micro-subgroup__label">Stage 2 · Lattice Surgery</span>
           <Field
             id="micro-slowdown"
             label="Slow Down Factor"

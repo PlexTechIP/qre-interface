@@ -5,6 +5,7 @@ import addFormats from "ajv-formats";
 
 import runConfigSchema from "../../shared/contracts/runconfig.schema.json" with { type: "json" };
 import type { RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { configToInvocation } from "./configToInvocation.js";
 import { QreEngine } from "./qreEngine.js";
 import { resolvePythonBin } from "./pythonBin.js";
@@ -28,7 +29,7 @@ const TIMEOUT_MS = 120_000;
 
 function config(id: string, overrides: Partial<RunConfig> = {}): RunConfig {
   return {
-    schemaVersion: "1.2.0",
+    schemaVersion: SCHEMA_VERSION,
     id,
     name: "multi-select factories",
     createdAt: "2026-07-31T00:00:00Z",
@@ -51,7 +52,7 @@ function config(id: string, overrides: Partial<RunConfig> = {}): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactories: ["round_based"],
-    traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 0.01,
     qreVersion: "qdk-qre-1.30.0",
     ...overrides,

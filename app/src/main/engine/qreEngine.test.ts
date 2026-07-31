@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
 
@@ -13,7 +14,7 @@ const QRE_AVAILABLE =
     .status === 0;
 
 const config: RunConfig = {
-  schemaVersion: "1.2.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "acaf1c0e-a716-41bc-9774-598cacee033f",
   name: "test",
   createdAt: "2026-07-09T18:22:00Z",
@@ -27,11 +28,7 @@ const config: RunConfig = {
   },
   qecCode: "surface_code",
   magicStateFactories: ["round_based"],
-  traceTransform: {
-    type: "psspc",
-    tStatesPerRotation: 20,
-    ccxMagicStates: false,
-  },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
 };
@@ -46,7 +43,7 @@ const config: RunConfig = {
  * been caught here.
  */
 const manualNeutralAtom: RunConfig = {
-  schemaVersion: "1.2.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
   name: "manual counts on neutral atom",
   createdAt: "2026-07-30T00:00:00Z",
@@ -77,11 +74,7 @@ const manualNeutralAtom: RunConfig = {
   },
   qecCode: "low_move_surface_code",
   magicStateFactories: ["round_based"],
-  traceTransform: {
-    type: "psspc",
-    tStatesPerRotation: 20,
-    ccxMagicStates: false,
-  },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 0.01,
   qreVersion: "qdk-qre-v1-fixture",
 };
@@ -110,14 +103,26 @@ const majorana: RunConfig = {
   name: "majorana operation time",
   architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
   qecCode: "three_aux",
+  // Explicitly sized rather than left at the spec defaults: Majorana/Three-Aux
+  // has no feasible frontier point for the default 10x10 / 34-step lattice even
+  // at maxError = 1, and this test needs an estimate to compare against itself.
+  parameters: {
+    latticeN1: 3,
+    latticeN2: 3,
+    totalTime: 9.0,
+    trotterStep: 0.9,
+    couplingJ: 1.0,
+    fieldG: 1.0,
+  },
 };
 
 /**
- * Runtime at operationTime 1000 (QDK's default and the UI's). Pinned because it
- * is the value crossConfig.test.ts:88 already anchors — mapping `time` must not
- * move it, which is what makes the mapping a zero-migration change.
+ * Runtime at operationTime 1000 (QDK's default and the UI's) for the 3x3 lattice
+ * pinned above. `operationTime` is the field that reached every layer of the
+ * stack except the engine until it was mapped in build_architecture, so this
+ * anchor is what proves the mapping is still there.
  */
-const MAJORANA_RUNTIME_AT_1000 = 10_602_000;
+const MAJORANA_RUNTIME_AT_1000 = 24_681_000;
 
 describe("QreEngine", () => {
   it.runIf(QRE_AVAILABLE)(
@@ -201,11 +206,7 @@ describe("QreEngine", () => {
         magicStateFactories: ["gsj24"],
         secondaryFactories: ["magic_up_to_clifford", "gsj24_ccx"],
         // gsj24_ccx is yoked to this flag — turning either on turns the other on.
-        traceTransform: {
-          type: "psspc",
-          tStatesPerRotation: 20,
-          ccxMagicStates: true,
-        },
+        traceTransform: { tStatesPerRotation: 20, ccxMagicStates: true, slowDownFactor: 1.0 },
       });
 
       expect(gsj24.status).toBe("succeeded");
@@ -236,8 +237,6 @@ describe("QreEngine", () => {
       const slow = atDefault.frontier![0]!;
       const fast = atQuarter.frontier![0]!;
 
-      // Mapping `time` must be output-identical at the default, or every
-      // existing fixture, capture and saved run silently changes meaning.
       expect(slow.runtime.value).toBe(MAJORANA_RUNTIME_AT_1000);
 
       // Quartering the operation time quarters the runtime exactly, and moves

@@ -22,7 +22,9 @@ function invocation(overrides: Partial<QreInvocation> = {}): QreInvocation {
     program: {
       sourcePath: BENCHMARK_PROJECT,
       format: "qsharp",
-      entryExpr: "QuantumDynamics.Run()",
+      // Small lattice: this suite exercises the subprocess boundary, not the
+      // benchmark, so it wants the cheapest circuit that still estimates.
+      entryExpr: "QuantumDynamics.Run(2, 2, 6.0, 0.9, 1.0, 1.0)",
     },
     architecture: {
       type: "gateBased",
@@ -33,11 +35,7 @@ function invocation(overrides: Partial<QreInvocation> = {}): QreInvocation {
     },
     qecCode: "surface_code",
     magicStateFactories: ["round_based"],
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     timeoutMs: 30_000,
     ...overrides,

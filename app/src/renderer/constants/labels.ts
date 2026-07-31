@@ -10,7 +10,6 @@ import type {
   MemoryOptimizationId,
   QecCodeId,
   SecondaryFactoryId,
-  TraceTransformType,
 } from "../../shared/types";
  
 export const ARCHITECTURE_LABELS: Record<ArchitectureType, string> = {
@@ -23,11 +22,6 @@ export const QEC_LABELS: Record<QecCodeId, string> = {
   surface_code: "Surface Code",
   three_aux: "Three-Aux",
   low_move_surface_code: "Low-Move Surface Code",
-};
- 
-export const TRANSFORM_LABELS: Record<TraceTransformType, string> = {
-  psspc: "PSSPC",
-  latticeSurgery: "Lattice Surgery",
 };
  
 export const MAGIC_STATE_FACTORY_LABELS: Record<MagicStateFactoryId, string> = {

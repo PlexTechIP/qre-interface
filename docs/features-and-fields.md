@@ -36,28 +36,56 @@ One of: **Benchmarks**, **Saved Programs**, **Manual Logical Counts**.
 
 ### Benchmarks
 
+> **What the bundled benchmarks are.** The five starter benchmarks are
+> **demonstration circuits**, not reference implementations of the algorithms
+> they are named after. Their hyperparameters genuinely size the circuit the
+> estimator traces — changing Bit Size or Lattice N₁ changes the estimate — but
+> their absolute numbers are not calibrated against published Shor / Grover /
+> Ekerå-Håstad resource counts. Use them to compare *configurations*, not to
+> quote a cost for factoring RSA-2048.
+>
+> Each benchmark's hyperparameters become the arguments of its Q# entry
+> operation. The spec below is the single source of truth for both the form and
+> the engine: it lives in `app/src/shared/benchmarkParams.ts`, and the argument
+> order there matches the `Run(...)` signature in
+> `app/src/main/engine/benchmarks/qsharp-project/src/`.
+>
+> Large parameters produce large circuits and can legitimately exceed the run
+> timeout, or return no feasible Pareto point. Both are honest engine answers,
+> not failures of the tool.
+>
+> **Every parameter is bounded above.** The source doc leaves most of these
+> open-ended (`[>= 1]`), but several feed 64-bit integer arithmetic in the Q#
+> that overflows for large inputs — and an overflow does not fail, it silently
+> reports a much smaller circuit. Grover at 200 search qubits traced *one*
+> iteration; a Total Time of 1e19 traced *one* Trotter step. The upper bounds
+> below are set where that arithmetic stops being valid, so an out-of-range
+> value is refused with `INVALID_CONFIG` instead of answered wrongly. Values far
+> below the bounds already exceed the run timeout; that is the honest answer and
+> is left alone.
+
 #### Shor's Factoring
 
 | Hyperparameter | Type | Default |
 |---|---|---|
-| Bit Size | int `[>= 2]` | 31 |
-| Generator | int `[>= 2]` | 11 |
+| Bit Size | int `[2 - 8192]` | 31 |
+| Generator | int `[2 - 65535]` | 11 |
 
 #### Ekerå-Håstad Factoring
 
 | Hyperparameter | Type | Default |
 |---|---|---|
 | RSA Instance | Pick 1: `RSA-100 (330-bit)`, `RSA-1024 (1024-bit)`, `RSA-2048 (2048-bit)` | RSA-100 (330-bit) |
-| Generator | int `[>= 2]` | 7 |
+| Generator | int `[2 - 65535]` | 7 |
 
 #### Quantum Dynamics
 
 | Hyperparameter | Type | Default |
 |---|---|---|
-| Lattice N₁ | int `[>= 1]` | 10 |
-| Lattice N₂ | int `[>= 1]` | 10 |
-| Total Time | float `[> 0]` | 30.0 |
-| Trotter Step | float `[0 < Trotter Step <= Total Time]` | 0.9 |
+| Lattice N₁ | int `[1 - 1000]` | 10 |
+| Lattice N₂ | int `[1 - 1000]` | 10 |
+| Total Time | float `[> 0, <= 1e6]` | 30.0 |
+| Trotter Step | float `[1e-6 <= Trotter Step <= Total Time]` | 0.9 |
 | Coupling J | float `[any]` | 1.0 |
 | Field g | float `[any]` | 1.0 |
 
@@ -65,15 +93,15 @@ One of: **Benchmarks**, **Saved Programs**, **Manual Logical Counts**.
 
 | Hyperparameter | Type | Default |
 |---|---|---|
-| Search Qubits | int `[>= 1]` | 5 |
+| Search Qubits | int `[1 - 63]` | 5 |
 | Iterations | int `[>= 1]` | Computed from Search Qubits upon estimation |
 
 #### Phase Estimation
 
 | Hyperparameter | Type | Default |
 |---|---|---|
-| Precision | int `[>= 1]` | 6 |
-| Register Size | int `[>= 1]` | 3 |
+| Precision | int `[1 - 63]` | 6 |
+| Register Size | int `[1 - 1000]` | 3 |
 
 ### Saved Programs
 
@@ -160,25 +188,45 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 | Magic Up-to-Clifford | NOT compatible with Majorana architecture |
 | GSJ24 CCX Factory | Bound to CCX Magic States |
 
-### Memory Optimization (optional, default = None)
+### Memory Optimization (default = None) — **unavailable in this build**
 
 - 1D Yoked Surface Code
 - 2D Yoked Surface Code
 
+The control is present but disabled, and the field is still recorded on
+`RunConfig`. Selecting a yoked code cannot change an estimate here: the yoked
+codes *provide* a `MEMORY` instruction, and nothing in the current pipeline
+*demands* one. `MEMORY` demand comes only from `READ_FROM_MEMORY` /
+`WRITE_TO_MEMORY` trace gates, which are emitted by the `DynamicMemoryCompute`
+trace transform (slated for removal — see [Notes § Teams TO-DO](#teams-to-do))
+or by `LogicalCounts` keys the contract does not carry. Measured on qdk 1.30.0:
+layering either yoked code onto the ISA query returns identical estimates.
+
+Re-enabling it needs a memory/compute-split workload first, not a wiring change.
+
 ### Trace Transform
 
-#### PSSPC
+**A two-stage pipeline, not a choice.** qdk applies PSSPC and then Lattice
+Surgery on every estimate; the two groups below configure one stage each.
+Neither can be turned off, and there is no control to pick between them.
+
+#### Stage 1 — PSSPC
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| T States / Rotation | int `[5 - 20]` | 20 | |
+| T States / Rotation | int `[5 - 20]` | 20 | A sparse `5` is in range but currently yields no feasible frontier point |
 | CCX Magic States | bool | False | Bound to GSJ24 CCX Factory |
 
-### Lattice Surgery
+#### Stage 2 — Lattice Surgery
 
 | Field | Type | Default |
 |---|---|---|
 | Slow Down Factor | float, fixed at `1.0` | 1.0 |
+
+### Max Error
+
+| Field | Type | Default |
+|---|---|---|
 | Max Error | float `[0.01 - 1.0]` | 1.0 |
 
 ---
@@ -201,8 +249,14 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 
 ### Design notes
 
-- Hyperparameters are serialized and validated, but are **not** part of
-  `RunConfig`.
+- Upper bounds on the hyperparameters are tighter than the source doc, which
+  leaves them open-ended. See the note under § Benchmarks: the bounds mark where
+  the Q#'s 64-bit arithmetic stops being valid, and without them an overflow
+  silently reports a far smaller circuit.
+- Hyperparameters are serialized onto `RunConfig.parameters` and **do** drive
+  the estimate: the engine turns them into the arguments of the benchmark's Q#
+  entry operation. *(The source doc predates this; it said they were validated
+  but not part of `RunConfig`.)*
 - Need to update backend configuration.
 - Need a file upload checker.
 - Wanted to avoid putting proprietary code in the repo → can use Manual
