@@ -16,6 +16,7 @@ import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
 import type { SelectedRowByRunId } from "../results/selectedRows";
+import { compareSelectionWarning } from "./comparisonModel";
 import {
   createRerunRequest,
   type RerunRequest,
@@ -90,6 +91,11 @@ export function RunHistoryContainer({
 
   // Multi-select for Comparison: the set of record ids checked in History.
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  // Counts below-threshold Compare presses. A COUNT rather than a flag for two
+  // reasons: it keeps the warning silent until the user actually asks, and it
+  // re-keys the live region so a repeat press is announced again instead of
+  // re-rendering an identical, silent node.
+  const [compareAttempts, setCompareAttempts] = useState(0);
   // Destructive selection is deliberately separate from comparison selection:
   // checking runs to compare must never make them eligible for deletion.
   const [isDeleteSelectionMode, setIsDeleteSelectionMode] = useState(false);
@@ -309,6 +315,28 @@ export function RunHistoryContainer({
 
   const clearComparison = useCallback(() => setComparisonIds([]), []);
 
+  // "Compare Selected" must not strand the user on an empty Comparison page. Below
+  // the threshold we stay on History and SAY what is missing — the button stays
+  // enabled, because a disabled button with no explanation is the same bug in a
+  // different costume.
+  const pendingCompareWarning = compareSelectionWarning(comparisonIds.length);
+  const compareWarning = compareAttempts > 0 ? pendingCompareWarning : null;
+
+  // Reaching the threshold retires the warning for good: without this reset the
+  // flag would survive, and later dropping back below two would resurrect a
+  // warning the user never asked for a second time.
+  useEffect(() => {
+    if (pendingCompareWarning === null) setCompareAttempts(0);
+  }, [pendingCompareWarning]);
+
+  const requestComparison = useCallback(() => {
+    if (pendingCompareWarning !== null) {
+      setCompareAttempts((attempts) => attempts + 1);
+      return;
+    }
+    setView("comparison");
+  }, [pendingCompareWarning, setView]);
+
   // The records currently chosen for comparison, in selection order, filtered
   // to those still present (a deleted record drops out of the set).
   const comparisonRecords = useMemo(
@@ -360,7 +388,8 @@ export function RunHistoryContainer({
               <button
                 type="button"
                 className="surface-action"
-                onClick={() => setView("comparison")}
+                onClick={requestComparison}
+                aria-describedby={compareWarning ? "compare-threshold-warning" : undefined}
               >
                 Compare Selected{comparisonIds.length > 0 ? ` (${comparisonIds.length})` : ""}
               </button>
@@ -446,6 +475,18 @@ export function RunHistoryContainer({
       ) : (
         <>
           <RunHistoryFilters allRecords={allRecords} filter={filter} onFilterChange={setFilter} />
+          {compareWarning ? (
+            // Keyed by attempt so a repeat press mounts a NEW live-region node —
+            // an identical one is not re-announced by a screen reader.
+            <p
+              key={compareAttempts}
+              role="alert"
+              id="compare-threshold-warning"
+              className="compare-warning"
+            >
+              {compareWarning}
+            </p>
+          ) : null}
           {deleteError ? (
             <p role="alert" className="load-error">
               {deleteError}

@@ -5,7 +5,13 @@ import { FieldFilter } from "../results/FieldFilter";
 import type { SelectedRowByRunId } from "../results/selectedRows";
 import { ComparisonCharts } from "./ComparisonCharts";
 import { ComparisonTable } from "./ComparisonTable";
-import { additionalFieldDefinitions, toComparisonColumn } from "./comparisonModel";
+import { DEFAULT_FIELD_DEFINITIONS } from "../results/resultFields";
+import { FrontierCurves } from "./FrontierCurves";
+import {
+  additionalFieldDefinitions,
+  compareSelectionWarning,
+  toComparisonColumn,
+} from "./comparisonModel";
 
 /**
  * The Comparison surface — a PURE function of a selected set of `RunRecord`s plus
@@ -52,6 +58,12 @@ export function ComparisonView({
   );
   const additionalFields = useMemo(() => additionalFieldDefinitions(columns), [columns]);
   const visibleAdditionalCount = additionalFields.filter((field) => !hiddenKeys.has(field.key)).length;
+  const failedCount = columns.filter((col) => col.failed).length;
+  const visibleFieldCount = DEFAULT_FIELD_DEFINITIONS.length + visibleAdditionalCount;
+  // The sidebar and tab nav reach this surface directly, and are deliberately NOT
+  // blocked — navigation should not dead-end. So the below-threshold explanation
+  // has to live here too, not only behind the Compare Selected button.
+  const thresholdNotice = compareSelectionWarning(records.length);
 
   const toggleField = (key: string) =>
     setHiddenKeys((previous) => {
@@ -116,20 +128,54 @@ export function ComparisonView({
         </div>
       ) : (
         <>
-          <div className="comparison-chips" aria-label="Selected runs">
-            {columns.map((col) => (
-              <span key={col.id} className="comparison-chip">
-                {col.name}
-                <button
-                  type="button"
-                  className="chip-remove"
-                  onClick={() => onRemove(col.id)}
-                  aria-label={`Remove ${col.name} from comparison`}
-                >
-                  ×
-                </button>
+          {/* Hierarchy: what is being compared → the numbers → the charts. */}
+          <div className="comparison-summary">
+            <p
+              className="comparison-summary__line"
+              role="status"
+              aria-label="Comparison summary"
+            >
+              <strong>
+                Comparing {columns.length} run{columns.length === 1 ? "" : "s"}
+              </strong>
+              {failedCount > 0 ? (
+                <span className="comparison-summary__failed">
+                  {" · "}
+                  {failedCount} failed
+                </span>
+              ) : null}
+              <span className="muted">
+                {" · "}
+                {visibleFieldCount} field{visibleFieldCount === 1 ? "" : "s"} shown
               </span>
-            ))}
+            </p>
+            {thresholdNotice ? (
+              <p
+                className="compare-warning"
+                role="status"
+                aria-label="Below the comparison threshold"
+              >
+                {thresholdNotice}
+              </p>
+            ) : null}
+            <div className="comparison-chips" aria-label="Selected runs">
+              {columns.map((col) => (
+                <span
+                  key={col.id}
+                  className={`comparison-chip${col.failed ? " comparison-chip--failed" : ""}`}
+                >
+                  {col.name}
+                  <button
+                    type="button"
+                    className="chip-remove"
+                    onClick={() => onRemove(col.id)}
+                    aria-label={`Remove ${col.name} from comparison`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
 
           <section className="panel">
@@ -169,8 +215,25 @@ export function ComparisonView({
           <section className="panel">
             <div className="panel-header">
               <div>
+                <h3>Pareto frontiers</h3>
+                <p>
+                  Each run's whole frontier as its own curve — where two curves cross is
+                  where the better architecture changes. The table above is the text
+                  equivalent.
+                </p>
+              </div>
+            </div>
+            <FrontierCurves columns={columns} />
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
                 <h3>Per-metric bars</h3>
-                <p>One bar per run; the table above is the text equivalent.</p>
+                <p>
+                  One bar per run at its representative row; the table above is the text
+                  equivalent.
+                </p>
               </div>
             </div>
             <ComparisonCharts columns={columns} />
