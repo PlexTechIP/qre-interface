@@ -7,10 +7,15 @@ import { FrontierScatter } from "./FrontierScatter";
 import { FrontierTable } from "./FrontierTable";
 import { RawExplorer } from "./RawExplorer";
 import { getAdditionalFieldDefinitions } from "./resultFields";
+import { resolveSelectedFrontierRow } from "./selectedRows";
 import { SelectedRowDetail } from "./SelectedRowDetail";
 
 interface ResultsAreaViewProps extends ResultsAreaProps {
   onConfigure?: () => void;
+  /** App-owned representative row for this run; omit for standalone local selection. */
+  selectedIndex?: number;
+  /** Persists a row choice in app-level session state when supplied. */
+  onSelectedIndexChange?: (index: number) => void;
 }
 
 export function ResultsArea({
@@ -18,16 +23,26 @@ export function ResultsArea({
   phase,
   config = null,
   onConfigure,
+  selectedIndex: controlledSelectedIndex,
+  onSelectedIndexChange,
 }: ResultsAreaViewProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [localSelectedIndex, setLocalSelectedIndex] = useState(0);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   // Field-filter selections deliberately persist across result switches this session (SOW Part 1.7)
   // — never reset this alongside selectedIndex.
   const [hiddenAdditionalKeys, setHiddenAdditionalKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setSelectedIndex(0);
+    setLocalSelectedIndex(0);
   }, [result?.runId]);
+
+  const selectedIndex = controlledSelectedIndex ?? localSelectedIndex;
+  const selectRow = (index: number) => {
+    if (controlledSelectedIndex === undefined) {
+      setLocalSelectedIndex(index);
+    }
+    onSelectedIndexChange?.(index);
+  };
 
   // Check the running phase first: while running, `result` is null by design,
   // so the empty-state guard below must not swallow it (otherwise the results
@@ -92,8 +107,9 @@ export function ResultsArea({
 
   const frontierRows = result.frontier ?? [];
   const frontierCount = frontierRows.length;
-  const safeSelectedIndex = frontierCount > 0 ? Math.min(selectedIndex, frontierCount - 1) : 0;
-  const selectedRow = frontierRows[safeSelectedIndex] ?? null;
+  const selected = resolveSelectedFrontierRow(result, selectedIndex);
+  const safeSelectedIndex = selected.index;
+  const selectedRow = selected.row;
   const selectedRowNumber = safeSelectedIndex + 1;
   const selectedRowAnnouncement = `Selected row ${selectedRowNumber} of ${frontierCount}`;
 
@@ -181,7 +197,7 @@ export function ResultsArea({
               <h2>Frontier Configurations</h2>
               <p>
                 Select a row to inspect its full resource profile. History and
-                comparison summarize the first Pareto point.
+                comparison use your selected Pareto point for this run.
               </p>
             </div>
             {additionalFieldDefinitions.length > 0 ? (
@@ -212,7 +228,7 @@ export function ResultsArea({
           <FrontierTable
             rows={frontierRows}
             selectedIndex={safeSelectedIndex}
-            onSelect={setSelectedIndex}
+            onSelect={selectRow}
             additionalFields={visibleAdditionalFields}
           />
           <p className="sr-only" aria-live="polite">
@@ -223,7 +239,7 @@ export function ResultsArea({
         <section className="panel">
           <h2>Qubits vs. Runtime</h2>
           <p className="chart-help">Click or focus a point to select its matching table row.</p>
-          <FrontierScatter rows={frontierRows} selectedIndex={safeSelectedIndex} onSelect={setSelectedIndex} />
+          <FrontierScatter rows={frontierRows} selectedIndex={safeSelectedIndex} onSelect={selectRow} />
         </section>
       </div>
 

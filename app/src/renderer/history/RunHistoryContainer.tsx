@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { InMemoryRunStore } from "../../shared/runStore";
 import {
-  reconstructConfig,
-  type RunConfig,
   type RunFilter,
   type RunRecord,
   type RunStore,
@@ -12,10 +10,16 @@ import { RunHistoryList } from "./RunHistoryList";
 import { RunHistoryFilters } from "./RunHistoryFilters";
 import { RunDetailPanel } from "./RunDetailPanel";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { BulkDeleteConfirmDialog } from "./BulkDeleteConfirmDialog";
 import { ExportStubDialog } from "./ExportStubDialog";
 import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
+import type { SelectedRowByRunId } from "../results/selectedRows";
+import {
+  createRerunRequest,
+  type RerunRequest,
+} from "./rerun";
 
 /**
  * Container for the Run History + Comparison surfaces.
@@ -27,16 +31,6 @@ import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
  * the app shell so the sidebar and the in-surface tab strip stay in sync and the
  * comparison selection survives switching between the two.
  */
-
-/** A Rerun handoff payload: the reconstructed pre-fill config for a new run. */
-export interface RerunRequest {
-  sourceRecord: RunRecord;
-  config: RunConfig;
-}
-
-function makeStamp(): { id: string; createdAt: string } {
-  return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
-}
 
 interface RunHistoryContainerProps {
   /** The run store to read from. Defaults to an empty in-memory store; the app
@@ -57,6 +51,9 @@ interface RunHistoryContainerProps {
   onRerunRequest?: (request: RerunRequest) => void;
   /** The app ships the complete Markdown export; isolated tests keep the stub. */
   exportMode?: "preview" | "complete";
+  /** App-level session selection for each immutable run record. */
+  selectedRowByRunId?: SelectedRowByRunId;
+  onSelectedRowChange?: (runId: string, selectedIndex: number) => void;
 }
 
 export function RunHistoryContainer({
@@ -67,6 +64,8 @@ export function RunHistoryContainer({
   onViewRun,
   onRerunRequest,
   exportMode = "preview",
+  selectedRowByRunId: controlledSelectedRows,
+  onSelectedRowChange,
 }: RunHistoryContainerProps = {}) {
   // The store is created once and never recreated across renders. Kept behind
   // the RunStore type so nothing here depends on it being in-memory.
@@ -91,6 +90,27 @@ export function RunHistoryContainer({
 
   // Multi-select for Comparison: the set of record ids checked in History.
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  // Destructive selection is deliberately separate from comparison selection:
+  // checking runs to compare must never make them eligible for deletion.
+  const [isDeleteSelectionMode, setIsDeleteSelectionMode] = useState(false);
+  const [deletionIds, setDeletionIds] = useState<string[]>([]);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [internalSelectedRows, setInternalSelectedRows] = useState<SelectedRowByRunId>({});
+  const selectedRowByRunId = controlledSelectedRows ?? internalSelectedRows;
+  const selectRow = useCallback(
+    (runId: string, selectedIndex: number) => {
+      if (controlledSelectedRows === undefined) {
+        setInternalSelectedRows((previous) =>
+          previous[runId] === selectedIndex
+            ? previous
+            : { ...previous, [runId]: selectedIndex },
+        );
+      }
+      onSelectedRowChange?.(runId, selectedIndex);
+    },
+    [controlledSelectedRows, onSelectedRowChange],
+  );
 
   // Fallback Rerun preview state, used only when no app-shell handoff is supplied.
   const [rerunRequest, setRerunRequest] = useState<RerunRequest | null>(null);
@@ -169,23 +189,102 @@ export function RunHistoryContainer({
   // explicit confirm: the list/detail request it, the dialog's onConfirm runs it.
   const requestDelete = useCallback((id: string) => setPendingDeleteId(id), []);
   const cancelDelete = useCallback(() => setPendingDeleteId(null), []);
+  const deleteRunIds = useCallback(
+    async (ids: string[]): Promise<string[]> => {
+      setDeleteError(null);
+      const outcomes = await Promise.allSettled(
+        ids.map(async (id) => {
+          await store.delete(id);
+          return id;
+        }),
+      );
+      const deletedIds = outcomes.flatMap((outcome) =>
+        outcome.status === "fulfilled" ? [outcome.value] : [],
+      );
+      const failedCount = outcomes.length - deletedIds.length;
+      const deletedSet = new Set(deletedIds);
+
+      setComparisonIds((current) =>
+        current.filter((id) => !deletedSet.has(id)),
+      );
+      setSelectedId((current) =>
+        current !== null && deletedSet.has(current) ? null : current,
+      );
+      await refresh();
+
+      if (failedCount > 0) {
+        setDeleteError(
+          `Could not delete ${failedCount} run${failedCount === 1 ? "" : "s"}. Please try again.`,
+        );
+      }
+      return deletedIds;
+    },
+    [refresh, store],
+  );
+
   const confirmDelete = useCallback(async () => {
     if (pendingDeleteId === null) return;
     const id = pendingDeleteId;
     setPendingDeleteId(null);
-    await store.delete(id);
-    setComparisonIds((ids) => ids.filter((existing) => existing !== id));
-    // Close the detail view if we were viewing the run we just removed.
-    setSelectedId((current) => (current === id ? null : current));
-    await refresh();
-  }, [pendingDeleteId, store, refresh]);
+    await deleteRunIds([id]);
+  }, [deleteRunIds, pendingDeleteId]);
+
+  const startDeleteSelection = useCallback(() => {
+    setDeleteError(null);
+    setDeletionIds([]);
+    setIsDeleteSelectionMode(true);
+  }, []);
+
+  const cancelDeleteSelection = useCallback(() => {
+    setDeletionIds([]);
+    setIsDeleteSelectionMode(false);
+  }, []);
+
+  const toggleDeletion = useCallback((id: string) => {
+    setDeletionIds((current) =>
+      current.includes(id)
+        ? current.filter((existing) => existing !== id)
+        : [...current, id],
+    );
+  }, []);
+
+  const toggleAllVisibleForDeletion = useCallback(() => {
+    const ids = records.map((record) => record.id);
+    setDeletionIds((current) => {
+      const currentSet = new Set(current);
+      const areAllVisibleSelected =
+        ids.length > 0 && ids.every((id) => currentSet.has(id));
+      if (areAllVisibleSelected) {
+        const visibleSet = new Set(ids);
+        return current.filter((id) => !visibleSet.has(id));
+      }
+      return [...new Set([...current, ...ids])];
+    });
+  }, [records]);
+
+  const requestBulkDelete = useCallback(() => {
+    if (deletionIds.length > 0) setIsBulkDeleteConfirmOpen(true);
+  }, [deletionIds.length]);
+
+  const cancelBulkDelete = useCallback(
+    () => setIsBulkDeleteConfirmOpen(false),
+    [],
+  );
+
+  const confirmBulkDelete = useCallback(async () => {
+    const requestedIds = deletionIds;
+    if (requestedIds.length === 0) return;
+    setIsBulkDeleteConfirmOpen(false);
+    const deletedIds = await deleteRunIds(requestedIds);
+    const deletedSet = new Set(deletedIds);
+    const remainingIds = requestedIds.filter((id) => !deletedSet.has(id));
+    setDeletionIds(remainingIds);
+    setIsDeleteSelectionMode(remainingIds.length > 0);
+  }, [deleteRunIds, deletionIds]);
 
   const onRerun = useCallback(
     (record: RunRecord) => {
-      // reconstructConfig is PROVIDED — call it, never re-implement. It carries
-      // the saved config forward with a fresh id + createdAt for the new run.
-      const config = reconstructConfig(record, makeStamp());
-      const request = { sourceRecord: record, config };
+      const request = createRerunRequest(record);
       // App-shell handoff pre-fills the live form; otherwise show the preview.
       if (onRerunRequest) {
         onRerunRequest(request);
@@ -325,6 +424,7 @@ export function RunHistoryContainer({
       ) : view === "comparison" ? (
         <ComparisonView
           records={comparisonRecords}
+          selectedRowByRunId={selectedRowByRunId}
           onClear={clearComparison}
           onRemove={toggleComparison}
           onExport={() => setIsComparisonExportOpen(true)}
@@ -338,20 +438,37 @@ export function RunHistoryContainer({
           onRerun={onRerun}
           onExport={onExport}
           onDelete={requestDelete}
+          selectedIndex={selectedRowByRunId[selectedRecord.id] ?? 0}
+          onSelectedIndexChange={(selectedIndex) =>
+            selectRow(selectedRecord.id, selectedIndex)
+          }
         />
       ) : (
         <>
           <RunHistoryFilters allRecords={allRecords} filter={filter} onFilterChange={setFilter} />
+          {deleteError ? (
+            <p role="alert" className="load-error">
+              {deleteError}
+            </p>
+          ) : null}
           <RunHistoryList
             records={records}
             selectedId={selectedId}
             comparisonIds={comparisonIds}
+            deletionIds={deletionIds}
+            isDeleteSelectionMode={isDeleteSelectionMode}
+            selectedRowByRunId={selectedRowByRunId}
             hasActiveFilter={hasActiveFilter}
             onViewDetails={onViewDetails}
             onRerun={onRerun}
             onDelete={requestDelete}
             onExport={onExport}
             onToggleComparison={toggleComparison}
+            onStartDeleteSelection={startDeleteSelection}
+            onCancelDeleteSelection={cancelDeleteSelection}
+            onToggleDeletion={toggleDeletion}
+            onToggleAllVisibleForDeletion={toggleAllVisibleForDeletion}
+            onRequestBulkDelete={requestBulkDelete}
             {...(onNavigateToConfig ? { onNavigateToConfig } : {})}
           />
         </>
@@ -362,6 +479,13 @@ export function RunHistoryContainer({
           record={pendingDeleteRecord}
           onConfirm={confirmDelete}
           onCancel={cancelDelete}
+        />
+      ) : null}
+      {isBulkDeleteConfirmOpen ? (
+        <BulkDeleteConfirmDialog
+          count={deletionIds.length}
+          onConfirm={confirmBulkDelete}
+          onCancel={cancelBulkDelete}
         />
       ) : null}
       {exportRecord ? (
@@ -377,6 +501,7 @@ export function RunHistoryContainer({
       {isComparisonExportOpen ? (
         <ComparisonExportStubDialog
           records={comparisonRecords}
+          selectedRowByRunId={selectedRowByRunId}
           mode={exportMode}
           onClose={() => setIsComparisonExportOpen(false)}
         />

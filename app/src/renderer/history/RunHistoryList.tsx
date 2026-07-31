@@ -1,6 +1,10 @@
 import type { RunRecord } from "../../shared/types";
 import { formatMetric } from "../results/formatMetric";
 import {
+  resolveSelectedFrontierRow,
+  type SelectedRowByRunId,
+} from "../results/selectedRows";
+import {
   ARCHITECTURE_LABELS,
   FACTORY_LABELS,
   QEC_LABELS,
@@ -13,9 +17,9 @@ import {
  * It knows the RunRecord shape and nothing about how records are stored: no
  * store import, no fetching, no engine. Every displayed value is DERIVED from
  * `config`/`result` (the record never duplicates them), and every result metric
- * comes from the run's representative frontier row (row 0 — RunRecord does not
- * persist a selected row; noted for review). All human-facing values route
- * through Team 2's `formatMetric`.
+ * comes from the run's session-selected representative frontier row (defaulting
+ * to row 1; RunRecord remains immutable). All human-facing values route through
+ * Team 2's `formatMetric`.
  *
  * This component only RENDERS and RAISES events. The container owns the store,
  * the confirm step for Delete, and the Rerun/Export handling.
@@ -25,6 +29,9 @@ export interface RunHistoryListProps {
   records: RunRecord[];
   selectedId: string | null;
   comparisonIds: string[];
+  deletionIds: string[];
+  isDeleteSelectionMode: boolean;
+  selectedRowByRunId: SelectedRowByRunId;
   /** True when any search/filter is active — distinguishes "no matches" from "no runs yet". */
   hasActiveFilter: boolean;
   onViewDetails: (id: string) => void;
@@ -32,6 +39,11 @@ export interface RunHistoryListProps {
   onDelete: (id: string) => void;
   onExport: (record: RunRecord) => void;
   onToggleComparison: (id: string) => void;
+  onStartDeleteSelection: () => void;
+  onCancelDeleteSelection: () => void;
+  onToggleDeletion: (id: string) => void;
+  onToggleAllVisibleForDeletion: () => void;
+  onRequestBulkDelete: () => void;
   /** Navigate to Run Configuration from the empty state. Optional. */
   onNavigateToConfig?: () => void;
 }
@@ -52,15 +64,26 @@ export function RunHistoryList({
   records,
   selectedId,
   comparisonIds,
+  deletionIds,
+  isDeleteSelectionMode,
+  selectedRowByRunId,
   hasActiveFilter,
   onViewDetails,
   onRerun,
   onDelete,
   onExport,
   onToggleComparison,
+  onStartDeleteSelection,
+  onCancelDeleteSelection,
+  onToggleDeletion,
+  onToggleAllVisibleForDeletion,
+  onRequestBulkDelete,
   onNavigateToConfig,
 }: RunHistoryListProps) {
   const comparisonSet = new Set(comparisonIds);
+  const deletionSet = new Set(deletionIds);
+  const areAllVisibleSelected =
+    records.length > 0 && records.every((record) => deletionSet.has(record.id));
  
   return (
     <section className="panel history-panel" aria-labelledby="history-list-title">
@@ -69,10 +92,53 @@ export function RunHistoryList({
           <h2 id="history-list-title">Completed Runs</h2>
           <p>Select a run to open details; check two or more to compare.</p>
         </div>
-        <span className="muted">
-          {records.length} run{records.length === 1 ? "" : "s"}
-        </span>
+        <div className="history-panel__summary">
+          <span className="muted">
+            {records.length} run{records.length === 1 ? "" : "s"}
+          </span>
+          {!isDeleteSelectionMode && records.length > 0 ? (
+            <button
+              type="button"
+              className="danger"
+              onClick={onStartDeleteSelection}
+            >
+              Select to delete
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {isDeleteSelectionMode ? (
+        <div
+          className="bulk-delete-toolbar"
+          role="region"
+          aria-label="Bulk delete controls"
+        >
+          <div>
+            <strong>Delete selection</strong>
+            <span>Choose runs to remove. Comparison selections stay separate.</span>
+          </div>
+          <div className="bulk-delete-toolbar__actions">
+            <button type="button" onClick={onToggleAllVisibleForDeletion}>
+              {areAllVisibleSelected ? "Deselect visible" : "Select all visible"}
+            </button>
+            <span className="bulk-delete-toolbar__count" aria-live="polite">
+              {deletionIds.length} selected
+            </span>
+            <button type="button" onClick={onCancelDeleteSelection}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={deletionIds.length === 0}
+              onClick={onRequestBulkDelete}
+            >
+              Delete selected
+            </button>
+          </div>
+        </div>
+      ) : null}
  
       {records.length === 0 ? (
         <EmptyState
@@ -85,8 +151,15 @@ export function RunHistoryList({
             <thead>
               <tr>
                 <th scope="col" className="col-compare">
-                  <span className="sr-only">Select for comparison</span>
+                  <span className={isDeleteSelectionMode ? undefined : "sr-only"}>
+                    Compare
+                  </span>
                 </th>
+                {isDeleteSelectionMode ? (
+                  <th scope="col" className="col-delete-select">
+                    Delete
+                  </th>
+                ) : null}
                 <th scope="col">Run Name</th>
                 <th scope="col">Configuration</th>
                 <th scope="col">Date / Time</th>
@@ -103,17 +176,27 @@ export function RunHistoryList({
             <tbody>
               {records.map((record) => {
                 const { config, result } = record;
-                // Representative frontier row for this run. null on a failed run
-                // (frontier is null) — metric cells fall back to formatMetric's "—".
-                const row = result.frontier?.[0] ?? null;
+                // Representative frontier row for this run. Session selections
+                // never mutate the saved record; missing/stale indices fall back
+                // to row 1, and failed runs remain rowless.
+                const { row } = resolveSelectedFrontierRow(
+                  result,
+                  selectedRowByRunId[record.id] ?? 0,
+                );
                 const isSelected = record.id === selectedId;
                 const isChecked = comparisonSet.has(record.id);
+                const isMarkedForDeletion = deletionSet.has(record.id);
                 const isFailed = result.status === "failed";
  
                 return (
                   <tr
                     key={record.id}
-                    className={isSelected ? "selected" : undefined}
+                    className={[
+                      isSelected ? "selected" : "",
+                      isMarkedForDeletion ? "marked-for-deletion" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined}
                     // Row click is a pointer convenience; keyboard users reach the
                     // same action via Enter/Space on the focused row and the per-row
                     // "View" button. `aria-current` marks the open row and is valid on
@@ -142,6 +225,19 @@ export function RunHistoryList({
                         aria-label={`Compare ${config.name}`}
                       />
                     </td>
+                    {isDeleteSelectionMode ? (
+                      <td
+                        className="col-delete-select"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isMarkedForDeletion}
+                          onChange={() => onToggleDeletion(record.id)}
+                          aria-label={`Select ${config.name} for deletion`}
+                        />
+                      </td>
+                    ) : null}
                     <td>
                       <span className="run-name">{config.name}</span>
                       {isFailed ? <span className="status-pill failed">Failed</span> : null}
@@ -178,13 +274,15 @@ export function RunHistoryList({
                         <button type="button" onClick={() => onExport(record)}>
                           Export
                         </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => onDelete(record.id)}
-                        >
-                          Delete
-                        </button>
+                        {isDeleteSelectionMode ? null : (
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => onDelete(record.id)}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
