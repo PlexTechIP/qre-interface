@@ -41,6 +41,8 @@ export interface ComparisonColumn {
   frontierCount: number;
   /** The representative frontier row; null on a failed or empty-frontier run. */
   row: FrontierRow | null;
+  /** The run's FULL frontier — the curve chart plots all of it, not just `row`. */
+  frontier: readonly FrontierRow[];
 }
 
 export function toComparisonColumn(
@@ -61,6 +63,7 @@ export function toComparisonColumn(
     selectedIndex: selected.index,
     frontierCount: selected.count,
     row: selected.row,
+    frontier: result.frontier ?? [],
   };
 }
 
@@ -156,6 +159,191 @@ export function buildCharts(columns: readonly ComparisonColumn[]): ChartSpec[] {
     });
     return { key: chart.key, label: chart.label, unit, bars };
   });
+}
+
+/* ---- Pareto curves (one series per compared run) -------------------------- */
+
+/**
+ * A run is not one point, it is a frontier. The bar charts above compare single
+ * scalars; these series carry EVERY frontier point of every selected run so an
+ * analyst can see where two architectures cross over rather than only which is
+ * bigger at one row.
+ *
+ * Axes deliberately match the single-run `FrontierScatter`: runtime on x,
+ * physical qubits on y.
+ */
+export interface FrontierSeriesPoint {
+  /** Index into the run's ORIGINAL frontier, so a plotted point stays addressable. */
+  index: number;
+  runtime: number;
+  physicalQubits: number;
+  runtimeDisplay: string;
+  qubitsDisplay: string;
+  /** True for the row currently representing this run in the table. */
+  selected: boolean;
+}
+
+/** A Recharts symbol name — shape carries series identity when colour cannot. */
+export type SeriesSymbol = "circle" | "square" | "triangle" | "diamond" | "star" | "cross";
+
+export interface FrontierSeries {
+  id: string;
+  name: string;
+  shortName: string;
+  color: string;
+  symbol: SeriesSymbol;
+  points: FrontierSeriesPoint[];
+}
+
+/** A selected run that has no plottable frontier — named on the chart, never dropped. */
+export interface OmittedSeries {
+  id: string;
+  name: string;
+  reason: "failed" | "no-frontier";
+}
+
+export interface FrontierComparison {
+  series: FrontierSeries[];
+  omitted: OmittedSeries[];
+  runtimeUnit: string;
+  qubitsUnit: string;
+  logRuntime: boolean;
+  logQubits: boolean;
+}
+
+/**
+ * Series identity is carried by colour AND shape, so the chart never relies on
+ * colour alone (a11y bar carried over from week 2).
+ *
+ * Nothing caps the comparison selection, so the palettes must survive wrapping.
+ * They are cycled INDEPENDENTLY and the shape index is advanced by one extra
+ * step per completed colour cycle — so run 7 reuses colour 1 but not shape 1,
+ * and a (colour, shape) pair does not repeat until run 37.
+ */
+const SERIES_COLORS: readonly string[] = [
+  "var(--color-series-1)",
+  "var(--color-series-2)",
+  "var(--color-series-3)",
+  "var(--color-series-4)",
+  "var(--color-series-5)",
+  "var(--color-series-6)",
+];
+
+const SERIES_SYMBOLS: readonly SeriesSymbol[] = [
+  "circle",
+  "square",
+  "triangle",
+  "diamond",
+  "star",
+  "cross",
+];
+
+export function seriesStyle(index: number): { color: string; symbol: SeriesSymbol } {
+  const lap = Math.floor(index / SERIES_COLORS.length);
+  return {
+    color: SERIES_COLORS[index % SERIES_COLORS.length]!,
+    symbol: SERIES_SYMBOLS[(index + lap) % SERIES_SYMBOLS.length]!,
+  };
+}
+
+/** Log scaling earns its keep only across wide, strictly positive ranges. */
+const LOG_SCALE_RATIO = 100;
+
+function shouldUseLogScale(values: readonly number[]): boolean {
+  // Log cannot plot zero or negatives, so a single non-positive value rules it out.
+  if (values.length < 2 || values.some((value) => !(value > 0))) return false;
+  return Math.max(...values) / Math.min(...values) >= LOG_SCALE_RATIO;
+}
+
+function numericValue(metric: FieldMetric | undefined): number | null {
+  return metric && typeof metric.value === "number" && Number.isFinite(metric.value)
+    ? metric.value
+    : null;
+}
+
+/**
+ * Turn the selected columns into one curve per run. Runs with no plottable
+ * frontier (failed, or an empty/unusable one) are reported in `omitted` so the
+ * surface can say they are absent rather than silently showing fewer curves.
+ */
+export function buildFrontierSeries(columns: readonly ComparisonColumn[]): FrontierComparison {
+  const series: FrontierSeries[] = [];
+  const omitted: OmittedSeries[] = [];
+  let runtimeUnit = "";
+  let qubitsUnit = "";
+
+  for (const col of columns) {
+    const points: FrontierSeriesPoint[] = [];
+
+    col.frontier.forEach((row, index) => {
+      const runtime = numericValue(row.runtime);
+      const physicalQubits = numericValue(row.physicalQubits);
+      if (runtime === null || physicalQubits === null) return;
+      if (runtimeUnit === "") runtimeUnit = row.runtime.unit;
+      if (qubitsUnit === "") qubitsUnit = row.physicalQubits.unit;
+      points.push({
+        index,
+        runtime,
+        physicalQubits,
+        runtimeDisplay: formatMetric(row.runtime),
+        qubitsDisplay: formatMetric(row.physicalQubits),
+        selected: index === col.selectedIndex,
+      });
+    });
+
+    if (points.length === 0) {
+      omitted.push({ id: col.id, name: col.name, reason: col.failed ? "failed" : "no-frontier" });
+      continue;
+    }
+
+    // Sorted by runtime so the connecting line reads left-to-right rather than
+    // zig-zagging in whatever order the engine happened to emit rows.
+    points.sort((a, b) => a.runtime - b.runtime);
+
+    const style = seriesStyle(series.length);
+    series.push({
+      id: col.id,
+      name: col.name,
+      shortName: col.shortName,
+      color: style.color,
+      symbol: style.symbol,
+      points,
+    });
+  }
+
+  const allRuntimes = series.flatMap((s) => s.points.map((p) => p.runtime));
+  const allQubits = series.flatMap((s) => s.points.map((p) => p.physicalQubits));
+
+  return {
+    series,
+    omitted,
+    runtimeUnit: runtimeUnit || "ns",
+    qubitsUnit: qubitsUnit || "qubits",
+    logRuntime: shouldUseLogScale(allRuntimes),
+    logQubits: shouldUseLogScale(allQubits),
+  };
+}
+
+/* ---- Compare-selection threshold ----------------------------------------- */
+
+/**
+ * Comparing one run against nothing is not a comparison, so "Compare Selected"
+ * needs two. Below that the user stays on History and is TOLD what is missing —
+ * a disabled button with no explanation is the same bug in a different costume.
+ */
+export const COMPARE_MIN_SELECTION = 2;
+
+/** The in-place warning for a below-threshold selection; null once it is met. */
+export function compareSelectionWarning(selectedCount: number): string | null {
+  if (selectedCount >= COMPARE_MIN_SELECTION) return null;
+
+  const needed = COMPARE_MIN_SELECTION - selectedCount;
+  const have =
+    selectedCount === 0
+      ? "None are selected yet"
+      : `${selectedCount} run${selectedCount === 1 ? " is" : "s are"} selected`;
+
+  return `Select at least ${COMPARE_MIN_SELECTION} runs to compare. ${have} — tick ${needed} more in the list below.`;
 }
 
 /**

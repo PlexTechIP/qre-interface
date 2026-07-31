@@ -28,17 +28,22 @@ export function ComparisonTable({ columns, hiddenKeys }: ComparisonTableProps) {
               Field
             </th>
             {columns.map((col) => (
-              <th key={col.id} scope="col">
-                <span className="comparison-run-name">{col.name}</span>
+              <th
+                key={col.id}
+                scope="col"
+                className={col.failed ? "comparison-col-failed" : undefined}
+              >
+                <span className="comparison-run-name" title={col.name}>
+                  {col.name}
+                </span>
                 <span className="comparison-run-meta muted">
                   {col.application}
                   {" · "}
                   {col.architecture}
-                  {" · "}
-                  {col.qreVersion}
                 </span>
+                <span className="comparison-run-meta muted">{col.qreVersion}</span>
                 {col.selectedIndex > 0 ? (
-                  <span className="comparison-run-meta">
+                  <span className="comparison-run-meta comparison-run-row">
                     Row {col.selectedIndex + 1} of {col.frontierCount}
                   </span>
                 ) : null}
@@ -54,11 +59,24 @@ export function ComparisonTable({ columns, hiddenKeys }: ComparisonTableProps) {
                 {row.label}
                 {row.unitLabel ? <small className="muted"> · {row.unitLabel}</small> : null}
               </th>
-              {row.metrics.map((metric, index) => (
-                <td key={columns[index]?.id ?? index} className="num">
-                  {formatMetric(metric)}
-                </td>
-              ))}
+              {row.metrics.map((metric, index) => {
+                // A failed run reports no frontier at all, so EVERY cell in its
+                // column would otherwise be an ambiguous "—" that reads the same
+                // as "this one field wasn't reported". Say which it is.
+                const failed = columns[index]?.failed ?? false;
+                return (
+                  <td
+                    key={columns[index]?.id ?? index}
+                    className={failed ? "num comparison-col-failed" : "num"}
+                  >
+                    {failed ? (
+                      <span className="comparison-no-data">No result data</span>
+                    ) : (
+                      formatMetric(metric)
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

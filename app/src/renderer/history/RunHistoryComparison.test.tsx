@@ -53,3 +53,87 @@ describe("History → Comparison hand-off (Part E)", () => {
     expect(within(screen.getByRole("table")).getByText(RUN_B)).toBeInTheDocument();
   });
 });
+
+/**
+ * Controlled (app-shell) mode: the sidebar owns the page, so the surface header's
+ * "Compare Selected" button is the hand-off under test.
+ */
+function ControlledHarness() {
+  const [store] = useState(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
+  const [view, setView] = useState<"history" | "comparison">("history");
+  return <RunHistoryContainer store={store} view={view} onViewChange={setView} />;
+}
+
+describe("Compare Selected below the threshold", () => {
+  it("stays on History and says what is needed when nothing is selected", async () => {
+    render(<ControlledHarness />);
+    await rowByName(RUN_A);
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/at least 2 runs/i);
+    // Still on History — the list is present and no comparison table appeared.
+    expect(screen.getByText(RUN_A)).toBeInTheDocument();
+    expect(screen.queryByText(/one column per run/i)).not.toBeInTheDocument();
+  });
+
+  it("says how many more are needed with a single run ticked", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/1 more/i);
+    expect(screen.queryByText(/one column per run/i)).not.toBeInTheDocument();
+  });
+
+  it("navigates once two runs are selected, and clears the warning", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    // Ticking a second run resolves the warning in place, without another click.
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+    expect(await screen.findByText(/one column per run/i)).toBeInTheDocument();
+  });
+
+  it("keeps the button enabled so the explanation is reachable", async () => {
+    render(<ControlledHarness />);
+    await rowByName(RUN_A);
+
+    expect(screen.getByRole("button", { name: /compare selected/i })).toBeEnabled();
+  });
+
+  it("stops warning once the selection recovers, even without pressing again", async () => {
+    render(<ControlledHarness />);
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: /compare selected/i }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    // Reaching the threshold retires the warning...
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    // ...and dropping back below it must NOT resurrect an unprompted warning.
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("re-announces the warning on a repeated press", async () => {
+    render(<ControlledHarness />);
+    await rowByName(RUN_A);
+    const button = screen.getByRole("button", { name: /compare selected/i });
+
+    await userEvent.click(button);
+    const first = screen.getByRole("alert");
+
+    await userEvent.click(button);
+    // A screen reader only re-announces a live region when the node changes, so a
+    // second press must produce a fresh element rather than an identical one.
+    expect(screen.getByRole("alert")).not.toBe(first);
+  });
+});

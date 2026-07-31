@@ -61,7 +61,12 @@ export function buildComparisonExportMarkdown(
         `| ${markdownCell(
           row.unitLabel ? `${row.label} (${row.unitLabel})` : row.label,
         )}`,
-        ...row.metrics.map((metric) => markdownCell(formatMetric(metric))),
+        // Matches the on-screen table: a failed run's whole column reads as failed.
+        // A bare "—" here would carry the same ambiguity the table deliberately
+        // removed ("field not reported" vs "the run never produced results").
+        ...row.metrics.map((metric, index) =>
+          markdownCell(columns[index]?.failed ? "No result data" : formatMetric(metric)),
+        ),
         "|",
       ].join(" | "),
     ),
