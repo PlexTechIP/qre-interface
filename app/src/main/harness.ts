@@ -31,13 +31,38 @@ import { resolveDefaultDatabasePath } from "./dataDir.js";
 import { loadForRerun } from "./rerun.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
 
+/**
+ * The version the sample corpus stamps on most of its records — read from the
+ * fixtures rather than hardcoded, so this step keeps demonstrating a real
+ * multi-record narrowing instead of silently matching nothing when the corpus
+ * is restamped.
+ *
+ * This is FIXTURE PROVENANCE, not the live engine version: the corpus carries
+ * more than one version on purpose so the filter has something to discriminate.
+ * Don't read it as what the app currently runs against.
+ */
+function corpusQreVersion(): string {
+  const counts = new Map<string, number>();
+  for (const record of MOCK_RUN_RECORDS) {
+    const version = record.result.qreVersion;
+    counts.set(version, (counts.get(version) ?? 0) + 1);
+  }
+  const [mostCommon] = [...counts.entries()].sort(([, a], [, b]) => b - a);
+  return mostCommon?.[0] ?? "";
+}
+
+const SAMPLE_QRE_VERSION = corpusQreVersion();
+
 const FILTER_STEPS = [
   { label: "nameSearch: grover", filter: { nameSearch: "grover" } },
   { label: "application: quantum-dynamics", filter: { application: "quantum-dynamics" } },
   { label: "architecture: majorana", filter: { architecture: "majorana" } as const },
   { label: "qecCode: three_aux", filter: { qecCode: "three_aux" } as const },
   { label: "magicStateFactory: litinski19", filter: { magicStateFactory: "litinski19" } as const },
-  { label: "qreVersion: qdk-qre-1.29.1", filter: { qreVersion: "qdk-qre-1.29.1" } },
+  {
+    label: `qreVersion: ${SAMPLE_QRE_VERSION} (sample corpus, not the live engine)`,
+    filter: { qreVersion: SAMPLE_QRE_VERSION },
+  },
 ];
 
 function log(message: string): void {
