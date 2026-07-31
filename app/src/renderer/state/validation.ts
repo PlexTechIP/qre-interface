@@ -103,12 +103,10 @@ export function validateForm(state: FormState): FieldErrors {
     validateNeutralAtom(architecture.neutralAtom, errors);
   }
  
-  if (traceTransform.type === "psspc") {
-    const t = traceTransform.psspc.tStatesPerRotation;
-    if (!(Number.isInteger(t) && t >= 5 && t <= 20)) {
-      errors.tStatesPerRotation =
-        "T states per rotation must be a whole number from 5 to 20.";
-    }
+  const t = traceTransform.tStatesPerRotation;
+  if (!(Number.isInteger(t) && t >= 5 && t <= 20)) {
+    errors.tStatesPerRotation =
+      "T states per rotation must be a whole number from 5 to 20.";
   }
  
   if (maxError === null) {

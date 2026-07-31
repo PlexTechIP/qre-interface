@@ -185,18 +185,27 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 
 ### Trace Transform
 
-#### PSSPC
+**A two-stage pipeline, not a choice.** qdk applies PSSPC and then Lattice
+Surgery on every estimate; the two groups below configure one stage each.
+Neither can be turned off, and there is no control to pick between them.
+
+#### Stage 1 — PSSPC
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| T States / Rotation | int `[5 - 20]` | 20 | |
+| T States / Rotation | int `[5 - 20]` | 20 | A sparse `5` is in range but currently yields no feasible frontier point |
 | CCX Magic States | bool | False | Bound to GSJ24 CCX Factory |
 
-### Lattice Surgery
+#### Stage 2 — Lattice Surgery
 
 | Field | Type | Default |
 |---|---|---|
 | Slow Down Factor | float, fixed at `1.0` | 1.0 |
+
+### Max Error
+
+| Field | Type | Default |
+|---|---|---|
 | Max Error | float `[0.01 - 1.0]` | 1.0 |
 
 ---

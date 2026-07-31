@@ -18,7 +18,6 @@ import {
   isGsj24AllowedInForm,
   isLitinski19AllowedInForm,
   type ArchitectureForm,
-  type PsspcForm,
   type TraceTransformForm,
 } from "../state/formState";
 import { Field } from "./Field";
@@ -114,16 +113,13 @@ export function MicroArchitectureSection({
  
     if (id === "gsj24_ccx") {
       const turningOn = next.has("gsj24_ccx");
-      if (traceTransform.psspc.ccxMagicStates !== turningOn) {
-        onTraceTransformChange({
-          ...traceTransform,
-          psspc: { ...traceTransform.psspc, ccxMagicStates: turningOn },
-        });
+      if (traceTransform.ccxMagicStates !== turningOn) {
+        onTraceTransformChange({ ...traceTransform, ccxMagicStates: turningOn });
       }
     }
   };
  
-  const setPsspc = (patch: Partial<PsspcForm>): void => {
+  const setTransform = (patch: Partial<TraceTransformForm>): void => {
     // CCX Magic States is bound to the GSJ24 CCX secondary factory: keep them in
     // sync when the flag is toggled directly.
     if (patch.ccxMagicStates !== undefined) {
@@ -136,13 +132,10 @@ export function MicroArchitectureSection({
         onSecondaryFactoriesChange(SECONDARY_FACTORY_IDS.filter((f) => next.has(f)));
       }
     }
-    onTraceTransformChange({
-      ...traceTransform,
-      psspc: { ...traceTransform.psspc, ...patch },
-    });
+    onTraceTransformChange({ ...traceTransform, ...patch });
   };
  
-  const tStates = traceTransform.psspc.tStatesPerRotation;
+  const tStates = traceTransform.tStatesPerRotation;
  
   // Percent of the track filled left of the thumb, used to paint the accent fill.
   const tStatesFill = ((tStates - 5) / (20 - 5)) * 100;
@@ -266,10 +259,18 @@ export function MicroArchitectureSection({
  
       <div className="field-block">
         <span className="field-eyebrow">Trace Transform</span>
- 
+        {/* Not a choice: qdk runs PSSPC and then Lattice Surgery on every
+            estimate. Saying so stops the two parameter groups reading as
+            alternatives, one of which is "off". */}
+        <p className="field__help">
+          A two-stage pipeline — <strong>PSSPC → Lattice Surgery</strong>. Both
+          stages run on every estimate; each group below sets one stage&apos;s
+          parameters.
+        </p>
+
         <div className="micro-transform">
         <div className="micro-subgroup">
-          <span className="micro-subgroup__label">PSSPC Parameters</span>
+          <span className="micro-subgroup__label">Stage 1 · PSSPC</span>
           <div className="field">
             <label className="field__label" htmlFor="micro-tstates">
               T States / Rotation
@@ -285,7 +286,7 @@ export function MicroArchitectureSection({
                 step={1}
                 value={tStates}
                 onChange={(event) =>
-                  setPsspc({ tStatesPerRotation: Number(event.target.value) })
+                  setTransform({ tStatesPerRotation: Number(event.target.value) })
                 }
               />
               <input
@@ -299,7 +300,7 @@ export function MicroArchitectureSection({
                 onChange={(event) => {
                   const next = Number(event.target.value);
                   if (Number.isFinite(next)) {
-                    setPsspc({
+                    setTransform({
                       tStatesPerRotation: Math.min(20, Math.max(5, next)),
                     });
                   }
@@ -317,22 +318,22 @@ export function MicroArchitectureSection({
             <button
               type="button"
               role="switch"
-              aria-checked={traceTransform.psspc.ccxMagicStates}
-              className={`toggle${traceTransform.psspc.ccxMagicStates ? " toggle--on" : ""}`}
+              aria-checked={traceTransform.ccxMagicStates}
+              className={`toggle${traceTransform.ccxMagicStates ? " toggle--on" : ""}`}
               onClick={() =>
-                setPsspc({ ccxMagicStates: !traceTransform.psspc.ccxMagicStates })
+                setTransform({ ccxMagicStates: !traceTransform.ccxMagicStates })
               }
             >
               <span className="toggle__knob" />
             </button>
             <span className="toggle-field__state">
-              {traceTransform.psspc.ccxMagicStates ? "On" : "Off"}
+              {traceTransform.ccxMagicStates ? "On" : "Off"}
             </span>
           </label>
         </div>
  
         <div className="micro-subgroup">
-          <span className="micro-subgroup__label">Lattice Surgery Parameters</span>
+          <span className="micro-subgroup__label">Stage 2 · Lattice Surgery</span>
           <Field
             id="micro-slowdown"
             label="Slow Down Factor"

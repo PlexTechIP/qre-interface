@@ -5,7 +5,11 @@ import {
   QEC_LABELS,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
- 
+import {
+  describeTraceTransform,
+  normalizeTraceTransform,
+} from "../../shared/traceTransform";
+
 export interface ResultFieldDefinition {
   key: string;
   label: string;
@@ -222,7 +226,12 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
         MAGIC_STATE_FACTORY_LABELS[config.magicStateFactory] ??
         humanizeIdentifier(config.magicStateFactory),
     },
-    { label: "Trace Transform", value: summarizeTransform(config.traceTransform) },
+    {
+      // Reads a stored config of any contract version: v1.1.0 records carry the
+      // old psspc/latticeSurgery union and still have to render.
+      label: "Trace Transform",
+      value: describeTraceTransform(normalizeTraceTransform(config.traceTransform)),
+    },
     { label: "Max Error", value: String(config.maxError) },
     { label: "QRE Version", value: qreVersion },
   ];
@@ -253,14 +262,6 @@ function summarizeArchitecture(architecture: RunConfig["architecture"]): string 
     return `${label}, Rydberg error ${architecture.rydbergError}`;
   }
   return `${label}, error ${architecture.errorRate}`;
-}
- 
-function summarizeTransform(transform: RunConfig["traceTransform"]): string {
-  if (transform.type === "latticeSurgery") {
-    return "Lattice Surgery";
-  }
- 
-  return `PSSPC, ${transform.tStatesPerRotation} T/rotation`;
 }
  
 function humanizeIdentifier(value: string): string {

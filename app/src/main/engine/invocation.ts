@@ -57,9 +57,15 @@ export interface QreInvocation {
   magicStateFactory: "round_based" | "litinski19" | "gsj24";
   /** Secondary factories layered on the primary factory; empty/omitted by default. */
   secondaryFactories?: ("magic_up_to_clifford" | "gsj24_ccx")[];
-  traceTransform:
-    | { type: "psspc"; tStatesPerRotation: number; ccxMagicStates: boolean }
-    | { type: "latticeSurgery"; slowDownFactor: 1.0 };
+  /**
+   * Both stages of the trace pipeline. estimate.py composes them in this order —
+   * `PSSPC.q(...) * LatticeSurgery.q(...)` — which is the only order qdk accepts.
+   */
+  traceTransform: {
+    tStatesPerRotation: number;
+    ccxMagicStates: boolean;
+    slowDownFactor: 1.0;
+  };
   maxError: number;
   timeoutMs: number;
 }

@@ -35,11 +35,7 @@ function invocation(overrides: Partial<QreInvocation> = {}): QreInvocation {
     },
     qecCode: "surface_code",
     magicStateFactory: "round_based",
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     timeoutMs: 30_000,
     ...overrides,

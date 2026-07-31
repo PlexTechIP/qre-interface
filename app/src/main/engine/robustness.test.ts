@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { QreEngine } from "./qreEngine.js";
 import type { RunConfig, RunResult } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 
 const PYTHON_BIN = resolvePythonBin();
@@ -17,7 +18,7 @@ function firstEntry(result: RunResult): { runtime: number; error: number } {
 
 function config(id: string, benchmarkId: string): RunConfig {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     id,
     name: "robustness test",
     createdAt: "2026-07-09T18:22:00Z",
@@ -31,11 +32,7 @@ function config(id: string, benchmarkId: string): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactory: "round_based",
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
   };

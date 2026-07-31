@@ -2,9 +2,9 @@ import {
   ARCHITECTURE_LABELS,
   MAGIC_STATE_FACTORY_LABELS,
   QEC_LABELS,
-  TRANSFORM_LABELS,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
+import { describeTraceTransform } from "../../shared/traceTransform";
 import { deriveQecCode, type FormState } from "../state/formState";
 
 interface ConfigurationSummaryProps {
@@ -50,8 +50,9 @@ export function ConfigurationSummary({
       value: `${MAGIC_STATE_FACTORY_LABELS[state.magicStateFactory]} Factory`,
     },
     {
+      // Both stages, not a single name: the old row read as a selection.
       label: "Trace Transform",
-      value: TRANSFORM_LABELS[state.traceTransform.type],
+      value: describeTraceTransform(state.traceTransform),
     },
     { label: "Error Rate", value: errorRateSummary(state.architecture) },
     { label: "Max Error", value: state.maxError === null ? "—" : String(state.maxError) },

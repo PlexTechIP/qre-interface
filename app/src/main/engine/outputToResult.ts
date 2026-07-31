@@ -5,6 +5,7 @@ import type {
   RunConfig,
   RunResult,
 } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import type { ExecuteResult } from "./execute.js";
 
 interface RawFrontierRow {
@@ -121,7 +122,7 @@ function failed(
   completedAt: string,
 ): RunResult {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     runId: config.id,
     status: "failed",
     error: { code, message },
@@ -273,7 +274,7 @@ export function outputToResult(
   }
 
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     runId: config.id,
     status: "succeeded",
     error: null,

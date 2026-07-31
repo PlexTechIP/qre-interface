@@ -1,5 +1,5 @@
 /**
- * Contract types — RunConfig & RunResult (v1.1.0).
+ * Contract types — RunConfig & RunResult (v1.2.0).
  *
  * CANONICAL, PM-owned, frozen with the schemas in this folder. Import these
  * types (copy this file into your workspace verbatim until the shared app
@@ -8,6 +8,15 @@
  * report it in the channel.
  *
  * Changes only via the contract-change process (docs/engineering-workflow.md).
+ *
+ * v1.2.0 (BREAKING, one field): `traceTransform` becomes a single object
+ * carrying both pipeline stages' parameters — { tStatesPerRotation,
+ * ccxMagicStates, slowDownFactor } — instead of a `psspc` | `latticeSurgery`
+ * discriminated union. The union claimed the analyst picks one transform; qdk
+ * always runs both, no UI control ever set the discriminant, and the
+ * latticeSurgery branch silently discarded the PSSPC values the form collected.
+ * Stored v1.1.0 records are read through `normalizeTraceTransform`; records are
+ * validated on save only and are immutable, so nothing needs migrating on disk.
  *
  * v1.1.0 (additive, backward-compatible): Neutral Atom architecture; Low-Move
  * Surface Code QEC (paired with Neutral Atom); GSJ24 / GSJ24 CCX / Magic
@@ -20,7 +29,7 @@
  */
  
 /** Contract version stamped into every RunConfig and RunResult. */
-export const SCHEMA_VERSION = "1.1.0";
+export const SCHEMA_VERSION = "1.2.0";
  
 // ---------------------------------------------------------------------------
 // RunConfig — what a configured run looks like going in (Team 1 → engine)
@@ -250,24 +259,19 @@ export function isGsj24Allowed(architecture: Architecture): boolean {
   return false;
 }
  
-export const TRACE_TRANSFORM_TYPES = ["psspc", "latticeSurgery"] as const;
-export type TraceTransformType = (typeof TRACE_TRANSFORM_TYPES)[number];
- 
-export interface PsspcTraceTransform {
-  type: "psspc";
-  /** Default UI value: 20. Valid range: 5 <= value <= 20. */
-  tStatesPerRotation: number;
-  /** Default UI value: false. */
-  ccxMagicStates: boolean;
-}
- 
-export interface LatticeSurgeryTraceTransform {
-  type: "latticeSurgery";
-  /** Fixed at 1.0 (optimistic); no other values are contract-valid. */
-  slowDownFactor: 1.0;
-}
- 
-export type TraceTransform = PsspcTraceTransform | LatticeSurgeryTraceTransform;
+/**
+ * The trace transform (v1.2.0). PSSPC and Lattice Surgery are stages of one
+ * pipeline that always both run, not alternatives — see traceTransform.ts for
+ * the shape, the defaults, and the v1.1.0 read path.
+ */
+import type { TraceTransform } from "./traceTransform";
+
+export {
+  DEFAULT_TRACE_TRANSFORM,
+  describeTraceTransform,
+  normalizeTraceTransform,
+  type TraceTransform,
+} from "./traceTransform";
  
 /**
  * Benchmark hyperparameter values carried on the config (v1.1.0). A flat map of

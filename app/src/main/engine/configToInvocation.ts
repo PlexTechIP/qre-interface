@@ -5,6 +5,7 @@ import {
   isLitinski19Allowed,
 } from "../../shared/types.js";
 import { buildBenchmarkEntryExpr } from "../../shared/benchmarkParams.js";
+import { normalizeTraceTransform } from "../../shared/traceTransform.js";
 import type { QreInvocation } from "./invocation.js";
 import { resolveBenchmark } from "./benchmarkRegistry.js";
  
@@ -164,18 +165,17 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     return invalid("magic_up_to_clifford secondary factory is not compatible with Majorana architectures.");
   }
  
-  // --- trace transform ---
-  const traceTransform = config.traceTransform;
-  if (traceTransform.type === "psspc") {
-    if (!(traceTransform.tStatesPerRotation >= 5 && traceTransform.tStatesPerRotation <= 20)) {
-      return invalid(
-        `PSSPC tStatesPerRotation must be in [5, 20], got ${traceTransform.tStatesPerRotation}.`,
-      );
-    }
-  } else {
-    if (traceTransform.slowDownFactor !== 1.0) {
-      return invalid(`latticeSurgery slowDownFactor must be 1.0, got ${traceTransform.slowDownFactor}.`);
-    }
+  // --- trace transform (one pipeline; both stages always run) ---
+  const traceTransform = normalizeTraceTransform(config.traceTransform);
+  if (!(traceTransform.tStatesPerRotation >= 5 && traceTransform.tStatesPerRotation <= 20)) {
+    return invalid(
+      `PSSPC tStatesPerRotation must be in [5, 20], got ${traceTransform.tStatesPerRotation}.`,
+    );
+  }
+  if (traceTransform.slowDownFactor !== 1.0) {
+    return invalid(
+      `Lattice Surgery slowDownFactor must be 1.0, got ${traceTransform.slowDownFactor}.`,
+    );
   }
  
   // --- maxError: range-checked only; unsatisfiability is NOT validated here ---
@@ -216,10 +216,7 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       qecCode: config.qecCode,
       magicStateFactory: config.magicStateFactory,
       secondaryFactories: config.secondaryFactories ?? [],
-      traceTransform:
-        traceTransform.type === "psspc"
-          ? { type: "psspc", tStatesPerRotation: traceTransform.tStatesPerRotation, ccxMagicStates: traceTransform.ccxMagicStates }
-          : { type: "latticeSurgery", slowDownFactor: 1.0 },
+      traceTransform,
       maxError: config.maxError,
       timeoutMs,
     },

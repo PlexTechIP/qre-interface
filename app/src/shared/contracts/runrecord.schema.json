@@ -1,4 +1,3 @@
-
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://qre-dashboard.plextech.dev/contracts/runrecord.schema.json",
@@ -15,7 +14,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.1.0",
+      "const": "1.2.0",
       "description": "Contract version."
     },
     "id": {

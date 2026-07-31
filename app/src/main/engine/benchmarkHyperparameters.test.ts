@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { HyperparameterValues, RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
 
@@ -14,7 +15,7 @@ function config(
 ): RunConfig {
   seq += 1;
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     id: `81000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
     name: `hyperparameter sensitivity: ${benchmarkId}`,
     createdAt: "2026-07-31T00:00:00Z",
@@ -28,11 +29,7 @@ function config(
     },
     qecCode: "surface_code",
     magicStateFactory: "round_based",
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     parameters,
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",

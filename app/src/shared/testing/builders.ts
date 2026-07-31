@@ -77,7 +77,7 @@ export function buildRunConfig(overrides: Partial<RunConfig> = {}): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactory: "round_based",
-    traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-1.29.1",
     ...overrides,
@@ -404,7 +404,7 @@ const BENCHMARK_CONFIG: RunConfig = {
   architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 50, measurementTime: 100, twoQubitGateTime: null },
   qecCode: "surface_code",
   magicStateFactory: "round_based",
-  traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
 };
@@ -418,7 +418,7 @@ const LARGE_CONFIG: RunConfig = {
   architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 100000, measurementTime: 100000, twoQubitGateTime: 100000 },
   qecCode: "surface_code",
   magicStateFactory: "litinski19",
-  traceTransform: { type: "latticeSurgery", slowDownFactor: 1.0 },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 0.001,
   qreVersion: "qdk-qre-v1-fixture",
 };
@@ -432,7 +432,7 @@ const SPARSE_CONFIG: RunConfig = {
   architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
   qecCode: "three_aux",
   magicStateFactory: "round_based",
-  traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
 };
@@ -446,7 +446,7 @@ const FAILING_CONFIG: RunConfig = {
   architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 100000, measurementTime: 100000, twoQubitGateTime: null },
   qecCode: "surface_code",
   magicStateFactory: "round_based",
-  traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1e-12,
   qreVersion: "qdk-qre-v1-fixture",
 };
@@ -574,7 +574,7 @@ export const SAMPLE_RUN_RECORDS: readonly RunRecord[] = [
       createdAt: "2026-07-15T14:00:00Z",
       application: { type: "benchmark", benchmarkId: "grovers-search" },
       architecture: { type: "gateBased", errorRate: 0.0005, gateTime: 50, measurementTime: 100, twoQubitGateTime: null },
-      traceTransform: { type: "latticeSurgery", slowDownFactor: 1.0 },
+      traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     },
     result: corpusSparse(ID.R3, "qdk-qre-1.28.0"),
     savedAt: "2026-07-15T14:00:05Z",

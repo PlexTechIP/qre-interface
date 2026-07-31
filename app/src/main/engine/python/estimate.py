@@ -188,14 +188,19 @@ def build_isa_query(
  
  
 def build_trace_query(trace_transform: dict[str, Any]):
-    if trace_transform["type"] == "psspc":
-        return PSSPC.q(
-            num_ts_per_rotation=trace_transform["tStatesPerRotation"],
-            ccx_magic_states=trace_transform["ccxMagicStates"],
-        ) * LatticeSurgery.q(slow_down_factor=1.0)
-    return PSSPC.q() * LatticeSurgery.q(
-        slow_down_factor=trace_transform["slowDownFactor"]
-    )
+    """Compose the two-stage trace pipeline.
+
+    PSSPC lowers arbitrary rotations and CCX into Pauli-based operations, and
+    Lattice Surgery maps those onto lattice-surgery instructions. Both always
+    run, and only in this order: `PSSPC.q()` alone yields an empty frontier, and
+    `LatticeSurgery.q() * PSSPC.q()` raises "unsupported instruction
+    LATTICE_SURGERY in trace transformation 'PSSPC'". The contract's
+    traceTransform carries one stage's parameters each.
+    """
+    return PSSPC.q(
+        num_ts_per_rotation=trace_transform["tStatesPerRotation"],
+        ccx_magic_states=trace_transform["ccxMagicStates"],
+    ) * LatticeSurgery.q(slow_down_factor=trace_transform["slowDownFactor"])
  
  
 def instruction_properties(instruction: Any) -> dict[str, Any]:

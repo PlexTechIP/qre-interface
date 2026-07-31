@@ -9,6 +9,7 @@ export default defineConfig({
       "src/main/engine/benchmarkRegistry.test.ts",
       "src/main/engine/benchmarkSmoke.test.ts",
       "src/main/engine/benchmarkHyperparameters.test.ts",
+      "src/main/engine/traceTransformPipeline.test.ts",
       "src/main/engine/conformance.test.ts",
       "src/main/engine/ipcConformance.test.ts",
       "src/main/engine/pythonClassifier.test.ts",

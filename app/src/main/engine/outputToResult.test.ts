@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { RESULT_FIELD_KEYS, type RunConfig } from "../../shared/types.js";
+import {
+  SCHEMA_VERSION,
+ RESULT_FIELD_KEYS, type RunConfig } from "../../shared/types.js";
 import type { ExecuteResult } from "./execute.js";
 import { outputToResult } from "./outputToResult.js";
 
@@ -19,7 +21,7 @@ function loadCapture(name: string): Record<string, unknown> {
 }
 
 const config: RunConfig = {
-  schemaVersion: "1.1.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "acaf1c0e-a716-41bc-9774-598cacee033f",
   name: "test",
   createdAt: "2026-07-09T18:22:00Z",
@@ -33,11 +35,7 @@ const config: RunConfig = {
   },
   qecCode: "surface_code",
   magicStateFactory: "round_based",
-  traceTransform: {
-    type: "psspc",
-    tStatesPerRotation: 20,
-    ccxMagicStates: false,
-  },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "fixture-version-must-not-win",
 };

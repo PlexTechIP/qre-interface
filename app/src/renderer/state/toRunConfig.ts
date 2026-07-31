@@ -18,13 +18,8 @@ import {
   type MagicStateFactoryId,
   type RunConfig,
   type SecondaryFactoryId,
-  type TraceTransform,
 } from "../../shared/types";
-import {
-  ARCHITECTURE_LABELS,
-  QEC_LABELS,
-  TRANSFORM_LABELS,
-} from "../constants/labels";
+import { ARCHITECTURE_LABELS, QEC_LABELS } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
 import { deriveQecCode } from "./formState";
@@ -32,7 +27,6 @@ import type {
   ApplicationForm,
   ArchitectureForm,
   FormState,
-  TraceTransformForm,
 } from "./formState";
  
 /** id + createdAt are stamped at Run-click and passed in (keeps this pure). */
@@ -150,17 +144,6 @@ function buildArchitecture(arch: ArchitectureForm): Architecture | null {
   };
 }
  
-function buildTraceTransform(tt: TraceTransformForm): TraceTransform {
-  if (tt.type === "psspc") {
-    return {
-      type: "psspc",
-      tStatesPerRotation: tt.psspc.tStatesPerRotation,
-      ccxMagicStates: tt.psspc.ccxMagicStates,
-    };
-  }
-  return { type: "latticeSurgery", slowDownFactor: 1.0 };
-}
- 
 /**
  * A non-round_based primary factory survives serialization only when the
  * architecture actually permits it (litinski19 / gsj24 each have their own
@@ -226,15 +209,20 @@ function applicationLabel(app: ApplicationForm): string {
 }
  
 /**
- * Deterministic auto-name: benchmark · architecture · QEC · transform. Shown in
+ * Deterministic auto-name: benchmark · architecture · QEC · T states. Shown in
  * the UI before Run and serialized when the user leaves the name blank.
+ *
+ * The last component used to be the trace transform's name, which was always
+ * "PSSPC" — the discriminant no control ever changed. The pipeline is fixed, so
+ * its T-states-per-rotation is the part that actually varies between runs and
+ * the part worth having in a History row.
  */
 export function generateName(state: FormState): string {
   return [
     applicationLabel(state.application),
     ARCHITECTURE_LABELS[state.architecture.type],
     QEC_LABELS[deriveQecCode(state.architecture)],
-    TRANSFORM_LABELS[state.traceTransform.type],
+    `PSSPC ${state.traceTransform.tStatesPerRotation} T/rot`,
   ].join(" · ");
 }
  
@@ -299,7 +287,7 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
     architecture,
     qecCode: expectedQecCode(architecture),
     magicStateFactory: effectiveFactory(state.magicStateFactory, architecture),
-    traceTransform: buildTraceTransform(state.traceTransform),
+    traceTransform: { ...state.traceTransform },
     maxError: state.maxError,
     qreVersion: QRE_VERSION,
   };

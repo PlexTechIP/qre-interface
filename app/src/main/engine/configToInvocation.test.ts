@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { configToInvocation } from "./configToInvocation.js";
 import type { RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import {
   buildBenchmarkConfig,
   buildFailingConfig,
@@ -10,7 +11,7 @@ import {
 
 function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     id: "acaf1c0e-a716-41bc-9774-598cacee033f",
     name: "test",
     createdAt: "2026-07-09T18:22:00Z",
@@ -24,11 +25,7 @@ function baseGateBasedConfig(overrides: Partial<RunConfig> = {}): RunConfig {
     },
     qecCode: "surface_code",
     magicStateFactory: "round_based",
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
     ...overrides,
@@ -151,11 +148,7 @@ describe("configToInvocation", () => {
         },
         qecCode: "three_aux",
         magicStateFactory: "round_based",
-        traceTransform: {
-          type: "psspc",
-          tStatesPerRotation: 5,
-          ccxMagicStates: false,
-        },
+        traceTransform: { tStatesPerRotation: 5, ccxMagicStates: false, slowDownFactor: 1.0 },
       }),
       30000,
     );
@@ -175,11 +168,7 @@ describe("configToInvocation", () => {
   it("rejects PSSPC tStatesPerRotation out of [5,20] with INVALID_CONFIG", () => {
     const result = configToInvocation(
       baseGateBasedConfig({
-        traceTransform: {
-          type: "psspc",
-          tStatesPerRotation: 21,
-          ccxMagicStates: false,
-        },
+        traceTransform: { tStatesPerRotation: 21, ccxMagicStates: false, slowDownFactor: 1.0 },
       }),
       30000,
     );
