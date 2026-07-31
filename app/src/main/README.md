@@ -3,7 +3,8 @@
 The main-process, SQLite-backed implementation of the committed `RunStore`
 boundary (`app/src/shared/types.ts`). No UI
 lives here — this is the store, the Rerun load path, and a runnable harness.
-See `docs/week-3/team-2/week-3-team-2-technical-brief.md` for the full brief.
+See `docs/week-3/team-2/week-3-team-2-technical-brief.md` for the original
+brief and `docs/architecture.md` for the current end-to-end architecture.
 
 ## Files
 
@@ -15,6 +16,13 @@ See `docs/week-3/team-2/week-3-team-2-technical-brief.md` for the full brief.
 | `rerun.test.ts` | Proves the load path end to end, incl. one run captured through a fake estimator (`shared/testing`) |
 | `dataDir.ts` | `resolveDefaultDatabasePath()` — computes the DB file location at runtime; never a hardcoded absolute path |
 | `harness.ts` | The runnable proof described below |
+
+The Electron main process also wires the QRE engine and the IPC surfaces that
+the renderer consumes. `main.ts` registers `estimator:run` against `QreEngine`,
+constructs the SQLite store after `app.whenReady()`, and registers store
+handlers. `preload.ts` exposes only `window.estimator`, `window.store`, and
+`window.files`; renderer code does not receive `ipcRenderer`, SQLite, Node
+globals, or direct engine access.
 
 ## Schema
 
@@ -101,3 +109,6 @@ committed fixtures into a persisted file would fail on the second run). Set
 `resolveDefaultDatabasePath()` resolves to — and that file is left in place
 afterwards so you can inspect it with the `sqlite3` CLI or reopen it with
 another `SqliteRunStore`.
+
+For clean-machine setup, Python venv provisioning, and common local failures,
+see `docs/setup-and-troubleshooting.md`.

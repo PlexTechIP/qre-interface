@@ -20,7 +20,7 @@ dependency-standard PR so all teams move together.
 | Package manager | **npm `11.16.0`** | Use `package-lock.json`; no pnpm/yarn in team branches this week. |
 | UI | **React `19.2.7` + React DOM `19.2.7` + TypeScript `5.9.3`** | Strict TS everywhere; no `any` at module boundaries. TypeScript is intentionally held at 5.9 because `typescript-eslint` still peers on `<6.1`. |
 | Build/dev server | **Vite `8.1.3` + `@vitejs/plugin-react` `6.0.3`** | Use Vite for renderer development and scaffold builds. Do not add `electron-vite` this week; its latest stable does not peer on Vite 8. |
-| Estimation engine | **Primary spike: `qdk[qre]==1.29.1` on Python `3.13.14`; fallback JS/WASM: `qsharp-lang@1.29.1`** | Team 3 owns the route decision. The Python `qdk` package is the stable QDK entry point and exposes `qdk.qre`; `qsharp` PyPI is deprecated. `qsharp-lang@1.29.1` is exact-pinned as the JS/WASM route to evaluate for Electron packaging. No `1.29.x-dev` packages. |
+| Estimation engine | **Selected route: `qdk[qre]==1.30.0` on Python `3.13.14`; fallback spike: `qsharp-lang@1.29.1`** | The Python `qdk` package is the stable QDK entry point and exposes `qdk.qre`; `qsharp` PyPI is deprecated. `qsharp-lang@1.29.1` was exact-pinned for the earlier JS/WASM route spike. No `.dev` packages. |
 | Contract validation | **Ajv `8.20.0` + `ajv-formats` `3.0.1`** | Required for draft-07 schemas plus `uuid` and `date-time` formats. Team 1 mock validation and Team 3 conformance use the same pair. |
 | Testing | **Vitest `4.1.10` + jsdom `29.1.1` + Testing Library React `16.3.2` + jest-dom `6.9.1` + user-event `14.6.1`** | Renderer component/unit tests run in jsdom. Engine harness tests use Vitest with longer timeouts. |
 | Engine/harness scripts | **tsx `4.23.0` + `@types/node` `24.13.3`** | Use for Team 3 CLI harnesses and Node-side TypeScript scripts. Keep Node types on the 24.x line to match Electron/Node 24, not latest 26.x. |
@@ -55,16 +55,17 @@ Two rules fall out of this picture:
 2. **The contract types (`RunConfig`, `RunResult` — see `data-contracts.md`)
    are the only shapes that cross that boundary** for estimation workflows.
 
-## How QRE v3 gets executed locally **(to be validated in week 2)**
+## How QRE v3 gets executed locally
 
 QRE ships as part of Microsoft's open-source QDK. The dashboard needs
 parameterized architectures, magic-state factory selection, trace transforms,
-Three-Aux, max-error caps, and Pareto frontiers. Team 3's first job is to prove
-which pinned package/API exposes that full surface and can be bundled reliably.
+Three-Aux, max-error caps, and Pareto frontiers. Team 3 proved in Week 2 that
+the Python QDK route exposes the needed surface; the JS/WASM route remains a
+documented non-selected spike.
 
-Team 3 should spike these exact packages:
+Selected and evaluated packages:
 
-- **Route A — Python QDK:** `Python 3.13.14` + `qdk[qre]==1.29.1`, invoked
+- **Route A — Python QDK:** `Python 3.13.14` + `qdk[qre]==1.30.0`, invoked
   by Electron's main process as a subprocess. This is heavier to package, but
   the stable `qdk` package exposes `qdk.qre`, Q#, and OpenQASM support. Set
   `QDK_PYTHON_TELEMETRY=none` in local runs and in the packaged app.
@@ -132,7 +133,7 @@ Python engine spike environment:
 
 ```txt
 python==3.13.14
-qdk[qre]==1.29.1
+qdk[qre]==1.30.0
 QDK_PYTHON_TELEMETRY=none
 ```
 

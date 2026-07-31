@@ -46,8 +46,9 @@ PROPERTY_IDS = {
 }
 PROPERTY_NAMES = {value: name for name, value in PROPERTY_IDS.items()}
 ROUND_BASED_CACHE = Path(__file__).parent / ".qre-cache" / "round-based"
- 
- 
+MISSING_PROPERTY = 2**63 - 1
+
+
 def failure_code_for(exc: Exception) -> str:
     """Classify compiler failures by QDK's structured exception type."""
     return "COMPILE_ERROR" if isinstance(exc, QSharpError) else "ESTIMATION_FAILED"
@@ -118,7 +119,16 @@ def build_architecture(architecture: dict[str, Any]):
             two_qubit_gate_time=architecture.get("twoQubitGateTime"),
         )
     if arch_type == "majorana":
-        return Majorana(error_rate=architecture["errorRate"])
+        # `time` is the contract's "Operation Time" (features-and-fields.md:112).
+        # QDK's default and the UI default are both 1000, so mapping it is
+        # output-identical for every existing run; the only behaviour it changes
+        # is the case that is wrong today, where a user types 250 and silently
+        # gets the answer for 1000. `t_error_rate` and `target_year` are
+        # deliberately not mapped — neither appears in the field spec.
+        return Majorana(
+            error_rate=architecture["errorRate"],
+            time=architecture["operationTime"],
+        )
     if arch_type == "neutralAtom":
         # Field names follow the 1.30.0 NeutralAtom model. Times are integer
         # nanoseconds; the three error rates and the motion parameters map 1:1
@@ -191,8 +201,8 @@ def build_trace_query(trace_transform: dict[str, Any]):
 def instruction_properties(instruction: Any) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     for name, key in PROPERTY_IDS.items():
-        value = instruction.get_property_or(key, None)
-        if value is not None:
+        value = instruction.get_property_or(key, MISSING_PROPERTY)
+        if value != MISSING_PROPERTY:
             properties[str(key)] = jsonable(value)
     return properties
  
@@ -246,8 +256,8 @@ def serialize_stats(stats: Any) -> dict[str, Any]:
 def find_qec_property(entry: Any, key: int, default: Any = None) -> Any:
     for node in entry.source.nodes:
         if type(node.transform).__name__ in ("SurfaceCode", "ThreeAux", "SurfaceCodeLowMove"):
-            value = node.instruction.get_property_or(key, None)
-            if value is not None:
+            value = node.instruction.get_property_or(key, MISSING_PROPERTY)
+            if value != MISSING_PROPERTY:
                 return value
     return default
  

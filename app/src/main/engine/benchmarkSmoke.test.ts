@@ -43,7 +43,7 @@ describe("all frozen benchmarks", () => {
       expect(result.error).toBeNull();
       expect(result.frontier?.length).toBeGreaterThan(0);
       expect(result.raw).not.toBeNull();
-      expect(result.qreVersion).toBe("1.29.1");
+      expect(result.qreVersion).toBe("1.30.0");
     }, 60_000);
   }
 });
