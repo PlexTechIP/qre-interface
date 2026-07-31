@@ -59,7 +59,7 @@ describe("mock run-record fixtures", () => {
   it("spans the full filter space (architectures, QEC, factories, QRE versions, statuses)", () => {
     const archs = new Set(MOCK_RUN_RECORDS.map((r) => r.config.architecture.type));
     const qecs = new Set(MOCK_RUN_RECORDS.map((r) => r.config.qecCode));
-    const factories = new Set(MOCK_RUN_RECORDS.map((r) => r.config.magicStateFactory));
+    const factories = new Set(MOCK_RUN_RECORDS.flatMap((r) => r.config.magicStateFactories));
     const versions = new Set(MOCK_RUN_RECORDS.map((r) => r.result.qreVersion));
     const statuses = new Set(MOCK_RUN_RECORDS.map((r) => r.result.status));
     expect(archs).toEqual(new Set(["gateBased", "majorana"]));

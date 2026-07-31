@@ -54,8 +54,13 @@ export interface QreInvocation {
         surfaceCodeTwoQubitTimeFactor: number;
       };
   qecCode: "surface_code" | "three_aux" | "low_move_surface_code";
-  magicStateFactory: "round_based" | "litinski19" | "gsj24";
-  /** Secondary factories layered on the primary factory; empty/omitted by default. */
+  /**
+   * Primary factories — non-empty. estimate.py unions them into ONE ISA query
+   * (`qec * (f1 + f2 + …)`), so the estimator explores every selected factory
+   * and returns a single Pareto frontier across all of them.
+   */
+  magicStateFactories: ("round_based" | "litinski19" | "gsj24")[];
+  /** Secondary factories layered on the primary factories; empty/omitted by default. */
   secondaryFactories?: ("magic_up_to_clifford" | "gsj24_ccx")[];
   traceTransform:
     | { type: "psspc"; tStatesPerRotation: number; ccxMagicStates: boolean }

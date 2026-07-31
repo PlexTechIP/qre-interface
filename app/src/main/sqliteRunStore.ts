@@ -7,12 +7,27 @@ import { RunRecordExistsError } from "../shared/runStore.js";
 import {
   applicationKey,
   queryRunRecords,
+  upgradeRunRecord,
+  type MagicStateFactoryId,
   type RunFilter,
   type RunRecord,
   type RunStore,
 } from "../shared/types.js";
 
-const DATABASE_SCHEMA_VERSION = 1;
+const DATABASE_SCHEMA_VERSION = 2;
+
+/**
+ * The factory column holds a SET as of contract v1.2.0, encoded as the members
+ * wrapped and joined by a delimiter: ["round_based","gsj24"] becomes
+ * "|round_based|gsj24|". The leading/trailing bars make a containment test an
+ * unambiguous substring match — "|gsj24|" cannot collide with a longer id the
+ * way a bare "gsj24" could.
+ */
+const FACTORY_SET_DELIMITER = "|";
+
+function encodeFactorySet(factories: readonly MagicStateFactoryId[]): string {
+  return `${FACTORY_SET_DELIMITER}${factories.join(FACTORY_SET_DELIMITER)}${FACTORY_SET_DELIMITER}`;
+}
 
 const INITIAL_SCHEMA = `
   CREATE TABLE IF NOT EXISTS run_records (
@@ -51,12 +66,18 @@ function prepareDatabasePath(databasePath: string): void {
   }
 }
 
+/**
+ * Rows are stored verbatim as saved, so a row written under v1.1.0 still carries
+ * the singular `magicStateFactory`. The upgrade happens HERE, at the read
+ * boundary, so every consumer above sees exactly one shape and the stored JSON
+ * is never rewritten in place.
+ */
 function readStoredRecord(row: Record<string, unknown>): RunRecord {
   const recordJson = row.record_json;
   if (typeof recordJson !== "string") {
     throw new Error("SQLite run record is missing its JSON payload.");
   }
-  return JSON.parse(recordJson) as RunRecord;
+  return upgradeRunRecord(JSON.parse(recordJson) as RunRecord);
 }
 
 function isPrimaryKeyConstraint(error: unknown): boolean {
@@ -125,7 +146,7 @@ export class SqliteRunStore implements RunStore {
         applicationKey(record.config),
         record.config.architecture.type,
         record.config.qecCode,
-        record.config.magicStateFactory,
+        encodeFactorySet(record.config.magicStateFactories),
         record.result.qreVersion,
         record.config.createdAt,
         record.savedAt,
@@ -177,8 +198,14 @@ export class SqliteRunStore implements RunStore {
     addExactFilter("application", filter.application);
     addExactFilter("architecture", filter.architecture);
     addExactFilter("qec_code", filter.qecCode);
-    addExactFilter("magic_state_factory", filter.magicStateFactory);
     addExactFilter("qre_version", filter.qreVersion);
+
+    // The factory column is a set, so this narrows by CONTAINMENT rather than
+    // equality: a run that selected several factories matches on any of them.
+    if (filter.magicStateFactory !== undefined) {
+      predicates.push("magic_state_factory LIKE ?");
+      parameters.push(`%${encodeFactorySet([filter.magicStateFactory])}%`);
+    }
 
     const whereClause =
       predicates.length === 0 ? "" : `WHERE ${predicates.join(" AND ")}`;
@@ -221,7 +248,24 @@ export class SqliteRunStore implements RunStore {
 
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      // v1: the base table. CREATE TABLE IF NOT EXISTS makes this safe to run
+      // against an existing v1 database on the way to v2.
       this.database.exec(INITIAL_SCHEMA);
+
+      if (currentVersion < 2) {
+        // v2 (contract v1.2.0): magic_state_factory went from a single id to a
+        // delimited SET. Existing rows hold a bare id, which the containment
+        // LIKE would never match; re-encode them as one-element sets. Only the
+        // derived column changes — record_json stays exactly as it was saved,
+        // and readStoredRecord upgrades its shape on the way out.
+        this.database.exec(
+          `UPDATE run_records
+             SET magic_state_factory =
+               '${FACTORY_SET_DELIMITER}' || magic_state_factory || '${FACTORY_SET_DELIMITER}'
+           WHERE magic_state_factory NOT LIKE '${FACTORY_SET_DELIMITER}%'`,
+        );
+      }
+
       this.database.exec(`PRAGMA user_version = ${DATABASE_SCHEMA_VERSION}`);
       this.database.exec("COMMIT");
     } catch (error) {

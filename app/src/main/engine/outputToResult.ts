@@ -5,6 +5,7 @@ import type {
   RunConfig,
   RunResult,
 } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import type { ExecuteResult } from "./execute.js";
 
 interface RawFrontierRow {
@@ -16,6 +17,13 @@ interface RawFrontierRow {
   logicalCycleTime: number | null;
   factories: Array<{ stateType: string; copies: number }>;
   source?: string;
+  /**
+   * Which primary factory produced THIS row (v1.2.0). With a multi-select set
+   * the engine unions the factories into one query, so rows of the same
+   * frontier can come from different ones. null when the engine could not name
+   * it — absent rather than guessed.
+   */
+  magicStateFactory?: string | null;
   properties: Record<string, unknown>;
 }
 
@@ -121,7 +129,7 @@ function failed(
   completedAt: string,
 ): RunResult {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     runId: config.id,
     status: "failed",
     error: { code, message },
@@ -140,6 +148,10 @@ function mapAdditional(
   if (row.source !== undefined) additional["source"] = metric(row.source, "");
   if (row.codeCycleTime !== null)
     additional["codeCycleTime"] = metric(row.codeCycleTime, "ns");
+  // Only meaningful once a run can select several factories, but reported on
+  // every row so a single-factory frontier reads the same way.
+  if (row.magicStateFactory != null)
+    additional["magicStateFactory"] = metric(row.magicStateFactory, "");
 
   for (const [reportedKey, value] of Object.entries(row.properties)) {
     const mapping = PROPERTY_MAPPINGS[reportedKey];
@@ -273,7 +285,7 @@ export function outputToResult(
   }
 
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: SCHEMA_VERSION,
     runId: config.id,
     status: "succeeded",
     error: null,

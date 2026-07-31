@@ -155,10 +155,15 @@ export interface FormState {
   name: string;
   application: ApplicationForm;
   architecture: ArchitectureForm;
-  magicStateFactory: MagicStateFactoryId;
+  /**
+   * Primary magic-state factories (v1.2.0) — a multi-select set, never empty.
+   * normalizeFormState drops members the current architecture disallows and
+   * falls back to ["round_based"] rather than leaving the set empty.
+   */
+  magicStateFactories: MagicStateFactoryId[];
   /**
    * Secondary factories (v1.1.0). Multi-select set, empty by default. Independent
-   * of the primary magicStateFactory. gsj24_ccx is kept in sync with the PSSPC
+   * of the primary magicStateFactories. gsj24_ccx is kept in sync with the PSSPC
    * ccxMagicStates flag by the UI; magic_up_to_clifford is cleared on Majorana by
    * normalizeFormState.
    */
@@ -218,7 +223,7 @@ export function createInitialFormState(): FormState {
         surfaceCodeTwoQubitTimeFactor: 1,
       },
     },
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     secondaryFactories: [],
     memoryOptimization: "none",
     traceTransform: {
@@ -314,7 +319,7 @@ export function formStateFromRunConfig(config: RunConfig): FormState {
     name: config.name,
     application,
     architecture,
-    magicStateFactory: config.magicStateFactory,
+    magicStateFactories: [...config.magicStateFactories],
     secondaryFactories: config.secondaryFactories ?? [],
     memoryOptimization: config.memoryOptimization ?? "none",
     traceTransform: {
@@ -405,10 +410,11 @@ export function isGsj24AllowedInForm(arch: ArchitectureForm): boolean {
 }
  
 /**
- * Whether the currently selected primary magic-state factory is still allowed on
- * the current architecture.
+ * Whether a primary magic-state factory is allowed on the current draft
+ * architecture. round_based always is, which is what guarantees the set can
+ * always fall back to something rather than emptying out.
  */
-function isPrimaryFactoryAllowed(
+export function isPrimaryFactoryAllowed(
   factory: MagicStateFactoryId,
   arch: ArchitectureForm,
 ): boolean {
@@ -420,9 +426,10 @@ function isPrimaryFactoryAllowed(
 /**
  * Enforce cross-field coupling the schema requires, so the UI state is never
  * internally inconsistent:
- *  - the primary factory falls back to round_based whenever it is no longer
- *    allowed on the current architecture (raised error rate, or a switch to
- *    Majorana, which supports only round_based); and
+ *  - primary factories no longer allowed on the current architecture (raised
+ *    error rate, or a switch to Majorana, which supports only round_based) are
+ *    dropped from the set, which falls back to ["round_based"] if that empties
+ *    it; and
  *  - magic_up_to_clifford is dropped from the secondary set under Majorana, which
  *    the schema forbids.
  * Idempotent: applying it to already-consistent state returns it unchanged.
@@ -430,8 +437,19 @@ function isPrimaryFactoryAllowed(
 export function normalizeFormState(state: FormState): FormState {
   let next = state;
  
-  if (!isPrimaryFactoryAllowed(state.magicStateFactory, state.architecture)) {
-    next = { ...next, magicStateFactory: "round_based" };
+  // Drop primary factories the current architecture disallows — raising an
+  // error rate or switching to Majorana can invalidate part of the set. The set
+  // must never end up empty, so an emptied one falls back to round_based, which
+  // every architecture accepts.
+  const allowedPrimaries = state.magicStateFactories.filter((factory) =>
+    isPrimaryFactoryAllowed(factory, state.architecture),
+  );
+  if (allowedPrimaries.length !== state.magicStateFactories.length) {
+    next = {
+      ...next,
+      magicStateFactories:
+        allowedPrimaries.length > 0 ? allowedPrimaries : ["round_based"],
+    };
   }
  
   if (

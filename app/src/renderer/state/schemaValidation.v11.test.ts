@@ -43,7 +43,7 @@ function neutralAtomConfig(
   return config({
     architecture: { ...NEUTRAL_ATOM, ...archOverrides },
     qecCode: "low_move_surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
   });
 }
  
@@ -56,7 +56,7 @@ describe("schema v1.1.0 — architecture -> QEC pairing", () => {
     const bad = config({
       architecture: NEUTRAL_ATOM,
       qecCode: "surface_code",
-      magicStateFactory: "round_based",
+      magicStateFactories: ["round_based"],
     });
     expect(validateRunConfigSchema(bad).valid).toBe(false);
   });
@@ -69,13 +69,13 @@ describe("schema v1.1.0 — architecture -> QEC pairing", () => {
 describe("schema v1.1.0 — litinski19 availability", () => {
   it("accepts litinski19 on Neutral Atom with all errors <= 1e-3", () => {
     const ok = neutralAtomConfig();
-    ok.magicStateFactory = "litinski19";
+    ok.magicStateFactories = ["litinski19"];
     expect(validateRunConfigSchema(ok).valid).toBe(true);
   });
  
   it("rejects litinski19 on Neutral Atom when an error exceeds 1e-3", () => {
     const bad = neutralAtomConfig({ measurementError: 0.005 });
-    bad.magicStateFactory = "litinski19";
+    bad.magicStateFactories = ["litinski19"];
     expect(validateRunConfigSchema(bad).valid).toBe(false);
   });
 });
@@ -83,13 +83,13 @@ describe("schema v1.1.0 — litinski19 availability", () => {
 describe("schema v1.1.0 — gsj24 availability", () => {
   it("accepts gsj24 on Neutral Atom under its looser conditions", () => {
     const ok = neutralAtomConfig({ singleQubitError: 0.005, measurementError: 0.005 });
-    ok.magicStateFactory = "gsj24";
+    ok.magicStateFactories = ["gsj24"];
     expect(validateRunConfigSchema(ok).valid).toBe(true);
   });
  
   it("rejects gsj24 on Neutral Atom when an error reaches the 1e-2 ceiling", () => {
     const bad = neutralAtomConfig({ measurementError: 0.01 });
-    bad.magicStateFactory = "gsj24";
+    bad.magicStateFactories = ["gsj24"];
     expect(validateRunConfigSchema(bad).valid).toBe(false);
   });
 });
@@ -104,7 +104,7 @@ describe("schema v1.1.0 — secondary factories", () => {
     const bad = config({
       architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
       qecCode: "three_aux",
-      magicStateFactory: "round_based",
+      magicStateFactories: ["round_based"],
       secondaryFactories: ["magic_up_to_clifford"],
     });
     expect(validateRunConfigSchema(bad).valid).toBe(false);

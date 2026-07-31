@@ -26,7 +26,7 @@ import {
   fakeEstimator,
 } from "../shared/testing/index.js";
 import { RunRecordExistsError } from "../shared/runStore.js";
-import { makeRunRecord, type RunConfig } from "../shared/types.js";
+import { makeRunRecord, type RunConfig, type RunFilter } from "../shared/types.js";
 import { resolveDefaultDatabasePath } from "./dataDir.js";
 import { loadForRerun } from "./rerun.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
@@ -53,12 +53,12 @@ function corpusQreVersion(): string {
 
 const SAMPLE_QRE_VERSION = corpusQreVersion();
 
-const FILTER_STEPS = [
+const FILTER_STEPS: readonly { label: string; filter: RunFilter }[] = [
   { label: "nameSearch: grover", filter: { nameSearch: "grover" } },
   { label: "application: quantum-dynamics", filter: { application: "quantum-dynamics" } },
   { label: "architecture: majorana", filter: { architecture: "majorana" } as const },
   { label: "qecCode: three_aux", filter: { qecCode: "three_aux" } as const },
-  { label: "magicStateFactory: litinski19", filter: { magicStateFactory: "litinski19" } as const },
+  { label: "magicStateFactory: litinski19", filter: { magicStateFactory: "litinski19" } },
   {
     label: `qreVersion: ${SAMPLE_QRE_VERSION} (sample corpus, not the live engine)`,
     filter: { qreVersion: SAMPLE_QRE_VERSION },

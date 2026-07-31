@@ -14,12 +14,16 @@ import { RunConfiguration } from "./RunConfiguration";
 
 const runButton = () => screen.getByRole("button", { name: /run estimate/i });
 
-// The Magic State Factory is a dropdown; Litinski19 availability is expressed by
-// enabling/disabling its <option> and by the selected value falling back.
-const factorySelect = () =>
-  screen.getByRole("combobox", { name: /magic state factory/i });
-const litinski19Option = () =>
-  within(factorySelect()).getByRole("option", { name: /litinski19/i });
+// Magic State Factory is a multi-select (contract v1.2.0): one checkbox per
+// factory. Availability is expressed by disabling a checkbox, and by a
+// now-disallowed factory being dropped from the set.
+const factoryGroup = () =>
+  screen.getByRole("group", { name: /magic state factory/i });
+const factoryCheckbox = (name: RegExp) =>
+  within(factoryGroup()).getByRole("checkbox", { name });
+const litinski19Checkbox = () => factoryCheckbox(/litinski19/i);
+const roundBasedCheckbox = () => factoryCheckbox(/round-based/i);
+const gsj24Checkbox = () => factoryCheckbox(/^gsj24$/i);
 
 // Architecture is a segmented control whose buttons expose role="radio".
 const superconductingRadio = () =>
@@ -95,10 +99,17 @@ describe("Run-button validation gating", () => {
   });
 });
 
-describe("Litinski19 availability rule", () => {
+describe("Magic State Factory availability and multi-select", () => {
   it("is selectable on GateBased with the default error rate (1e-4)", () => {
     render(<RunConfiguration />);
-    expect(litinski19Option()).toBeEnabled();
+    expect(litinski19Checkbox()).toBeEnabled();
+  });
+
+  it("defaults to exactly Round-Based", () => {
+    render(<RunConfiguration />);
+    expect(roundBasedCheckbox()).toBeChecked();
+    expect(litinski19Checkbox()).not.toBeChecked();
+    expect(gsj24Checkbox()).not.toBeChecked();
   });
 
   it("auto-disables with a visible reason when switching to Majorana", async () => {
@@ -106,44 +117,72 @@ describe("Litinski19 availability rule", () => {
     render(<RunConfiguration />);
     await user.click(majoranaRadio());
 
-    expect(litinski19Option()).toBeDisabled();
-    expect(
-      screen.getByText(/needs superconducting hardware with error rate/i),
-    ).toBeInTheDocument();
+    expect(litinski19Checkbox()).toBeDisabled();
+    expect(gsj24Checkbox()).toBeDisabled();
+    expect(screen.getByText(/majorana supports round-based only/i)).toBeInTheDocument();
   });
 
-  it("falls back to Round-Based when Litinski19 becomes disallowed", async () => {
+  it("holds several factories at once — the point of the multi-select", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
 
-    // Select Litinski19 while it's allowed…
-    await user.selectOptions(factorySelect(), "litinski19");
-    expect(factorySelect()).toHaveValue("litinski19");
+    await user.click(litinski19Checkbox());
+    await user.click(gsj24Checkbox());
 
-    // …then break the condition; selection must revert to Round-Based.
+    expect(roundBasedCheckbox()).toBeChecked();
+    expect(litinski19Checkbox()).toBeChecked();
+    expect(gsj24Checkbox()).toBeChecked();
+  });
+
+  it("refuses to empty the set — the last checked factory cannot be unchecked", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    // Round-Based alone: unchecking it would leave the set empty, which the
+    // contract forbids, so the control is disabled rather than silently repaired.
+    expect(roundBasedCheckbox()).toBeChecked();
+    expect(roundBasedCheckbox()).toBeDisabled();
+
+    // Check a second one and Round-Based becomes removable again.
+    await user.click(litinski19Checkbox());
+    expect(roundBasedCheckbox()).toBeEnabled();
+    await user.click(roundBasedCheckbox());
+    expect(roundBasedCheckbox()).not.toBeChecked();
+    expect(litinski19Checkbox()).toBeChecked();
+  });
+
+  it("drops a now-disallowed factory from the set instead of leaving it selected", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(litinski19Checkbox());
+    expect(litinski19Checkbox()).toBeChecked();
+
+    // Majorana admits round_based alone.
     await user.click(majoranaRadio());
-    expect(factorySelect()).toHaveValue("round_based");
+    expect(litinski19Checkbox()).not.toBeChecked();
+    expect(roundBasedCheckbox()).toBeChecked();
   });
 
   it("re-disables Litinski19 when the GateBased error rate is raised above 1e-3", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
-    expect(litinski19Option()).toBeEnabled();
+    expect(litinski19Checkbox()).toBeEnabled();
 
     const errorRate = errorRateInput();
     await user.clear(errorRate);
     await user.type(errorRate, "0.005"); // > 1e-3, still within (0, 0.01)
 
-    expect(litinski19Option()).toBeDisabled();
+    expect(litinski19Checkbox()).toBeDisabled();
   });
 
   it("re-enables Litinski19 after switching back to Superconducting", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
     await user.click(majoranaRadio());
-    expect(litinski19Option()).toBeDisabled();
+    expect(litinski19Checkbox()).toBeDisabled();
     await user.click(superconductingRadio());
-    expect(litinski19Option()).toBeEnabled();
+    expect(litinski19Checkbox()).toBeEnabled();
   });
 });
 

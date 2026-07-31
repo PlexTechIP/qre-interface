@@ -7,7 +7,7 @@ const PYTHON_BIN = resolvePythonBin();
 
 function config(id: string, overrides: Partial<RunConfig>): RunConfig {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: "1.2.0",
     id,
     name: "cross-config quantum dynamics",
     createdAt: "2026-07-09T18:22:00Z",
@@ -20,7 +20,7 @@ function config(id: string, overrides: Partial<RunConfig>): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform: {
       type: "psspc",
       tStatesPerRotation: 20,

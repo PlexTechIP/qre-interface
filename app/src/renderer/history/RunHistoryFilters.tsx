@@ -45,6 +45,19 @@ function distinct(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
  
+/** `distinct` for a field that is a SET on each record: every member counts. */
+function distinctMany(
+  records: RunRecord[],
+  pick: (record: RunRecord) => readonly string[],
+  label: (value: string) => string,
+): Option[] {
+  const values = new Set<string>();
+  for (const record of records) for (const value of pick(record)) values.add(value);
+  return [...values]
+    .map((value) => ({ value, label: label(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 function applicationLabel(key: string): string {
   if (key.startsWith("uploaded:")) {
     return `Uploaded: ${key.slice("uploaded:".length).split(/[\\/]/).pop()}`;
@@ -66,7 +79,9 @@ export function RunHistoryFilters({ allRecords, filter, onFilterChange }: RunHis
     [allRecords],
   );
   const factoryOptions = useMemo(
-    () => distinct(allRecords, (r) => r.config.magicStateFactory, (v) => FACTORY_LABELS[v] ?? v),
+    // A run can now use several factories, so it contributes each of them to the
+    // option list — and the filter matches runs that used the chosen one.
+    () => distinctMany(allRecords, (r) => r.config.magicStateFactories, (v) => FACTORY_LABELS[v] ?? v),
     [allRecords],
   );
   const versionOptions = useMemo(

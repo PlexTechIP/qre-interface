@@ -10,7 +10,7 @@ const PYTHON_BIN = resolvePythonBin();
 
 function uploadConfig(filePath: string): RunConfig {
   return {
-    schemaVersion: "1.1.0",
+    schemaVersion: "1.2.0",
     id: "b1a2c3d4-0000-4000-8000-000000000001",
     name: "upload test",
     createdAt: "2026-07-09T18:22:00Z",
@@ -28,7 +28,7 @@ function uploadConfig(filePath: string): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
+    magicStateFactories: ["round_based"],
     traceTransform: {
       type: "psspc",
       tStatesPerRotation: 20,

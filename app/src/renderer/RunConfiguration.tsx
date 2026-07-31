@@ -24,6 +24,10 @@ import {
 } from "./state/toRunConfig";
 import { useRunFlow } from "./state/useRunFlow";
 import { isConfigValid, validateForm } from "./state/validation";
+import {
+  blocksRun,
+  useUploadPreflight,
+} from "./state/useUploadPreflight";
  
 interface RunConfigurationProps {
   /** Fired once when a run finishes, so the shell can persist it to History
@@ -67,9 +71,26 @@ export function RunConfiguration({
     setState((prev) => normalizeFormState(updater(prev)));
   };
  
-  const errors = validateForm(state);
+  // Pre-flight the chosen program file IN THE FORM, before Run. Asynchronous
+  // (the check reads the filesystem in the main process), so it cannot live in
+  // the synchronous validateForm/isConfigValid pair — it is merged into both the
+  // field errors and the Run gate here instead.
+  const preflight = useUploadPreflight(state.application);
+  const baseErrors = validateForm(state);
+  const errors =
+    preflight.status === "invalid"
+      ? {
+          ...baseErrors,
+          // Saved programs and fresh uploads surface under different fields, but
+          // both serialize to the contract's `uploaded` variant and both get
+          // checked, so the message has to land on whichever control is showing.
+          ...(state.application.type === "saved"
+            ? { savedProgram: preflight.message }
+            : { uploadFilePath: preflight.message }),
+        }
+      : baseErrors;
   const generatedName = generateName(state);
-  const valid = isConfigValid(state);
+  const valid = isConfigValid(state) && !blocksRun(preflight);
  
   // Live serialized preview (placeholder stamp) so the dev inspector can prove
   // the draft validates against the contract schema before Run stamps it for real.
@@ -107,6 +128,7 @@ export function RunConfiguration({
           <ApplicationSection
             value={state.application}
             errors={errors}
+            isCheckingFile={preflight.status === "checking"}
             onChange={(application) => update((s) => ({ ...s, application }))}
           />
           <ArchitectureSection
@@ -116,9 +138,9 @@ export function RunConfiguration({
           />
           <MicroArchitectureSection
             architecture={state.architecture}
-            magicStateFactory={state.magicStateFactory}
-            onMagicStateFactoryChange={(magicStateFactory) =>
-              update((s) => ({ ...s, magicStateFactory }))
+            magicStateFactories={state.magicStateFactories}
+            onMagicStateFactoriesChange={(magicStateFactories) =>
+              update((s) => ({ ...s, magicStateFactories }))
             }
             secondaryFactories={state.secondaryFactories}
             onSecondaryFactoriesChange={(secondaryFactories) =>
