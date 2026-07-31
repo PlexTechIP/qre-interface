@@ -5,7 +5,7 @@ import {
   isLitinski19Allowed,
 } from "../../shared/types.js";
 import { buildBenchmarkEntryExpr } from "../../shared/benchmarkParams.js";
-import { normalizeTraceTransform } from "../../shared/traceTransform.js";
+import { parseTraceTransform } from "../../shared/traceTransform.js";
 import type { QreInvocation } from "./invocation.js";
 import { resolveBenchmark } from "./benchmarkRegistry.js";
  
@@ -166,15 +166,17 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
   }
  
   // --- trace transform (one pipeline; both stages always run) ---
-  const traceTransform = normalizeTraceTransform(config.traceTransform);
+  // Parsed strictly, NOT normalized: normalization repairs a malformed record
+  // so the UI can still render it, and repairing on the way into the engine
+  // would run a configuration the saved record does not describe.
+  const parsedTransform = parseTraceTransform(config.traceTransform);
+  if (!parsedTransform.ok) {
+    return invalid(parsedTransform.message);
+  }
+  const traceTransform = parsedTransform.transform;
   if (!(traceTransform.tStatesPerRotation >= 5 && traceTransform.tStatesPerRotation <= 20)) {
     return invalid(
       `PSSPC tStatesPerRotation must be in [5, 20], got ${traceTransform.tStatesPerRotation}.`,
-    );
-  }
-  if (traceTransform.slowDownFactor !== 1.0) {
-    return invalid(
-      `Lattice Surgery slowDownFactor must be 1.0, got ${traceTransform.slowDownFactor}.`,
     );
   }
  

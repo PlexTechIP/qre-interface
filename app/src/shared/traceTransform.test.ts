@@ -4,6 +4,7 @@ import {
   DEFAULT_TRACE_TRANSFORM,
   describeTraceTransform,
   normalizeTraceTransform,
+  parseTraceTransform,
 } from "./traceTransform";
 import type { RunConfig } from "./types";
 
@@ -133,5 +134,85 @@ describe("the JSON Schema follows the types", () => {
         traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
       } as unknown as RunConfig).valid,
     ).toBe(false);
+  });
+});
+
+
+describe("parseTraceTransform is strict, because it gates execution", () => {
+  it("accepts a well-formed pipeline object and keeps its slowDownFactor", () => {
+    expect(
+      parseTraceTransform({
+        tStatesPerRotation: 12,
+        ccxMagicStates: true,
+        slowDownFactor: 1.0,
+      }),
+    ).toEqual({
+      ok: true,
+      transform: { tStatesPerRotation: 12, ccxMagicStates: true, slowDownFactor: 1.0 },
+    });
+  });
+
+  it("rejects a slowDownFactor the contract does not allow", () => {
+    // Never silently rewrite it: qdk honours slow_down_factor, so a rewritten
+    // 2.0 means the record and the estimate describe different runs.
+    const result = parseTraceTransform({
+      tStatesPerRotation: 20,
+      ccxMagicStates: false,
+      slowDownFactor: 2.0,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("slowDownFactor");
+  });
+
+  it("rejects missing or wrong-typed fields rather than repairing them", () => {
+    for (const bad of [
+      undefined,
+      null,
+      {},
+      [],
+      "psspc",
+      { tStatesPerRotation: 20, ccxMagicStates: false },
+      { tStatesPerRotation: "20", ccxMagicStates: false, slowDownFactor: 1.0 },
+      { tStatesPerRotation: 20, ccxMagicStates: "no", slowDownFactor: 1.0 },
+      { type: "somethingElse", tStatesPerRotation: 20 },
+    ]) {
+      expect(parseTraceTransform(bad).ok).toBe(false);
+    }
+  });
+
+  it("accepts a well-formed v1.1.0 psspc record", () => {
+    expect(
+      parseTraceTransform({ type: "psspc", tStatesPerRotation: 7, ccxMagicStates: true }),
+    ).toEqual({
+      ok: true,
+      transform: { tStatesPerRotation: 7, ccxMagicStates: true, slowDownFactor: 1.0 },
+    });
+  });
+
+  it("rejects a MALFORMED v1.1.0 psspc record", () => {
+    // Previously copied straight through, yielding tStatesPerRotation:
+    // undefined typed as number and "undefined T/rotation" in History.
+    expect(parseTraceTransform({ type: "psspc" }).ok).toBe(false);
+    expect(
+      parseTraceTransform({ type: "psspc", tStatesPerRotation: null, ccxMagicStates: false })
+        .ok,
+    ).toBe(false);
+  });
+
+  it("accepts a well-formed v1.1.0 latticeSurgery record", () => {
+    expect(
+      parseTraceTransform({ type: "latticeSurgery", slowDownFactor: 1.0 }),
+    ).toEqual({ ok: true, transform: DEFAULT_TRACE_TRANSFORM });
+  });
+});
+
+describe("normalizeTraceTransform stays lenient, because it gates display", () => {
+  it("falls back to defaults for anything parse rejects", () => {
+    // History and Comparison must render SOMETHING for a corrupt record; the
+    // engine is what refuses to run it.
+    expect(normalizeTraceTransform({ type: "psspc" })).toEqual(DEFAULT_TRACE_TRANSFORM);
+    expect(describeTraceTransform(normalizeTraceTransform({ type: "psspc" }))).not.toContain(
+      "undefined",
+    );
   });
 });

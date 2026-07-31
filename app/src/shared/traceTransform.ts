@@ -42,35 +42,87 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export type TraceTransformParse =
+  | { ok: true; transform: TraceTransform }
+  | { ok: false; message: string };
+
+function rejected(message: string): TraceTransformParse {
+  return { ok: false, message };
+}
+
 /**
- * Read a trace transform from a config of any contract version.
+ * STRICT read, for anything that gates execution.
+ *
+ * Accepts the v1.2.0 pipeline object and both v1.1.0 union shapes, and rejects
+ * everything else rather than repairing it. Repairing is what a display path
+ * may do; an execution path must not, because a repaired config runs something
+ * other than what the record says. In particular `slowDownFactor` is CHECKED,
+ * not overwritten: qdk honours it (2.0 doubles the runtime), so quietly
+ * rewriting a 2.0 to 1.0 would estimate a different run than the one saved.
+ *
+ * A legacy `latticeSurgery` record resolves to the PSSPC defaults because that
+ * is literally what the old engine ran for it — `build_trace_query` called
+ * `PSSPC.q()` with no arguments on that branch.
+ */
+export function parseTraceTransform(value: unknown): TraceTransformParse {
+  if (!isRecord(value)) {
+    return rejected("traceTransform must be an object.");
+  }
+
+  const { type } = value;
+
+  if (type === "latticeSurgery") {
+    const legacy = value as unknown as Extract<
+      LegacyTraceTransform,
+      { type: "latticeSurgery" }
+    >;
+    if (legacy.slowDownFactor !== 1) {
+      return rejected(
+        `Lattice Surgery slowDownFactor must be 1.0, got ${String(legacy.slowDownFactor)}.`,
+      );
+    }
+    return { ok: true, transform: { ...DEFAULT_TRACE_TRANSFORM } };
+  }
+
+  if (type !== undefined && type !== "psspc") {
+    return rejected(`Unknown traceTransform type ${JSON.stringify(type)}.`);
+  }
+
+  const { tStatesPerRotation, ccxMagicStates } = value;
+  if (typeof tStatesPerRotation !== "number" || !Number.isFinite(tStatesPerRotation)) {
+    return rejected(
+      `traceTransform.tStatesPerRotation must be a number, got ${JSON.stringify(tStatesPerRotation)}.`,
+    );
+  }
+  if (typeof ccxMagicStates !== "boolean") {
+    return rejected(
+      `traceTransform.ccxMagicStates must be a boolean, got ${JSON.stringify(ccxMagicStates)}.`,
+    );
+  }
+
+  // v1.1.0 psspc records carry no slowDownFactor; the stage ran at 1.0.
+  const slowDownFactor = type === "psspc" ? 1 : value.slowDownFactor;
+  if (slowDownFactor !== 1) {
+    return rejected(
+      `Lattice Surgery slowDownFactor must be 1.0, got ${String(slowDownFactor)}.`,
+    );
+  }
+
+  return { ok: true, transform: { tStatesPerRotation, ccxMagicStates, slowDownFactor: 1.0 } };
+}
+
+/**
+ * LENIENT read, for display and for rehydrating a draft.
  *
  * Records are validated on save, never on load, and are immutable once saved —
  * so v1.1.0 records outlive the contract bump and History, Comparison and Rerun
- * must keep reading them. A legacy `latticeSurgery` record normalizes to the
- * PSSPC defaults because that is literally what the old engine ran for it:
- * `build_trace_query` called `PSSPC.q()` with no arguments on that branch.
+ * must keep rendering them. Anything `parseTraceTransform` rejects falls back to
+ * the defaults so the UI shows a coherent value; refusing to RUN such a record
+ * is the engine's job, not this one's.
  */
 export function normalizeTraceTransform(value: unknown): TraceTransform {
-  if (!isRecord(value)) return { ...DEFAULT_TRACE_TRANSFORM };
-
-  if (value.type === undefined) {
-    const { tStatesPerRotation, ccxMagicStates } = value;
-    if (typeof tStatesPerRotation !== "number" || typeof ccxMagicStates !== "boolean") {
-      return { ...DEFAULT_TRACE_TRANSFORM };
-    }
-    return { tStatesPerRotation, ccxMagicStates, slowDownFactor: 1.0 };
-  }
-
-  const legacy = value as unknown as LegacyTraceTransform;
-  if (legacy.type === "psspc") {
-    return {
-      tStatesPerRotation: legacy.tStatesPerRotation,
-      ccxMagicStates: legacy.ccxMagicStates,
-      slowDownFactor: 1.0,
-    };
-  }
-  return { ...DEFAULT_TRACE_TRANSFORM };
+  const parsed = parseTraceTransform(value);
+  return parsed.ok ? parsed.transform : { ...DEFAULT_TRACE_TRANSFORM };
 }
 
 /**

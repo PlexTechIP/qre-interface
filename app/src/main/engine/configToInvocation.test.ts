@@ -345,3 +345,72 @@ describe("benchmark hyperparameters reach the entry expression", () => {
     if (result.ok) expect(result.invocation.program.format).toBe("logicalCounts");
   });
 });
+
+describe("the trace transform is validated as recorded, not as repaired", () => {
+  const transform = (value: unknown): RunConfig =>
+    ({ ...baseGateBasedConfig(), traceTransform: value }) as unknown as RunConfig;
+
+  it("rejects a slowDownFactor other than 1.0 instead of rewriting it to 1.0", () => {
+    // The contract fixes this at 1.0 and qdk genuinely honours it — a 2.0 run
+    // takes twice the runtime. Silently normalizing it means the saved record
+    // says 2.0 and the estimate is for 1.0.
+    const result = configToInvocation(
+      transform({ tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 2.0 }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_CONFIG");
+      expect(result.error.message).toContain("slowDownFactor");
+    }
+  });
+
+  it("rejects a structurally incomplete transform instead of running defaults", () => {
+    const result = configToInvocation(transform({}), 30_000);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("rejects a wrong-typed tStatesPerRotation instead of running defaults", () => {
+    const result = configToInvocation(
+      transform({ tStatesPerRotation: "20", ccxMagicStates: false, slowDownFactor: 1.0 }),
+      30_000,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("rejects a missing transform outright", () => {
+    const result = configToInvocation(transform(undefined), 30_000);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_CONFIG");
+  });
+
+  it("still accepts a stored v1.1.0 psspc record and honours its values", () => {
+    // Records are immutable and validated on save only, so v1.1.0 shapes reach
+    // the engine through History and Rerun and must keep working.
+    const result = configToInvocation(
+      transform({ type: "psspc", tStatesPerRotation: 12, ccxMagicStates: true }),
+      30_000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.invocation.traceTransform).toEqual({
+        tStatesPerRotation: 12,
+        ccxMagicStates: true,
+        slowDownFactor: 1.0,
+      });
+    }
+  });
+
+  it("still accepts a stored v1.1.0 latticeSurgery record", () => {
+    const result = configToInvocation(
+      transform({ type: "latticeSurgery", slowDownFactor: 1.0 }),
+      30_000,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.invocation.traceTransform.tStatesPerRotation).toBe(20);
+    }
+  });
+});
