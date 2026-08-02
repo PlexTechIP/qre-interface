@@ -157,25 +157,32 @@ improvements at this stage just make the repo and the Google Doc disagree.
 
 ## Deliverable 4 — The trace transform becomes a four-stage pipeline
 
-The expensive one, and the one that changes estimates.
+The expensive one, and the one that changes estimates. **UI only — the backend
+landed with contract v1.4.0.**
 
-Today the contract models the transform as the two-stage pipeline qdk actually
-runs, and `estimate.py`'s `build_trace_query` composes it:
+> ⚠️ **This deliverable shrank after the brief was first written.** v1.4.0 came
+> with the engine half already done, so an earlier draft of this section — which
+> showed a two-stage `build_trace_query` and asked you to extend it — described a
+> state of the repo that no longer exists. Check the code before you plan around
+> any snippet in here.
 
-```python
-return PSSPC.q(
-    num_ts_per_rotation=trace_transform["tStatesPerRotation"],
-    ccx_magic_states=trace_transform["ccxMagicStates"],
-) * LatticeSurgery.q(slow_down_factor=trace_transform["slowDownFactor"])
-```
-
-Two optional stages join it. The full pipeline, **in this order**:
+`estimate.py`'s `build_trace_query` **already** composes all four stages from a
+fixed sequence, `configToInvocation` already carries both new members, and
+`traceTransformV14.test.ts` already proves the stage moves a real estimate
+(477 qubits / 1,363,950 ns → 256 qubits / 1,852,200 ns on Ising Model (2D) 3×3 —
+still named "Quantum Dynamics" in `benchmarks.json` and in that test's comments
+until the PM rename lands).
+The full pipeline, **in this order**:
 
 ```
 DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory
 ```
 
-**Verified on qdk 1.30.0** (Jul 31), so you don't have to re-derive it:
+**Do not rebuild any of that.** Your job is the controls that drive it, and the
+proof that they do.
+
+For reference when you build the inputs — verified on qdk 1.30.0 (Jul 31), field
+names and defaults matching `features-and-fields.md` exactly:
 
 - `qdk.qre.DynamicMemoryCompute(compute_capacity_percentage: float = 0.5,
   eviction_strategy: EvictionStrategy = LEAST_RECENTLY_USED)`
@@ -183,45 +190,50 @@ DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory
 - `qdk.qre.EvictionStrategy.{LEAST_RECENTLY_USED, LEAST_FREQUENTLY_USED,
   FIRST_AVAILABLE}`
 
-Field names and defaults match `features-and-fields.md` exactly.
-
 **Week 4 deleted Dynamic Memory Compute** on the grounds that it had no package
 counterpart. That was true of the **1.29.1** pin the audit ran against. We are on
-1.30.0 and it is there. You are restoring it, not re-litigating it.
+1.30.0 and it is there. It was restored in v1.4.0, not re-litigated.
 
 ### Three things that will bite
 
-**Order is correctness, not style.** The existing docstring in `build_trace_query`
-records that `PSSPC.q()` alone yields an empty frontier and
-`LatticeSurgery.q() * PSSPC.q()` raises *"unsupported instruction LATTICE_SURGERY
-in trace transformation 'PSSPC'"*. The pipeline fails loudly when composed
-wrongly, which is good news — but it means the composition has to be built from a
-fixed order, never from iteration over a set or an object's key order.
-
-**An off stage is absent, not defaulted.** This is the subtle one, and it is
-called out explicitly in the source doc. If Dynamic Memory Compute is off, the
-query must be `PSSPC × LatticeSurgery` — *not*
-`DynamicMemoryCompute(0.5, LRU) × PSSPC × LatticeSurgery`. A stage running at its
-defaults is a different estimate from a stage that isn't there. The v1.4.0
-contract encodes this by making `dynamicMemoryCompute` absent or null when off;
-your serializer and your adapter both have to honour that rather than filling in
-defaults on the way through.
+**An off stage is absent, not defaulted.** The one that is still genuinely yours,
+and the subtle one. If Dynamic Memory Compute is off, the query must be
+`PSSPC × LatticeSurgery` — *not* `DynamicMemoryCompute(0.5, LRU) × PSSPC ×
+LatticeSurgery`. A stage running at its defaults is a different estimate from a
+stage that isn't there. The contract and the engine already honour this
+(`dynamicMemoryCompute` absent or null when off); **the form must not undo it by
+always writing an object.** That is the regression this deliverable is most
+likely to ship.
 
 **The UI has to make "off" obvious.** Preston's note: the optional stages are
 greyed out behind a checkbox or toggle, and their parameters only become live
 when the stage is enabled. Model it on the existing CCX Magic States toggle
-idiom. `Unmemory` has no parameters at all — it is on or off.
+idiom. `Unmemory` has no parameters at all — it is on or off, and it should be
+**gated on Dynamic Memory Compute being enabled**, since it reverses that stage
+and has nothing to act on without it.
+
+**Order is correctness, not style — and it is already fixed in the engine.** The
+docstring in `build_trace_query` records that `PSSPC.q()` alone yields an empty
+frontier and `LatticeSurgery.q() * PSSPC.q()` raises *"unsupported instruction
+LATTICE_SURGERY in trace transformation 'PSSPC'"*. The composition is built from
+a fixed sequence rather than from iterating a set or a dict's keys. You cannot
+get this wrong from the form — just don't "simplify" it if you end up in that
+function for another reason.
 
 **Do not add a control for Slow Down Factor.** It is `const: 1` in the schema and
 rendered as a disabled read-only input today. That is deliberate.
 
-### Prove it changes something
+### Prove it changes something — from the UI
 
-The reason this deliverable is expensive is that it is the only item in your week
-that can silently do nothing. A run with Dynamic Memory Compute enabled must
-produce a **different estimate** from the same run with it off, demonstrated with
-real numbers, or the stage isn't wired. Same for Unmemory. `npm run test:engine`
-is where that evidence belongs.
+The engine-level proof already exists in `traceTransformV14.test.ts`. What is
+**not** proven is that your controls reach it: a toggle that writes nothing, or
+writes an object when it should write nothing, produces identical numbers and
+looks exactly like a working feature.
+
+So the evidence this deliverable needs is end-to-end — toggling Dynamic Memory
+Compute **in the form** and running produces different numbers from the same run
+with it off. Same for Unmemory (with DMC on, since it has nothing to reverse
+otherwise). This is the only item in your week that can silently do nothing.
 
 ---
 
@@ -251,13 +263,19 @@ labelling should not be one copy-pasted sentence:
 | Neutral Atom **Target Year** | Set on `CZ`/`CNOT`, same story | Recorded, does not affect the estimate |
 | Neutral Atom **Data Qubit Spacing** | Attached to `PHYSICAL_MOVE` as a bit-encoded property, like `atom_spacing` / `velocity` / `acceleration`; measured bit-identical across 6.0 / 12.0 / 30.0 | Recorded, does not affect the estimate |
 
-> ⚠️ **T Error Rate's `(0, 0.05]` bound is enforced by us alone.** Measured on
-> 1.30.0: `Majorana(error_rate=1e-5, t_error_rate=0.9)` and `-0.1` are both
-> accepted and fed straight to the `T` instruction. `configToInvocation` already
-> range-checks it — do not weaken that, and do not assume the engine will catch a
-> bad value. The upper bound is not arbitrary: 0.05 is the highest value qdk
-> itself ever derives (its docstring calls it the 5% non-Clifford error rate for
-> the pessimistic case).
+> ⚠️ **T Error Rate's `(0, 0.05]` bound is enforced by us alone — qdk enforces
+> nothing.** Measured on 1.30.0: `Majorana(error_rate=1e-5, t_error_rate=0.9)`
+> and `-0.1` are both accepted and fed straight to the `T` instruction. The upper
+> bound is not arbitrary: 0.05 is the highest value qdk itself ever derives (its
+> docstring calls it the 5% non-Clifford error rate for the pessimistic case).
+>
+> **Updated 2026-08-02: "us" is now two layers, not one.** `configToInvocation`
+> still range-checks it, and `estimate.py` re-checks every architecture parameter
+> against a rules table transcribed from `runconfig.schema.json` before it builds
+> the qdk model. So a bad value that bypasses the TypeScript guard is refused as
+> `INVALID_CONFIG` naming the field, rather than producing a confident, wrong
+> estimate. **Do not weaken either one**, and do not read the second as a licence
+> to relax the first — the form is what stops the user reaching that state at all.
 
 **So labelling is part of this deliverable, not a nicety.** Week 4 spent an
 entire week removing controls that changed nothing while looking like they did.
@@ -265,16 +283,48 @@ Shipping four more unlabelled would undo that in an afternoon. Use the same
 honest register the Memory Optimization control uses today — it says what it is
 and why, in the field's own help text, where a user will actually read it.
 
+### One extra field task, added 2026-08-02
+
+**Four existing time inputs are now integer-only on the wire, and the form does
+not know it yet.** Contract v1.4.0's follow-up typed `gateBased.gateTime`,
+`measurementTime`, `twoQubitGateTime` and `majorana.operationTime` as `integer`
+rather than `number` — matching `features-and-fields.md`, which has always typed
+them `int [> 0]`, and matching qdk, which rejects `50.5` outright with *"'float'
+object cannot be interpreted as an integer"*. `configToInvocation` now checks
+`Number.isSafeInteger`, and the schema caps each at `2^53 - 1`.
+
+`NumberField` has no `step`, so the form still accepts `50.5` into all four. That
+is a **reachable state the serializer refuses** — the same defect §C's first
+invariant exists to prevent, just on a different control. Give those four
+`step={1}` and an integer check in `validation.ts`, so the error appears under
+the field as the user types rather than as an `INVALID_CONFIG` at Run-click.
+
+This is a genuine improvement over the old behaviour, not a regression — before
+the tightening a fractional time passed the serializer and died inside qdk as an
+opaque `ESTIMATION_FAILED`. It just needs the form to catch up. Neutral Atom's
+time fields were already `integer` and already validated; they need `step={1}`
+too if they don't have it.
+
 **Do not quote "qdk reads it nowhere" as proof.** The estimator core is a native
 extension whose binary contains both property names; the Python-level search only
 shows no *Python* consumer. The measurement is the evidence, so if a future qdk
 bump changes these numbers, re-measure rather than trusting the earlier search.
 
-> ⚠️ **Expect a test to fail, and let it.** Commit `6dce3ca` pins the QDK
-> `NeutralAtom` defaults *we deliberately don't model* — including
-> `data_qubit_spacing`. It exists so that the day we start modelling them, it
-> fails loudly. That day is this week. Update it deliberately, in the same commit
-> as the field, with a note saying why. Don't delete it and don't skip it.
+> ⚠️ **Commit `6dce3ca`'s pinned-defaults test — corrected 2026-08-02.** An
+> earlier draft said "expect a test to fail, and let it." **It will not fail**,
+> and waiting for it to is how you'd miss it.
+>
+> The test is *"pins the QDK NeutralAtom defaults the contract does not model"*
+> in `qreEngine.test.ts`. It calls `build_architecture` on a fixture that does
+> **not** set `dataQubitSpacing` or `targetYear`, then asserts qdk's own defaults
+> (`12.0` and `null`) come back. Adding the form controls does not change that
+> fixture, so the assertion stays green — it only fires if a qdk bump moves the
+> defaults, which is still worth having.
+>
+> What *is* wrong is its comment: *"data_qubit_spacing and target_year are absent
+> from the field spec, so the wrapper never sets them."* Both are in the spec and
+> the contract as of v1.4.0, and the wrapper does set them when present. **Fix
+> the comment**, in the same commit as the fields. Don't delete the test.
 
 ---
 
@@ -344,9 +394,12 @@ in writing:
   Say so precisely: "measured on 1.30.0 with DynamicMemoryCompute enabled and the
   yoked code actually in the ISA query."
 
-`memoryOptimization.test.ts` is where it lands — and its comment claiming
-DynamicMemoryCompute is "deliberately not in our pipeline" is stale as of v1.4.0.
-Fix that while you are in there.
+`memoryOptimization.test.ts` is where it lands. Its comment claiming
+DynamicMemoryCompute was "deliberately not in our pipeline" **has already been
+corrected** — the file now opens by stating that DMC *is* in the pipeline as of
+v1.4.0. What has *not* changed is the assertion at the bottom
+(`expect(...).not.toContain("memoryOptimization")`), which still pins the old
+truth and is yours to invert.
 
 ---
 

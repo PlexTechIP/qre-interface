@@ -32,20 +32,42 @@ Strict structured-output modes support roughly `type`, `properties`, `required`,
 and require every property to appear in `required`. Numeric bounds, string
 formats, and conditional keywords are dropped or rejected.
 
-Counted in our canonical schema at **v1.3.0** (re-count after v1.4.0 lands, the
-numbers move):
+Counted in our canonical schema **on 2026-08-02**, after v1.4.0 and after the
+architecture bounds were tightened. The earlier draft of this table was counted
+at v1.3.0 and is superseded — the numbers moved twice, and two keywords it never
+listed are now the largest unsupported group:
 
-| Keyword | Uses | Supported by strict structured outputs? |
-|---|---|---|
-| `const` | 23 | yes |
-| `exclusiveMinimum` | 12 | **no** |
-| `additionalProperties` | 9 | yes (must be `false`) |
-| `if` / `then` | 6 / 6 | **no** |
-| `format` (`uuid`, `date-time`) | 4 | **no** |
-| `oneOf` | 3 | partial |
-| `anyOf` | 2 | yes |
-| `allOf` | 1 | **no** |
-| `not` | 1 | **no** |
+| Keyword | Uses | Was (v1.3.0) | Supported by strict structured outputs? |
+|---|---|---|---|
+| `const` | 23 | 23 | yes |
+| `required` | 23 | — | yes (every property must appear) |
+| **`maximum`** | **22** | 8 | **no** |
+| **`minimum`** | **16** | 14 | **no** |
+| `exclusiveMinimum` | 15 | 12 | **no** |
+| `additionalProperties` | 11 | 9 | yes (must be `false`) |
+| `enum` | 8 | — | yes |
+| `exclusiveMaximum` | 6 | 6 | **no** |
+| `if` / `then` | 6 / 6 | 6 / 6 | **no** |
+| `oneOf` | 3 | 3 | partial |
+| `items` | 3 | — | yes |
+| `anyOf` | 2 | 2 | yes |
+| `format` (`uuid`, `date-time`) | 2 | 4 | **no** |
+| `allOf` | 1 | 1 | **no** |
+| `not` | 1 | 1 | **no** |
+
+> **Two corrections to the old table, so your re-count matches.** `format` is
+> **2**, not 4 — the raw string `"format"` appears four times, but two of those
+> are the *property named* `format` on the uploaded-application variant, not the
+> `format` keyword. Count keywords positionally (skip anything directly under a
+> `properties` object), or you will over-count `format`, `enum`, `items` and
+> `not`, all of which are also legal property names.
+
+**The numeric bounds are now the bulk of the problem**, not the conditionals.
+`maximum` alone tripled — the four architecture time fields became `integer` with
+an explicit `2^53 - 1` cap, and every other integral field gained the same cap,
+so all three layers (schema, `configToInvocation`, `estimate.py`) state one
+bound. Good for correctness, and 12 more constraints your lowered schema has to
+carry as prose.
 
 Our schema is *deliberately* strict — closed enums, `additionalProperties: false`,
 conditional pairing rules — precisely so a producer typo fails fast. That

@@ -72,9 +72,14 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       with the *right* reason per field: T Error Rate is **derived**, not inert,
       while both Target Years and Data Qubit Spacing are recorded-not-influential
       (technical brief § Deliverable 5 has the table)
-- [ ] **Commit `6dce3ca`'s pinned-defaults test was updated deliberately**, in the
-      same commit as the field it covers, with a stated reason — not deleted, not
-      skipped
+- [ ] **Commit `6dce3ca`'s pinned-defaults test still passes and its comment was
+      corrected**, in the same commit as the fields it covers — not deleted, not
+      skipped. It does not fail on this change; its claim that both fields are
+      "absent from the field spec" is what went stale at v1.4.0
+- [ ] **The four integer-only time fields reject a fractional value in the form**
+      — `gateTime`, `measurementTime`, `twoQubitGateTime`, `operationTime` are
+      `integer` in the schema as of 2026-08-02, so `50.5` must surface under the
+      field, not as an `INVALID_CONFIG` at Run-click
 - [ ] **Tooltip copy is verbatim** from `features-and-fields.md` for every field
       where copy already exists
 - [ ] **Existing behaviour is unregressed:** Superconducting, Majorana, and

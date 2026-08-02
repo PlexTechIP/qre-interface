@@ -33,8 +33,10 @@ Parts 1 and 2 are complete and hardened. Verified on `main` at publication:
 - **The trace transform is already modelled as a pipeline, not a choice** — the
   contract carries each stage's parameters and the engine composes
   `PSSPC.q() * LatticeSurgery.q()` on every estimate.
-- **Contract is at v1.3.0.** The PMs land **v1.4.0 at kickoff** — see § Contract
-  changes below. It is a PM deliverable this week, not a team task.
+- **Contract v1.4.0 is on `main`** as of kickoff — `traceTransform`'s two new
+  members, the four QPU fields, and run provenance are all live, and the engine
+  adapter came with them. See § Contract changes below, including the
+  **2026-08-02 follow-up**. It was a PM deliverable, not a team task.
 - **History, Comparison, Rerun, and Markdown export all read the real store.**
 
 `docs/features-and-fields.md` was updated **Fri Jul 31** with Preston's new
@@ -120,22 +122,67 @@ If you branch early, rebase; don't hand-edit `contracts/`.
 Nobody else opens a contract-change PR this week. If you think you need one, that
 is a conversation with the PMs, not a PR.
 
+### Follow-up landed 2026-08-02 — rebase before you keep going
+
+A second PM contract edit landed after kickoff. It is small, it is not a version
+bump, and it is the kind of mid-week change this section warns about — so it is
+written down rather than announced only in the channel.
+
+**Four architecture time fields are now `integer`, not `number`:**
+`gateBased.gateTime`, `measurementTime`, `twoQubitGateTime`, and
+`majorana.operationTime`. Every integral field is additionally capped at
+`2^53 - 1`. Rationale: `features-and-fields.md` has always typed all four
+`int [> 0]`, and qdk rejects `50.5` outright — so the schema and the TypeScript
+check were the ones lagging the spec *and* the engine, not the wrapper diverging
+from the contract. Nothing is taken away: a fractional time could never estimate,
+so no saved run carries one, and records are validated on save rather than on
+read, so stored history still loads.
+
+Landing with it: `estimate.py` now bounds **every** architecture parameter
+against a rules table transcribed from `runconfig.schema.json`, with a test that
+diffs the two so they cannot drift.
+
+Who this touches:
+
+- **Team 3** — one added task in § Deliverable 5: the form still accepts `50.5`
+  into those four inputs, because `NumberField` has no `step`. See the team-3
+  brief and checklist.
+- **Team 2** — the keyword table in your brief has been re-counted; `maximum`
+  went 8 → 22 and is now the largest unsupported group.
+- **Team 1** — no effect.
+
+If you branched before Aug 2, rebase onto `main` rather than merging, and re-run
+`npm run typecheck && npm test && npm run test:engine`.
+
 ## Renames — one source, two surfaces
 
 From the Jul 31 POC, and recorded in
 [`docs/features-and-fields.md` § Renames](../features-and-fields.md):
 
-| Current label | New label |
-|---|---|
-| Max Error | **Total Fault Tolerant Execution Error** |
-| T States / Rotation | **T Count Per Rotation** |
-| Low Move (Surface Code) | *unchanged* — stays "Low Move," to match the QDK code base |
-| Slowdown Factor | *unchanged* |
+There are **four**, not two — an earlier draft of this table listed only the
+first two, while `features-and-fields.md` § Renames has carried all four since
+Jul 31. Who applies each one matters, so it is spelled out:
 
-**These are display labels only.** The contract field ids (`maxError`,
-`tStatesPerRotation`) and the engine keywords (`max_error`,
-`num_ts_per_rotation`) do not change, so no saved record needs migrating and no
-schema edit is implied.
+| Current label | New label | Contract id (unchanged) | Who applies it |
+|---|---|---|---|
+| Max Error | **Total Fault Tolerant Execution Error** | `maxError` | Team 3 (form) + Team 2 (export, History, Comparison) |
+| T States / Rotation | **T Count Per Rotation** | `tStatesPerRotation` | Team 3 (form) + Team 2 (export, History, Comparison) |
+| Quantum Dynamics | **Ising Model (2D)** | `quantum-dynamics` | **PMs** — a one-line edit to `benchmarks.json`'s `name`. Both teams *verify* it landed; neither re-implements it |
+| Number of Qubits | **Logical Qubit Count** | `numQubits` | Team 3 — a label in `ApplicationSection.tsx` and `validation.ts` |
+| Low Move (Surface Code) | *unchanged* — stays "Low Move," to match the QDK code base | — | — |
+| Slowdown Factor | *unchanged* | `slowDownFactor` | — |
+
+**These are display labels only.** Every contract field id and engine keyword
+(`maxError`, `tStatesPerRotation`, `max_error`, `num_ts_per_rotation`, and the
+benchmark `id` `quantum-dynamics`) stays exactly as it is, so no saved record
+needs migrating and no schema edit is implied.
+
+> ⚠️ **The Ising Model (2D) rename has NOT landed yet.** `benchmarks.json` still
+> reads `"name": "Quantum Dynamics"`. Team 3's checklist and definition-of-done
+> both say "verify it landed rather than applying it" — as of 2026-08-02 there is
+> nothing to verify. **PMs: this is outstanding.** Until it lands, docs and test
+> comments that already use the new name (including the Dynamic Memory Compute
+> measurement below) are describing the same benchmark under its intended label.
 
 Labels render on more surfaces than the form: Markdown export, the Comparison
 table, and History all use them. **Team 3 does the configuration form; Team 2

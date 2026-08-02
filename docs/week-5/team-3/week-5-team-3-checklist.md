@@ -146,10 +146,19 @@ before §A–§C. Say so in the channel rather than deciding silently.
       when left blank"); **both Target Years** and **Data Qubit Spacing** are
       recorded but do not affect the estimate
 - [ ] **T Error Rate's `(0, 0.05]` bound is enforced only by us** — qdk accepts
-      0.9 and -0.1 without complaint. Don't loosen it
-- [ ] **Commit `6dce3ca`'s pinned-defaults test updated deliberately**, in the
-      same commit as the field, with a note. It was built to fail on exactly this
-      change — don't delete it, don't skip it
+      0.9 and -0.1 without complaint. As of 2026-08-02 "us" is two layers:
+      `configToInvocation` **and** `estimate.py`'s rules table. Don't loosen
+      either
+- [ ] **The four time fields are integer-only now** — `gateTime`,
+      `measurementTime`, `twoQubitGateTime`, `operationTime` are `integer` in the
+      schema and checked with `Number.isSafeInteger`. `NumberField` has no
+      `step`, so the form still accepts `50.5`. Add `step={1}` + an integer check
+      in `validation.ts` so it fails under the field, not at Run-click
+- [ ] **Commit `6dce3ca`'s pinned-defaults test — fix its COMMENT**, in the same
+      commit as the fields. It will **not** fail (its fixture doesn't set the new
+      fields, so qdk's defaults still come back); an earlier draft of the brief
+      said to expect a failure and that was wrong. The comment claiming both
+      fields are "absent from the field spec" is what's stale. Don't delete it
 
 ## G. Memory Optimization — wire it, THEN measure
 
@@ -178,9 +187,10 @@ before §A–§C. Say so in the channel rather than deciding silently.
 - [ ] **If it doesn't:** the explanation finally becomes *tested* rather than
       assumed — say "measured on 1.30.0 with DynamicMemoryCompute enabled and the
       yoked code actually in the ISA query"
-- [ ] Either way the measurement lands in `memoryOptimization.test.ts`, and that
-      file's comment about DynamicMemoryCompute being "deliberately not in our
-      pipeline" is stale as of v1.4.0 — fix it
+- [ ] Either way the measurement lands in `memoryOptimization.test.ts`. Its
+      DynamicMemoryCompute comment **has already been corrected** — the file now
+      states DMC *is* in the pipeline as of v1.4.0. The `not.toContain` assertion
+      at the bottom is the part still pinning the old truth
 
 ## H. Docs — the two blank validations, then the mirror
 
