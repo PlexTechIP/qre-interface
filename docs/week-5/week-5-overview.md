@@ -167,7 +167,7 @@ Jul 31. Who applies each one matters, so it is spelled out:
 |---|---|---|---|
 | Max Error | **Total Fault Tolerant Execution Error** | `maxError` | Team 3 (form) + Team 2 (export, History, Comparison) |
 | T States / Rotation | **T Count Per Rotation** | `tStatesPerRotation` | Team 3 (form) + Team 2 (export, History, Comparison) |
-| Quantum Dynamics | **Ising Model (2D)** | `quantum-dynamics` | **PMs** — a one-line edit to `benchmarks.json`'s `name`. Both teams *verify* it landed; neither re-implements it |
+| Quantum Dynamics | **Ising Model (2D)** | `quantum-dynamics` | **PMs — landed 2026-08-02.** Both teams *verify* it; neither re-implements it |
 | Number of Qubits | **Logical Qubit Count** | `numQubits` | Team 3 — a label in `ApplicationSection.tsx` and `validation.ts` |
 | Low Move (Surface Code) | *unchanged* — stays "Low Move," to match the QDK code base | — | — |
 | Slowdown Factor | *unchanged* | `slowDownFactor` | — |
@@ -177,12 +177,26 @@ Jul 31. Who applies each one matters, so it is spelled out:
 benchmark `id` `quantum-dynamics`) stays exactly as it is, so no saved record
 needs migrating and no schema edit is implied.
 
-> ⚠️ **The Ising Model (2D) rename has NOT landed yet.** `benchmarks.json` still
-> reads `"name": "Quantum Dynamics"`. Team 3's checklist and definition-of-done
-> both say "verify it landed rather than applying it" — as of 2026-08-02 there is
-> nothing to verify. **PMs: this is outstanding.** Until it lands, docs and test
-> comments that already use the new name (including the Dynamic Memory Compute
-> measurement below) are describing the same benchmark under its intended label.
+> ✅ **The Ising Model (2D) rename landed 2026-08-02.** Preston's reasoning:
+> *"we had just used a general class of algorithms called quantum dynamics, but
+> the code we use right now is more specifically Ising model (2D)."* The `id`
+> `quantum-dynamics` is untouched, so no saved record migrates.
+>
+> ⚠️ **It was two edits, not one.** An earlier draft of this table called it "a
+> one-line edit to `benchmarks.json`." The name is mirrored in
+> `app/src/main/engine/benchmarkRegistry.ts`, and `benchmarkRegistry.test.ts`
+> asserts the two match on id, name **and** description — so changing only the
+> contract file fails the fast suite. Both were changed together. Team 3: this
+> touched one file in `main/engine/`, so rebase before you edit that file.
+>
+> **Still open for Preston** — the `description` and `keywords` were left alone
+> and now read oddly under the new name: *"Simulation-style benchmark for quantum
+> dynamics workloads…"*, keywords `["dynamics", "simulation", "physics",
+> "hamiltonian"]`. Both are user-visible — the description is the hover tooltip
+> on the benchmark button, and both are searched by the benchmark filter. They
+> are product copy, so they were not rewritten without sign-off. Note that
+> leaving them is what keeps a search for "quantum dynamics" still finding this
+> benchmark, which may be worth keeping deliberately rather than by accident.
 
 Labels render on more surfaces than the form: Markdown export, the Comparison
 table, and History all use them. **Team 3 does the configuration form; Team 2

@@ -170,8 +170,8 @@ landed with contract v1.4.0.**
 fixed sequence, `configToInvocation` already carries both new members, and
 `traceTransformV14.test.ts` already proves the stage moves a real estimate
 (477 qubits / 1,363,950 ns → 256 qubits / 1,852,200 ns on Ising Model (2D) 3×3 —
-still named "Quantum Dynamics" in `benchmarks.json` and in that test's comments
-until the PM rename lands).
+the benchmark that test's comments still call "Quantum Dynamics", renamed
+2026-08-02; its `id` `quantum-dynamics` is unchanged).
 The full pipeline, **in this order**:
 
 ```

@@ -18,10 +18,11 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       verbatim. Rotation Depth is defined by the second 2026-07-31 revision, so
       there is no longer an escalation path for it
 - [ ] **The *Number of Qubits* → *Logical Qubit Count* rename is live**, with
-      `numQubits` untouched on the wire. *(The Ising Model (2D) rename is a
-      PM-made one-line edit to `benchmarks.json`; verify it landed rather than
-      applying it — that file is contract territory, and the same edit covers
-      Team 2's surfaces.)*
+      `numQubits` untouched on the wire. Preston's reasoning: it names *which*
+      qubits, since the results surface reports physical counts on the same
+      screen. *(The Ising Model (2D) rename is PM-made and landed 2026-08-02 —
+      verify it rather than applying it. It touched `benchmarks.json` **and**
+      `benchmarkRegistry.ts`, which mirrors the name under a test.)*
 - [ ] **The trace transform is a four-stage ordered pipeline in the UI.**
       The two optional stages are toggleable and greyed out when off. *(The
       contract, adapter, and `estimate.py` composition landed with v1.4.0 — your

@@ -49,12 +49,15 @@ before §A–§C. Say so in the channel rather than deciding silently.
 - [ ] `ConfigurationSummary.tsx` and `constants/labels.ts` updated to match
 - [ ] **Team 2 owns the same rename on Results / History / Comparison / export** —
       confirm in the channel that both halves are landing this week
-- [ ] **Do NOT apply the *Quantum Dynamics → Ising Model (2D)* rename yourself.**
-      It is a one-line change to `benchmarks.json`'s `name`, which lives in
-      `src/shared/contracts/` — **the PMs make it**. The form
+- [ ] **Do NOT apply the *Quantum Dynamics → Ising Model (2D)* rename yourself —
+      it landed 2026-08-02.** Verify it; don't re-implement it. The form
       (`ApplicationSection.tsx:250`) and History/Comparison
-      (`historyLabels.ts:46`) both read that field, so one PM edit covers every
-      surface. Verify it landed; don't re-implement it
+      (`historyLabels.ts:46`) both read `benchmarks.json`'s `name` via
+      `staticOptions.ts`, so every user-visible surface came from that one field.
+      **It also touched `main/engine/benchmarkRegistry.ts`**, which mirrors the
+      name and is pinned by `benchmarkRegistry.test.ts` — that is a PM edit in
+      your territory, so rebase before you touch that file. The benchmark `id`
+      is unchanged, so no record migrates
 - [ ] **Do NOT apply *Number of Qubits → Logical Qubit Count* to the contract** —
       `numQubits` stays. It is a label in `ApplicationSection.tsx` and
       `validation.ts`, and those are yours
