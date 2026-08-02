@@ -149,20 +149,44 @@ def build_application(program: dict[str, Any]):
 #
 # The rules below are transcribed from runconfig.schema.json's three
 # architecture variants and use the schema's own vocabulary, so the two can be
-# diffed by eye. `configToInvocation` checks the same bounds first; these are
+# diffed by eye -- and `architectureBounds.test.ts` diffs them mechanically,
+# against the committed schema, so the transcription is enforced rather than
+# asserted here. `configToInvocation` checks the same bounds first; these are
 # the second line of defence, for a config that reaches the engine another way.
+
+# The largest integer a JSON number carries exactly (2**53 - 1, JavaScript's
+# Number.MAX_SAFE_INTEGER). It is the ceiling on every `integer` rule, for two
+# reasons that are really one:
 #
-# ONE DELIBERATE DIVERGENCE from the schema: the four time fields marked
-# `integer` below are typed `number` there, but qdk requires a Python int and
-# rejects 50.5 with "'float' object cannot be interpreted as an integer".
-# Enforcing it here turns that into a named field error. See
-# risks-and-open-questions.md -- the schema is what should move.
+#   * every producer on this wire serializes from JavaScript, so an integral
+#     value above it was already wrong when it was written; and
+#   * `float()` below cannot range-check it anyway -- a Python int is arbitrary
+#     precision, so 9007199254740993 rounds silently to ...992 and 10**400
+#     raises OverflowError outright.
+#
+# Unguarded, both land in qdk: `gateTime=1e300` is integral and passes every
+# other bound, then fails inside the pyo3 conversion as ESTIMATION_FAILED "int
+# too big to convert" -- a field-less diagnostic of exactly the kind this table
+# exists to remove. `runconfig.schema.json` and `configToInvocation` carry the
+# same ceiling (`Number.isSafeInteger`).
+MAX_EXACT_INT = 2**53 - 1
+
+
+def integral(**rule: Any) -> dict[str, Any]:
+    """An integral rule, ceilinged at MAX_EXACT_INT.
+
+    The ceiling lives in the rule rather than in the checker so that it reaches
+    the message ("an integer in (0, 9007199254740991]") and stays visible to the
+    schema diff, instead of being an invisible extra the two cannot compare.
+    """
+    return {"integer": True, "maximum": MAX_EXACT_INT, **rule}
+
 
 GATE_BASED_RULES: dict[str, dict[str, Any]] = {
     "errorRate": {"exclusive_minimum": 0, "exclusive_maximum": 0.01},
-    "gateTime": {"exclusive_minimum": 0, "integer": True},
-    "measurementTime": {"exclusive_minimum": 0, "integer": True},
-    "twoQubitGateTime": {"exclusive_minimum": 0, "integer": True, "optional": True},
+    "gateTime": integral(exclusive_minimum=0),
+    "measurementTime": integral(exclusive_minimum=0),
+    "twoQubitGateTime": integral(exclusive_minimum=0, optional=True),
 }
 
 # `errorRate` is an enum rather than a range, and EXACT rather than qdk's own
@@ -175,26 +199,36 @@ GATE_BASED_RULES: dict[str, dict[str, Any]] = {
 # 1e-6 -> 0.01), so the bound is the edge of the regime qdk models.
 MAJORANA_RULES: dict[str, dict[str, Any]] = {
     "errorRate": {"enum": (1e-4, 1e-5, 1e-6)},
-    "operationTime": {"exclusive_minimum": 0, "integer": True},
+    "operationTime": integral(exclusive_minimum=0),
     "tErrorRate": {"exclusive_minimum": 0, "maximum": 0.05, "optional": True},
-    "targetYear": {"minimum": 0, "integer": True, "optional": True},
+    "targetYear": integral(minimum=0, optional=True),
 }
 
 NEUTRAL_ATOM_RULES: dict[str, dict[str, Any]] = {
-    "rydbergTime": {"exclusive_minimum": 0, "integer": True},
+    "rydbergTime": integral(exclusive_minimum=0),
     "rydbergError": {"minimum": 0, "exclusive_maximum": 0.01},
-    "singleQubitTime": {"exclusive_minimum": 0, "integer": True},
+    "singleQubitTime": integral(exclusive_minimum=0),
     "singleQubitError": {"minimum": 0, "exclusive_maximum": 0.01},
-    "measurementTime": {"exclusive_minimum": 0, "integer": True},
+    "measurementTime": integral(exclusive_minimum=0),
     "measurementError": {"minimum": 0, "exclusive_maximum": 0.01},
-    "handoffTime": {"minimum": 0, "integer": True},
+    "handoffTime": integral(minimum=0),
     "atomSpacing": {"exclusive_minimum": 0},
     "dataQubitSpacing": {"exclusive_minimum": 0, "optional": True},
     "maxVelocity": {"exclusive_minimum": 0},
     "maxAcceleration": {"exclusive_minimum": 0},
-    "surfaceCodeOneQubitTimeFactor": {"minimum": 1, "integer": True},
-    "surfaceCodeTwoQubitTimeFactor": {"minimum": 1, "integer": True},
-    "targetYear": {"minimum": 0, "integer": True, "optional": True},
+    "surfaceCodeOneQubitTimeFactor": integral(minimum=1),
+    "surfaceCodeTwoQubitTimeFactor": integral(minimum=1),
+    "targetYear": integral(minimum=0, optional=True),
+}
+
+# Contract architecture id -> the label its messages use and the rules that
+# govern it. A single mapping, so `build_architecture` cannot dispatch on a type
+# the table does not cover (or vice versa) and the schema diff has one list to
+# walk.
+ARCHITECTURE_RULES: dict[str, tuple[str, dict[str, dict[str, Any]]]] = {
+    "gateBased": ("GateBased", GATE_BASED_RULES),
+    "majorana": ("Majorana", MAJORANA_RULES),
+    "neutralAtom": ("NeutralAtom", NEUTRAL_ATOM_RULES),
 }
 
 
@@ -224,7 +258,53 @@ def _constraint_text(rule: dict[str, Any]) -> str:
         return f"{prefix}{low[1]} {low[2]}"
     if high:
         return f"{prefix}{high[1]} {high[2]}"
-    return f"{prefix}a number"
+    # Unreachable for the three tables above, and deliberately loud rather than
+    # given a vague fallback string: a rule with no bound and no enum is one
+    # `checked_number` would accept unconditionally, which is a defect in the
+    # table rather than a message to render. main()'s handler still catches it,
+    # so the process fails soft.
+    raise AssertionError(f"architecture rule constrains nothing: {rule!r}")
+
+
+def _shown(value: Any) -> str:
+    """The value as a message should show it, with an absurd literal truncated.
+
+    Python's ints are arbitrary precision and `json.loads` builds one from any
+    digit string, so a 400-digit `gateTime` -- or a megabyte-long string where a
+    number belongs -- is a real input on this wire. The message it produces is
+    stored on the run record and rendered, so the value is capped here rather
+    than pasted in whole.
+    """
+    text = repr(value)
+    return text if len(text) <= 60 else f"{text[:57]}..."
+
+
+def _as_number(value: Any) -> float | None:
+    """The value as a finite float, or None if it cannot be range-checked.
+
+    `bool` is a subclass of `int` in Python, so it has to be excluded before the
+    numeric tests rather than left to them. Short-circuiting also keeps
+    `float()` away from strings, None, lists and dicts.
+
+    `float()` is guarded because a Python int is arbitrary precision:
+    `float(10**400)` raises OverflowError, which is NOT an `InvalidInvocation`
+    and would leave `build_architecture` classified ESTIMATION_FAILED with "int
+    too large to convert to float" -- the field-less diagnostic this whole table
+    exists to remove. Returning None routes it to the same named refusal as any
+    other unusable value. (Values merely too large to be exact, rather than to
+    convert at all, are caught by MAX_EXACT_INT on the `integer` rules.)
+
+    isfinite() is load-bearing for the same reason: json.loads accepts the
+    non-standard `Infinity` literal, and a field with no upper bound
+    (atomSpacing, maxVelocity) would otherwise pass it straight through to qdk.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def checked_number(value: Any, label: str, rule: dict[str, Any]):
@@ -240,22 +320,16 @@ def checked_number(value: Any, label: str, rule: dict[str, Any]):
     is coerced with `int()`. JavaScript cannot tell 1000 from 1000.0, so a
     producer emitting the latter is describing the same configuration -- but
     qdk rejects the float outright, so coercing is what keeps the boundary
-    forgiving about representation while strict about value.
+    forgiving about representation while strict about value. The `maximum` every
+    `integer` rule carries (MAX_EXACT_INT) is what stops that forgiveness
+    extending to a value no producer could have written exactly.
     """
     if value is None and rule.get("optional"):
         return None
 
-    # `bool` is a subclass of `int` in Python, so it has to be excluded before
-    # the numeric tests rather than left to them. Short-circuiting keeps
-    # `float()` away from strings, None, lists and dicts.
-    numeric = not isinstance(value, bool) and isinstance(value, (int, float))
-    number = float(value) if numeric else None
+    number = _as_number(value)
 
-    if number is None or not math.isfinite(number):
-        # isfinite() IS load-bearing here, unlike in a fully-bounded range:
-        # json.loads accepts the non-standard `Infinity` literal, and a field
-        # with no upper bound (atomSpacing, maxVelocity) would otherwise pass it
-        # straight through to qdk.
+    if number is None:
         ok = False
     elif "enum" in rule:
         ok = number in rule["enum"]
@@ -270,15 +344,27 @@ def checked_number(value: Any, label: str, rule: dict[str, Any]):
 
     if not ok:
         raise InvalidInvocation(
-            f"{label} must be {_constraint_text(rule)}, got {value!r}."
+            f"{label} must be {_constraint_text(rule)}, got {_shown(value)}."
         )
     return int(number) if rule.get("integer") else number
 
 
-def checked_fields(
-    architecture: dict[str, Any], label: str, rules: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    """Validate every declared parameter of an architecture, returning the values."""
+def checked_fields(architecture: dict[str, Any]) -> dict[str, Any]:
+    """Validate every declared parameter of an architecture, returning the values.
+
+    The rules are selected from the architecture's own `type`, which is checked
+    first: `architecture["type"]` raised a bare KeyError for a record missing the
+    discriminator, and that surfaced as ESTIMATION_FAILED with the message
+    `'type'` -- naming nothing, on the one field that decides which bounds apply
+    at all. It is the same defect this table fixed for `errorRate`.
+    """
+    arch_type = architecture.get("type")
+    if arch_type not in ARCHITECTURE_RULES:
+        raise InvalidInvocation(
+            f"architecture type must be one of {', '.join(ARCHITECTURE_RULES)}, "
+            f"got {_shown(arch_type)}."
+        )
+    label, rules = ARCHITECTURE_RULES[arch_type]
     return {
         name: checked_number(architecture.get(name), f"{label} {name}", rule)
         for name, rule in rules.items()
@@ -286,9 +372,13 @@ def checked_fields(
 
 
 def build_architecture(architecture: dict[str, Any]):
+    # Every parameter is bounded before any model is constructed. Selecting the
+    # rules by type also means an unknown or missing `type` is refused as
+    # INVALID_CONFIG here: dispatching on it is what forced the conversion, since
+    # there is no table to check a config against until the type is known.
+    checked = checked_fields(architecture)
     arch_type = architecture["type"]
     if arch_type == "gateBased":
-        checked = checked_fields(architecture, "GateBased", GATE_BASED_RULES)
         return GateBased(
             error_rate=checked["errorRate"],
             gate_time=checked["gateTime"],
@@ -310,9 +400,9 @@ def build_architecture(architecture: dict[str, Any]):
         # an absent field is therefore identical to not passing it at all, which
         # is what keeps this additive for every pre-v1.4.0 record.
         #
-        # Every parameter is re-checked HERE as well as in configToInvocation,
-        # because qdk checks none of them usefully — see MAJORANA_RULES.
-        checked = checked_fields(architecture, "Majorana", MAJORANA_RULES)
+        # Every parameter is re-checked in `checked_fields` above as well as in
+        # configToInvocation, because qdk checks none of them usefully — see
+        # MAJORANA_RULES.
         return Majorana(
             error_rate=checked["errorRate"],
             time=checked["operationTime"],
@@ -328,7 +418,6 @@ def build_architecture(architecture: dict[str, Any]):
         # defaults to 12.0 — so an absent contract value must OMIT the kwarg
         # rather than pass None. Omitting also avoids duplicating qdk's default
         # here, where it would silently pin the old value if qdk ever changed it.
-        checked = checked_fields(architecture, "NeutralAtom", NEUTRAL_ATOM_RULES)
         optional: dict[str, Any] = {}
         if checked["dataQubitSpacing"] is not None:
             optional["data_qubit_spacing"] = checked["dataQubitSpacing"]
@@ -349,7 +438,12 @@ def build_architecture(architecture: dict[str, Any]):
             target_year=checked["targetYear"],
             **optional,
         )
-    raise ValueError(f"Unknown architecture type: {arch_type}")
+    # Unreachable: `checked_fields` refuses any type ARCHITECTURE_RULES does not
+    # carry, so this is here to keep the function total rather than to classify
+    # anything. The sibling `Unknown ...` ValueErrors in build_qec and the
+    # factory builders are untouched and still report ESTIMATION_FAILED — see
+    # risks-and-open-questions.md.
+    raise InvalidInvocation(f"architecture type has no builder: {_shown(arch_type)}.")
  
  
 def build_qec(qec_code: str):

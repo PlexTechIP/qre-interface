@@ -15,10 +15,11 @@ export function killLiveEngineProcesses(): void {
 
 /**
  * The failure codes this layer may report. `INVALID_CONFIG` is here because the
- * wrapper re-validates architecture parameters qdk itself does not check (see
- * `checked_optional_rate` in estimate.py) — a run refused there never reached
- * the estimator, and reporting it as ESTIMATION_FAILED would tell the analyst
- * the model was infeasible when the fix is a field they can edit.
+ * wrapper re-validates every architecture parameter qdk itself does not check
+ * (see `GATE_BASED_RULES` / `MAJORANA_RULES` / `NEUTRAL_ATOM_RULES` and
+ * `checked_number` in estimate.py) — a run refused there never reached the
+ * estimator, and reporting it as ESTIMATION_FAILED would tell the analyst the
+ * model was infeasible when the fix is a field they can edit.
  */
 export type EngineFailureCode =
   | "TIMEOUT"
