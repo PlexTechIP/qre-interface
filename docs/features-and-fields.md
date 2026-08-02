@@ -240,6 +240,35 @@ The seven fields map 1:1 onto `LogicalCounts` keys.
 | Measurement Time (ns) | The time required to measure physical qubits. Affects the estimated runtime of operations that require measurement. |
 | Two-Qubit Gate Time (ns) | The time required for physical two-qubit operations such as CNOT and CZ gates. Two-qubit operations often contribute significantly to estimated runtime. |
 
+> ⚠️ **qdk validates none of these, and this is the DEFAULT architecture.**
+> `GateBased` is a plain dataclass with no `__post_init__` checks. Measured on
+> 1.30.0, `errorRate=-1e-4` does not fail — it estimates successfully and
+> reports a total error of **-9.99e-05**, a negative probability, which our row
+> mapper accepts (it checks only that the number is finite) and the Results
+> surface renders. `gateTime=-50` fails, but as `ESTIMATION_FAILED` with
+> "can't convert negative int to unsigned".
+>
+> ✅ **Resolved (2026-08-02): every bound is enforced in `estimate.py` too**, as
+> a rules table transcribed from `runconfig.schema.json`, reporting
+> `INVALID_CONFIG` and naming the field. Same treatment for Majorana and
+> Neutral Atom. Pinned by `architectureBounds.test.ts`.
+>
+> ✅ **Resolved (2026-08-02): the three time fields are `int` here and `integer`
+> in the schema.** They were typed `number` there, against both this doc and
+> qdk (which rejects `50.5` outright). The schema and `configToInvocation` were
+> the ones lagging, so both were tightened rather than the wrapper relaxed. Each
+> is additionally capped at `2^53 - 1` — above that a JSON number no longer
+> carries an integer exactly. Same for Majorana's Operation Time.
+>
+> ⚠️ **Error Rate's lower bound differs from the schema, and this doc is the
+> outlier.** The table above says `[0 - 0.01)`, admitting `0`; the schema,
+> `configToInvocation` and `estimate.py` all use `exclusiveMinimum: 0`, so a
+> perfect-qubit `0` is refused today. Neutral Atom's three error rates are
+> inclusive of `0` everywhere, so the two architectures also disagree with each
+> other. Nothing is broken — `0` is not a value the UI can produce — but the
+> contract and the spec should say the same thing. Open question; see
+> `risks-and-open-questions.md`.
+
 #### Majorana
 
 | Field | Type | Default |
@@ -324,6 +353,22 @@ The seven fields map 1:1 onto `LogicalCounts` keys.
 > tolerance, because this doc and the schema are what the contract means.
 > Pinned by `majoranaErrorRate.test.ts`.
 
+> ⚠️ **Operation Time was the worst of the three architectures, and not because
+> of a wrong number.** Unguarded, `operationTime = 0` does not fail soft: it
+> panics inside pyo3, and `PanicException` derives from `BaseException`, so the
+> wrapper's `except Exception` never sees it — stdout is empty, the process
+> exits 1, and a bad config comes back as **`ENGINE_CRASH`, "verify the Python
+> environment"**. A negative value fails soft but opaquely ("can't convert
+> negative int to unsigned", `ESTIMATION_FAILED`).
+>
+> ✅ **Resolved (2026-08-02): every bound is enforced in `estimate.py` too**, as
+> a rules table transcribed from `runconfig.schema.json` — and diffed against it
+> by `architectureBounds.test.ts` — reporting `INVALID_CONFIG` and naming the
+> field. Operation Time is `integer` in the schema as of the same date, matching
+> the `int [> 0]` this table has always specified, and capped at `2^53 - 1`.
+> Target Year is bounded here too, despite being inert: a recorded-only field
+> that accepts nonsense still puts nonsense in the run record.
+
 #### Neutral Atom
 
 | Field | Type | Default |
@@ -379,6 +424,20 @@ The seven fields map 1:1 onto `LogicalCounts` keys.
 > actively revised, and is what contract v1.4.0 already ships. Nothing is at
 > stake in the estimate either way — see the inertness finding below — so the
 > cheapest correct move is to leave it and fix the QPU tab.
+
+> ⚠️ **None of these 14 bounds is checked by qdk, and a bad one can change the
+> answer without failing.** `NeutralAtom` is a plain dataclass with no
+> validation. Measured on 1.30.0, `Rydberg Error = -1.0` estimates
+> *successfully* and reports a total error of **0.0109**, where the identical
+> config with the correct 1e-3 reports **0.991** — a nonsense input silently
+> making the machine look ~90× better. Others fail, but opaquely: `Atom
+> Spacing = -3` comes back as `ESTIMATION_FAILED` "math domain error".
+>
+> ✅ **Resolved (2026-08-02): every bound is enforced in `estimate.py` too**, as
+> a rules table transcribed from `runconfig.schema.json`, reporting
+> `INVALID_CONFIG` and naming the field. Pinned by `architectureBounds.test.ts`.
+> Note this is only the *second* line of defence — `configToInvocation` still
+> rejects the same values in-process, before Python is spawned.
 
 **Tooltip copy**
 

@@ -158,21 +158,31 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
 
   The bounds live in one table per architecture (`GATE_BASED_RULES`,
   `MAJORANA_RULES`, `NEUTRAL_ATOM_RULES`), transcribed from
-  `runconfig.schema.json` in the schema's own vocabulary so the two can be
-  diffed by eye, and the messages match `configToInvocation`'s word for word.
-  That check remains the first line of defence — it rejects in-process without
-  spawning Python — and this is the second, for a config that arrives another
-  way. Pinned by `architectureBounds.test.ts`, `majoranaErrorRate.test.ts` and
-  `majoranaTErrorRate.test.ts`, which all bypass the TypeScript guard on
-  purpose.
+  `runconfig.schema.json` in the schema's own vocabulary. That is not a
+  convention held by hand: `architectureBounds.test.ts` **diffs the tables
+  against the committed schema**, in both directions, so a bound that moves in
+  one place fails the suite until it moves in the other. `configToInvocation`
+  remains the first line of defence — it rejects in-process without spawning
+  Python — and this is the second, for a config that arrives another way.
+  Also pinned by `majoranaErrorRate.test.ts` and `majoranaTErrorRate.test.ts`,
+  which bypass the TypeScript guard on purpose.
 
-  **One deliberate divergence from the schema:** `gateTime`,
-  `measurementTime`, `twoQubitGateTime` and Majorana's `operationTime` are
-  typed `number` there, but qdk requires a Python `int` and rejects `50.5` with
-  "'float' object cannot be interpreted as an integer". The wrapper enforces
-  integral values so that surfaces as a named field error. It checks the VALUE,
-  not the JSON type — `1000.0` is accepted and coerced, since JavaScript cannot
-  distinguish it from `1000`.
+  Messages follow `configToInvocation`'s shape and vocabulary — same label,
+  same bracket notation, same trailing `got <value>.` — but are **not**
+  identical strings, and nothing should assert that they are. The wrapper names
+  the full range where the TypeScript names the edge that failed
+  (`an integer in (0, 9007199254740991]` against `an integer > 0`), and
+  Python's `%.0e` pads exponents, so Majorana's enum reads `1e-04, 1e-05, 1e-06`
+  against the TypeScript's `1e-4, 1e-5, 1e-6`.
+
+  **Integral fields are checked on the VALUE, not the JSON type.** `1000.0` is
+  accepted and coerced, since JavaScript cannot distinguish it from `1000` and a
+  producer emitting the float describes the same configuration. The ceiling on
+  every integral rule is `2**53 - 1` (`Number.MAX_SAFE_INTEGER`), which the
+  schema and `configToInvocation` carry too: above it a JSON number no longer
+  holds an integer exactly, `float()` in the wrapper either rounds
+  (`9007199254740993` → `…992`) or raises `OverflowError`, and qdk fails on the
+  pyo3 conversion with a field-less "int too big to convert".
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 

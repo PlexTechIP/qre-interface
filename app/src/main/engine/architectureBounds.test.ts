@@ -24,10 +24,10 @@
  *    stdout is empty and it surfaces as ENGINE_CRASH — "verify the Python
  *    environment" — for what is purely a bad config.
  *
- * The rules mirror `runconfig.schema.json` field for field, so this suite is
- * also what stops the wrapper and the schema drifting apart. One deliberate
- * divergence is pinned below: qdk requires the time fields to be INTEGRAL,
- * where the schema types four of them as `number`.
+ * The rules mirror `runconfig.schema.json` field for field, and the last
+ * describe block DIFFS them against the committed schema rather than asserting
+ * in prose that they match — the wrapper and the contract cannot drift without
+ * a test failing.
  *
  * Every test bypasses `configToInvocation` on purpose — it builds a config that
  * PASSES the TypeScript guard, then injects the bad value into the invocation.
@@ -41,13 +41,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import {
-  SCHEMA_VERSION,
-  type Architecture,
-  type QecCodeId,
-  type RunConfig,
-} from "../../shared/types.js";
-import { DEFAULT_TRACE_TRANSFORM } from "../../shared/traceTransform.js";
+import runConfigSchema from "../../shared/contracts/runconfig.schema.json" with { type: "json" };
+import type { Architecture, QecCodeId, RunConfig } from "../../shared/types.js";
+import { buildRunConfig } from "../../shared/testing/builders.js";
 import { configToInvocation } from "./configToInvocation.js";
 import { execute } from "./execute.js";
 import type { QreInvocation } from "./invocation.js";
@@ -97,13 +93,13 @@ const QEC: Record<Architecture["type"], QecCodeId> = {
 };
 
 /**
- * Manual Logical Counts rather than a benchmark: `main()` builds the
- * application BEFORE the architecture, so a Q# benchmark would pay a compile on
- * every one of the ~40 rejection cases below to reach the same assertion.
+ * Manual Logical Counts rather than the builder's default benchmark: `main()`
+ * builds the application BEFORE the architecture, so a Q# benchmark would pay a
+ * compile on every one of the ~50 rejection cases below to reach the same
+ * assertion.
  */
 function config(architecture: Architecture): RunConfig {
-  return {
-    schemaVersion: SCHEMA_VERSION,
+  return buildRunConfig({
     id: "7d000000-0000-4000-8000-000000000001",
     name: "architecture bounds",
     createdAt: "2026-08-02T00:00:00.000Z",
@@ -119,11 +115,9 @@ function config(architecture: Architecture): RunConfig {
     },
     architecture,
     qecCode: QEC[architecture.type],
-    magicStateFactories: ["round_based"],
-    traceTransform: { ...DEFAULT_TRACE_TRANSFORM },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
-  };
+  });
 }
 
 /** The invocation the TypeScript guard actually produced, for a valid config. */
@@ -242,6 +236,14 @@ describe("every gateBased parameter is bounded", () => {
     const result = await execute(withInjected(GATE_BASED, "twoQubitGateTime", null), PYTHON_BIN);
     expect(result.ok, JSON.stringify(result)).toBe(true);
   }, 60_000);
+
+  it("accepts a PRESENT twoQubitGateTime, not only null", async () => {
+    // The null case above only proves the optional path. Every gateBased run
+    // carries this field (configToInvocation emits `?? null`), so the value
+    // path is the one most configs actually take.
+    const result = await execute(withInjected(GATE_BASED, "twoQubitGateTime", 150), PYTHON_BIN);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+  }, 120_000);
 });
 
 describe("every majorana parameter is bounded", () => {
@@ -281,13 +283,50 @@ describe("every neutralAtom parameter is bounded", () => {
     await expectRejected(NEUTRAL_ATOM, field, value);
   }, 60_000);
 
-  it.each(["rydbergTime", "rydbergError", "atomSpacing", "maxVelocity"])(
+  // All twelve, not a sample: the property under test is that a required field
+  // which is ABSENT is named rather than raising a bare KeyError three frames
+  // down, and that holds per field.
+  it.each([
+    "rydbergTime",
+    "rydbergError",
+    "singleQubitTime",
+    "singleQubitError",
+    "measurementTime",
+    "measurementError",
+    "handoffTime",
+    "atomSpacing",
+    "maxVelocity",
+    "maxAcceleration",
+    "surfaceCodeOneQubitTimeFactor",
+    "surfaceCodeTwoQubitTimeFactor",
+  ])(
     "rejects a missing required %s",
     async (field) => {
       await expectRejected(NEUTRAL_ATOM, field, undefined);
     },
     60_000,
   );
+});
+
+describe("the architecture type itself is bounded", () => {
+  it.each([
+    ["missing", undefined],
+    ["unknown", "gatebased"],
+    ["null", null],
+    ["a number", 3],
+  ])("rejects a %s architecture type", async (_label, value) => {
+    // `architecture["type"]` was a bare subscript: a record without the
+    // discriminator raised KeyError and surfaced as ESTIMATION_FAILED with the
+    // message `'type'`, naming nothing, on the one field that decides which
+    // bounds apply at all.
+    const result = await execute(withInjected(GATE_BASED, "type", value), PYTHON_BIN);
+
+    expect(result.ok, `type=${JSON.stringify(value)} was accepted`).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("INVALID_CONFIG");
+      expect(result.message).toContain("architecture type");
+    }
+  }, 60_000);
 });
 
 describe("non-numeric values are refused on every architecture", () => {
@@ -382,5 +421,153 @@ describe("wire-level values JSON.stringify cannot produce", () => {
 
     const parsed = runWrapperRaw(stdin);
     expect(parsed["status"], JSON.stringify(parsed).slice(0, 300)).toBe("success");
+  }, 120_000);
+
+  it("rejects an integer too large to convert to a float at all", () => {
+    // Python ints are arbitrary precision and json.loads builds one from any
+    // digit string, so `float(value)` inside the checker raised OverflowError —
+    // NOT an InvalidInvocation, so it escaped as ESTIMATION_FAILED "int too
+    // large to convert to float", with no field named. The bad-input path of
+    // the guard was itself producing the diagnostic the guard exists to remove.
+    const stdin = JSON.stringify(invocationFor(GATE_BASED)).replace(
+      '"gateTime":50',
+      `"gateTime":${"1".padEnd(400, "0")}`,
+    );
+
+    const parsed = runWrapperRaw(stdin);
+    expect(parsed["code"]).toBe("INVALID_CONFIG");
+    expect(String(parsed["message"])).toContain("gateTime");
+    // The 400-digit literal is described, not pasted into a message that gets
+    // stored on the run record and rendered.
+    expect(String(parsed["message"]).length).toBeLessThan(200);
+  }, 60_000);
+
+  it("rejects an integral value too large to be exact, which qdk fails opaquely on", () => {
+    // 1e300 satisfies `is_integer()` and every other gateTime bound, so before
+    // the MAX_EXACT_INT cap it reached qdk and came back ESTIMATION_FAILED
+    // "int too big to convert".
+    const stdin = JSON.stringify(invocationFor(GATE_BASED)).replace(
+      '"gateTime":50',
+      '"gateTime":1e300',
+    );
+
+    const parsed = runWrapperRaw(stdin);
+    expect(parsed["code"]).toBe("INVALID_CONFIG");
+    expect(String(parsed["message"])).toContain("gateTime");
+  }, 60_000);
+
+  it("rejects an integer one above MAX_SAFE_INTEGER, which float() rounds away", () => {
+    // 9007199254740993 cannot be written exactly as a JSON number: `float()`
+    // silently makes it ...992, so accepting it would run a configuration one
+    // nanosecond away from the record's.
+    const stdin = JSON.stringify(invocationFor(GATE_BASED)).replace(
+      '"gateTime":50',
+      '"gateTime":9007199254740993',
+    );
+
+    const parsed = runWrapperRaw(stdin);
+    expect(parsed["code"]).toBe("INVALID_CONFIG");
+    expect(String(parsed["message"])).toContain("gateTime");
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
+// The transcription itself
+// ---------------------------------------------------------------------------
+
+/**
+ * The rules tables as `estimate.py` actually holds them.
+ *
+ * Dumped from the module rather than re-declared here: a second hand-written
+ * copy would drift from the first exactly as the first can drift from the
+ * schema, which is the whole failure this block exists to catch.
+ */
+let cachedRules: Record<string, Record<string, Record<string, unknown>>> | null = null;
+
+function wrapperRules(): Record<string, Record<string, Record<string, unknown>>> {
+  // Memoized: importing the module pulls qdk in, which is seconds, and every
+  // case below wants the same three tables.
+  if (cachedRules) return cachedRules;
+  const script = [
+    "import json, sys",
+    `sys.path.insert(0, ${JSON.stringify(path.dirname(WRAPPER_SCRIPT))})`,
+    "import estimate",
+    "print(json.dumps({",
+    "  'gateBased': estimate.GATE_BASED_RULES,",
+    "  'majorana': estimate.MAJORANA_RULES,",
+    "  'neutralAtom': estimate.NEUTRAL_ATOM_RULES,",
+    "}))",
+  ].join("\n");
+  const process = spawnSync(PYTHON_BIN, ["-c", script], { encoding: "utf8", timeout: 120_000 });
+  expect(process.status, process.stderr).toBe(0);
+  cachedRules = JSON.parse(process.stdout.trim().split("\n").at(-1) as string);
+  return cachedRules!;
+}
+
+/**
+ * One schema property, rewritten in the rules tables' vocabulary.
+ *
+ * `twoQubitGateTime` is a nullable `oneOf` rather than a flat entry, so the
+ * null branch is dropped and the numeric one is what gets compared —
+ * "optional" is already carried by absence from `required`.
+ */
+function asRule(property: Record<string, unknown>, required: boolean): Record<string, unknown> {
+  const branches = property["oneOf"] as Record<string, unknown>[] | undefined;
+  const source = branches ? branches.filter((b) => b["type"] !== "null")[0]! : property;
+
+  const rule: Record<string, unknown> = {};
+  if (source["type"] === "integer") rule["integer"] = true;
+  if ("enum" in source) rule["enum"] = source["enum"];
+  for (const [schemaKey, ruleKey] of [
+    ["minimum", "minimum"],
+    ["exclusiveMinimum", "exclusive_minimum"],
+    ["maximum", "maximum"],
+    ["exclusiveMaximum", "exclusive_maximum"],
+  ] as const) {
+    if (schemaKey in source) rule[ruleKey] = source[schemaKey];
+  }
+  if (!required) rule["optional"] = true;
+  return rule;
+}
+
+describe("the rules tables are the schema, not a paraphrase of it", () => {
+  const variants = (
+    runConfigSchema.properties.architecture.oneOf as unknown as {
+      required: string[];
+      properties: Record<string, Record<string, unknown>>;
+    }[]
+  ).map((variant) => ({
+    type: (variant.properties["type"] as { const: string }).const,
+    required: new Set(variant.required),
+    properties: variant.properties,
+  }));
+
+  it.each(variants.map((v) => [v.type, v] as const))(
+    "%s matches runconfig.schema.json field for field",
+    (_type, variant) => {
+      const rules = wrapperRules()[variant.type]!;
+      const expected: Record<string, Record<string, unknown>> = {};
+      for (const [name, property] of Object.entries(variant.properties)) {
+        if (name === "type") continue;
+        expected[name] = asRule(property, variant.required.has(name));
+      }
+
+      // Deep equality in BOTH directions at once: a field the schema adds and
+      // the table lacks, a bound that moved, and a stray rule the schema does
+      // not describe are all the same failure.
+      expect(rules).toEqual(expected);
+    },
+    120_000,
+  );
+
+  it("caps every integral field at Number.MAX_SAFE_INTEGER", () => {
+    // The cap is the one bound that is about the WIRE rather than the domain,
+    // so it is the one most likely to be dropped when a field is added.
+    for (const [architecture, rules] of Object.entries(wrapperRules())) {
+      for (const [name, rule] of Object.entries(rules)) {
+        if (!rule["integer"]) continue;
+        expect(rule["maximum"], `${architecture}.${name}`).toBe(Number.MAX_SAFE_INTEGER);
+      }
+    }
   }, 120_000);
 });
