@@ -84,6 +84,35 @@ export function buildRunConfig(overrides: Partial<RunConfig> = {}): RunConfig {
   };
 }
  
+let engineConfigSeq = 0;
+
+/**
+ * A Quantum Dynamics config sized to run fast against the REAL engine — a 3x3
+ * lattice over a short total time, so a test that exercises the estimator is
+ * about the setting under test rather than about wall-clock.
+ *
+ * Each call gets a distinct `id`, so several runs in one file stay
+ * distinguishable in engine diagnostics.
+ */
+export function buildSmallDynamicsConfig(overrides: Partial<RunConfig> = {}): RunConfig {
+  engineConfigSeq += 1;
+  return buildRunConfig({
+    id: `8e000000-0000-4000-8000-${String(engineConfigSeq).padStart(12, "0")}`,
+    name: "small quantum dynamics",
+    createdAt: "2026-07-31T00:00:00Z",
+    parameters: {
+      latticeN1: 3,
+      latticeN2: 3,
+      totalTime: 9.0,
+      trotterStep: 0.9,
+      couplingJ: 1.0,
+      fieldG: 1.0,
+    },
+    qreVersion: "qdk-qre-v1-fixture",
+    ...overrides,
+  });
+}
+
 /** A default succeeded result (one complete row); override to vary. */
 export function buildRunResult(overrides: Partial<RunResult> = {}): RunResult {
   return {

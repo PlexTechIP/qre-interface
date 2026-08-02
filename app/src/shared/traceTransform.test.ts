@@ -217,3 +217,213 @@ describe("normalizeTraceTransform stays lenient, because it gates display", () =
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// v1.4.0 — the two optional pipeline stages
+// ---------------------------------------------------------------------------
+
+const BOTH_STAGES_OFF = {
+  tStatesPerRotation: 20,
+  ccxMagicStates: false,
+  slowDownFactor: 1.0 as const,
+};
+
+describe("v1.4.0 optional stages: an OFF stage is absent, not defaulted", () => {
+  it("leaves dynamicMemoryCompute absent when the stage is off", () => {
+    // THE load-bearing invariant of this contract change. A stage running at its
+    // defaults is a DIFFERENT pipeline from a stage that is not in it:
+    //   off -> PSSPC * LatticeSurgery
+    //   on  -> DynamicMemoryCompute(0.5, LRU) * PSSPC * LatticeSurgery
+    // If parse ever "helpfully" fills in the defaults, every estimate silently
+    // acquires a stage the analyst never selected.
+    const parsed = parseTraceTransform(BOTH_STAGES_OFF);
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.transform).not.toHaveProperty("dynamicMemoryCompute");
+    }
+  });
+
+  it("carries dynamicMemoryCompute through when the stage is on", () => {
+    expect(
+      parseTraceTransform({
+        ...BOTH_STAGES_OFF,
+        dynamicMemoryCompute: {
+          computeCapacityPercentage: 0.5,
+          evictionStrategy: "least_recently_used",
+        },
+      }),
+    ).toEqual({
+      ok: true,
+      transform: {
+        ...BOTH_STAGES_OFF,
+        dynamicMemoryCompute: {
+          computeCapacityPercentage: 0.5,
+          evictionStrategy: "least_recently_used",
+        },
+      },
+    });
+  });
+
+  it("treats an absent unmemory as off rather than inventing a value", () => {
+    const parsed = parseTraceTransform(BOTH_STAGES_OFF);
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.transform.unmemory ?? false).toBe(false);
+  });
+
+  it("carries unmemory through when it is on", () => {
+    expect(parseTraceTransform({ ...BOTH_STAGES_OFF, unmemory: true })).toEqual({
+      ok: true,
+      transform: { ...BOTH_STAGES_OFF, unmemory: true },
+    });
+  });
+});
+
+describe("v1.4.0 optional stages are validated, not repaired", () => {
+  it("rejects a compute capacity outside (0, 1]", () => {
+    // qdk's compute_capacity_percentage is a fraction. 0 and negatives are
+    // meaningless; above 1 is not a percentage of anything.
+    for (const bad of [0, -0.1, 1.5, Number.NaN]) {
+      const result = parseTraceTransform({
+        ...BOTH_STAGES_OFF,
+        dynamicMemoryCompute: {
+          computeCapacityPercentage: bad,
+          evictionStrategy: "least_recently_used",
+        },
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toContain("computeCapacityPercentage");
+    }
+  });
+
+  it("accepts a compute capacity of exactly 1", () => {
+    // The interval is half-open at zero and CLOSED at one: dedicating the whole
+    // capacity to compute is a legitimate configuration.
+    expect(
+      parseTraceTransform({
+        ...BOTH_STAGES_OFF,
+        dynamicMemoryCompute: {
+          computeCapacityPercentage: 1,
+          evictionStrategy: "first_available",
+        },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("rejects an eviction strategy qdk does not have", () => {
+    const result = parseTraceTransform({
+      ...BOTH_STAGES_OFF,
+      dynamicMemoryCompute: {
+        computeCapacityPercentage: 0.5,
+        evictionStrategy: "least_recently_evicted",
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("evictionStrategy");
+  });
+
+  it("rejects a malformed dynamicMemoryCompute rather than dropping the stage", () => {
+    // Dropping it would run a different pipeline than the record describes —
+    // the same class of bug as rewriting slowDownFactor.
+    for (const bad of [null, "on", 1, {}, { computeCapacityPercentage: 0.5 }]) {
+      expect(
+        parseTraceTransform({ ...BOTH_STAGES_OFF, dynamicMemoryCompute: bad }).ok,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects a non-boolean unmemory", () => {
+    for (const bad of ["true", 1, null]) {
+      const result = parseTraceTransform({ ...BOTH_STAGES_OFF, unmemory: bad });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toContain("unmemory");
+    }
+  });
+});
+
+describe("v1.4.0 stages on a legacy union record are a contradiction", () => {
+  // A record carrying the v1.1.0 `type` discriminant predates v1.4.0 by
+  // definition, so a v1.4.0 stage field on it means the record was hand-edited
+  // or produced by something that mixed two contract shapes. The strict parser
+  // rejects rather than repairs — silently dropping the stage would run a
+  // different pipeline than the record describes, which is the exact failure
+  // `slowDownFactor` is checked rather than rewritten to avoid.
+  const stage = {
+    computeCapacityPercentage: 0.5,
+    evictionStrategy: "least_recently_used",
+  };
+
+  it("rejects a latticeSurgery record carrying an optional stage", () => {
+    const result = parseTraceTransform({
+      type: "latticeSurgery",
+      slowDownFactor: 1.0,
+      dynamicMemoryCompute: stage,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a psspc record carrying an optional stage", () => {
+    // Symmetry matters: previously this branch silently KEPT the stage while
+    // the latticeSurgery branch silently dropped it. Same input class, two
+    // different repairs.
+    const result = parseTraceTransform({
+      type: "psspc",
+      tStatesPerRotation: 12,
+      ccxMagicStates: false,
+      unmemory: true,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("still accepts a clean legacy record with no v1.4.0 fields", () => {
+    expect(
+      parseTraceTransform({ type: "psspc", tStatesPerRotation: 12, ccxMagicStates: false })
+        .ok,
+    ).toBe(true);
+    expect(parseTraceTransform({ type: "latticeSurgery", slowDownFactor: 1.0 }).ok).toBe(
+      true,
+    );
+  });
+});
+
+describe("unmemory has exactly one representation of off", () => {
+  it("normalizes an explicit false to absent", () => {
+    // Two configs that differ only by `unmemory: false` vs the key being absent
+    // describe the same run and must not compare unequal downstream.
+    const parsed = parseTraceTransform({ ...BOTH_STAGES_OFF, unmemory: false });
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.transform).not.toHaveProperty("unmemory");
+  });
+
+  it("still keeps an explicit true", () => {
+    const parsed = parseTraceTransform({ ...BOTH_STAGES_OFF, unmemory: true });
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.transform.unmemory).toBe(true);
+  });
+});
+
+describe("describeTraceTransform names the stages that actually run", () => {
+  it("names only the two mandatory stages when both optionals are off", () => {
+    expect(describeTraceTransform(DEFAULT_TRACE_TRANSFORM)).toContain(
+      "PSSPC → Lattice Surgery",
+    );
+  });
+
+  it("names the full four-stage pipeline, in execution order", () => {
+    // Order is a correctness property of the pipeline, not a presentation
+    // choice, so the summary a user reads states the real order.
+    expect(
+      describeTraceTransform({
+        ...BOTH_STAGES_OFF,
+        dynamicMemoryCompute: {
+          computeCapacityPercentage: 0.5,
+          evictionStrategy: "least_recently_used",
+        },
+        unmemory: true,
+      }),
+    ).toContain("Dynamic Memory Compute → PSSPC → Lattice Surgery → Unmemory");
+  });
+});

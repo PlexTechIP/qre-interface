@@ -22,6 +22,7 @@ export default defineConfig({
             "src/main/engine/pythonBin.test.ts",
             "src/main/engine/benchmarkRegistry.test.ts",
             "src/main/engine/configToInvocation.test.ts",
+            "src/main/engine/configToInvocationV14.test.ts",
             "src/main/engine/outputToResult.test.ts",
             "src/main/engine/execute.test.ts",
             "src/main/engine/qreEngine.test.ts",

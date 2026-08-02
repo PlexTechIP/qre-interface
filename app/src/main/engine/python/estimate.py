@@ -19,7 +19,14 @@ from typing import Any
 import qdk
 import qdk.qre as qre
 from qsharp import QSharpError
-from qdk.qre import LatticeSurgery, PSSPC, instruction_name
+from qdk.qre import (
+    DynamicMemoryCompute,
+    EvictionStrategy,
+    LatticeSurgery,
+    PSSPC,
+    Unmemory,
+    instruction_name,
+)
 from qdk.estimator import LogicalCounts
 from qdk.qre.application import OpenQASMApplication, QIRApplication, QSharpApplication
 from qdk.qre.models import (
@@ -119,20 +126,35 @@ def build_architecture(architecture: dict[str, Any]):
             two_qubit_gate_time=architecture.get("twoQubitGateTime"),
         )
     if arch_type == "majorana":
-        # `time` is the contract's "Operation Time" (features-and-fields.md:112).
+        # `time` is the contract's "Operation Time" (features-and-fields.md).
         # QDK's default and the UI default are both 1000, so mapping it is
         # output-identical for every existing run; the only behaviour it changes
         # is the case that is wrong today, where a user types 250 and silently
-        # gets the answer for 1000. `t_error_rate` and `target_year` are
-        # deliberately not mapped — neither appears in the field spec.
+        # gets the answer for 1000.
+        #
+        # v1.4.0 adds `t_error_rate` and `target_year`, both optional in the
+        # contract and both `Optional[...] = None` on the model. Passing None for
+        # an absent field is therefore identical to not passing it at all, which
+        # is what keeps this additive for every pre-v1.4.0 record.
         return Majorana(
             error_rate=architecture["errorRate"],
             time=architecture["operationTime"],
+            t_error_rate=architecture.get("tErrorRate"),
+            target_year=architecture.get("targetYear"),
         )
     if arch_type == "neutralAtom":
         # Field names follow the 1.30.0 NeutralAtom model. Times are integer
         # nanoseconds; the three error rates and the motion parameters map 1:1
         # from the contract's Neutral Atom variant (QPU Specification tab).
+        #
+        # v1.4.0's `data_qubit_spacing` is NOT Optional on the model — it
+        # defaults to 12.0 — so an absent contract value must OMIT the kwarg
+        # rather than pass None. Omitting also avoids duplicating qdk's default
+        # here, where it would silently pin the old value if qdk ever changed it.
+        optional: dict[str, Any] = {}
+        if architecture.get("dataQubitSpacing") is not None:
+            optional["data_qubit_spacing"] = architecture["dataQubitSpacing"]
+
         return NeutralAtom(
             rydberg_time=architecture["rydbergTime"],
             rydberg_error=architecture["rydbergError"],
@@ -146,6 +168,8 @@ def build_architecture(architecture: dict[str, Any]):
             max_acceleration=architecture["maxAcceleration"],
             surface_code_one_qubit_time_factor=architecture["surfaceCodeOneQubitTimeFactor"],
             surface_code_two_qubit_time_factor=architecture["surfaceCodeTwoQubitTimeFactor"],
+            target_year=architecture.get("targetYear"),
+            **optional,
         )
     raise ValueError(f"Unknown architecture type: {arch_type}")
  
@@ -205,20 +229,95 @@ def build_isa_query(
     return query
  
  
+# Contract id -> the qdk enum MEMBER NAME. Deliberately strings, resolved at
+# call time rather than at import: dereferencing EvictionStrategy.<MEMBER> at
+# module scope means a member qdk renames in a future release raises at import,
+# before main() runs, and every run — benchmark, uploaded, manual counts — comes
+# back ENGINE_CRASH. That is the shape of the 1.29.1 `LogicalCounts` import
+# defect; keeping this lazy confines the blast radius to the one stage that
+# actually uses it.
+EVICTION_STRATEGY_MEMBERS = {
+    "least_recently_used": "LEAST_RECENTLY_USED",
+    "least_frequently_used": "LEAST_FREQUENTLY_USED",
+    "first_available": "FIRST_AVAILABLE",
+}
+
+
+def resolve_eviction_strategy(name: str):
+    """Map a contract eviction-strategy id onto qdk's enum.
+
+    Raises ValueError — not KeyError — for both failure modes, matching
+    `build_isa_query`'s "Unknown secondary factory" convention, so the message
+    that reaches the analyst names the value instead of being a bare key.
+    """
+    member = EVICTION_STRATEGY_MEMBERS.get(name)
+    if member is None:
+        raise ValueError(
+            f"Unknown eviction strategy: {name!r}. "
+            f"Expected one of {', '.join(sorted(EVICTION_STRATEGY_MEMBERS))}."
+        )
+    strategy = getattr(EvictionStrategy, member, None)
+    if strategy is None:
+        raise ValueError(
+            f"qdk's EvictionStrategy has no member {member!r} "
+            f"(contract id {name!r}); the installed qdk may be incompatible."
+        )
+    return strategy
+
+
 def build_trace_query(trace_transform: dict[str, Any]):
-    """Compose the two-stage trace pipeline.
+    """Compose the ordered trace pipeline.
 
     PSSPC lowers arbitrary rotations and CCX into Pauli-based operations, and
     Lattice Surgery maps those onto lattice-surgery instructions. Both always
     run, and only in this order: `PSSPC.q()` alone yields an empty frontier, and
     `LatticeSurgery.q() * PSSPC.q()` raises "unsupported instruction
-    LATTICE_SURGERY in trace transformation 'PSSPC'". The contract's
-    traceTransform carries one stage's parameters each.
+    LATTICE_SURGERY in trace transformation 'PSSPC'".
+
+    v1.4.0 adds two OPTIONAL stages around them, for the full pipeline:
+
+        DynamicMemoryCompute x PSSPC x LatticeSurgery x Unmemory
+
+    Two rules this function exists to hold:
+
+    1. Order is a correctness property, not a presentation choice — so the
+       stages are assembled from a FIXED sequence and folded left to right,
+       never from iterating a set or a dict's keys.
+    2. An absent stage is absent from the composition. It is NOT run at its
+       defaults. Those are different pipelines and therefore different
+       estimates, and quietly substituting one for the other would add a stage
+       the analyst never selected to every run.
     """
-    return PSSPC.q(
-        num_ts_per_rotation=trace_transform["tStatesPerRotation"],
-        ccx_magic_states=trace_transform["ccxMagicStates"],
-    ) * LatticeSurgery.q(slow_down_factor=trace_transform["slowDownFactor"])
+    stages = []
+
+    dynamic_memory_compute = trace_transform.get("dynamicMemoryCompute")
+    if dynamic_memory_compute is not None:
+        stages.append(
+            DynamicMemoryCompute.q(
+                compute_capacity_percentage=dynamic_memory_compute[
+                    "computeCapacityPercentage"
+                ],
+                eviction_strategy=resolve_eviction_strategy(
+                    dynamic_memory_compute["evictionStrategy"]
+                ),
+            )
+        )
+
+    stages.append(
+        PSSPC.q(
+            num_ts_per_rotation=trace_transform["tStatesPerRotation"],
+            ccx_magic_states=trace_transform["ccxMagicStates"],
+        )
+    )
+    stages.append(LatticeSurgery.q(slow_down_factor=trace_transform["slowDownFactor"]))
+
+    if trace_transform.get("unmemory"):
+        stages.append(Unmemory.q())
+
+    query = stages[0]
+    for stage in stages[1:]:
+        query = query * stage
+    return query
  
  
 def instruction_properties(instruction: Any) -> dict[str, Any]:

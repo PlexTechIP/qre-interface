@@ -45,7 +45,11 @@ describe("toRunConfig — defaults path", () => {
 
   it("serializes to a schema-valid RunConfig once the two required times are entered", () => {
     const config = expectSchemaValid(validGateBasedDraft());
-    expect(config.schemaVersion).toBe("1.3.0");
+    // Deliberately a literal, not SCHEMA_VERSION: this assertion exists to fail
+    // on a contract bump so someone acknowledges it, rather than tracking the
+    // constant silently. Updated for v1.4.0 (additive: optional trace stages,
+    // four optional QPU parameters, optional provenance).
+    expect(config.schemaVersion).toBe("1.4.0");
     expect(config.application).toEqual({
       type: "benchmark",
       benchmarkId: "shors-factoring",

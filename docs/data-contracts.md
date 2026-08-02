@@ -180,6 +180,65 @@ therefore keep loading; History, Comparison, Rerun and the engine all read them
 through `normalizeTraceTransform`, which maps a legacy `latticeSurgery` record
 onto the PSSPC defaults it actually ran.
 
+## Versioning note — v1.4.0 (additive)
+
+v1.4.0 adds three things and reshapes nothing. **Every v1.3.0 record is already
+a valid v1.4.0 record**, which is why `upgradeRunConfig` gains no branch — and
+there is a test asserting exactly that, because a "minor" bump that quietly
+reshaped something would leave stored records without a migration.
+
+**1. Two optional trace-pipeline stages.** The full ordered pipeline becomes:
+
+```
+DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory
+```
+
+PSSPC and Lattice Surgery always run. `traceTransform.dynamicMemoryCompute`
+(`{ computeCapacityPercentage, evictionStrategy }`) and
+`traceTransform.unmemory` (boolean) are optional.
+
+> **An absent stage is ABSENT, not "running at its defaults."** Those are
+> different pipelines and therefore different estimates. Measured on qdk 1.30.0
+> (Quantum Dynamics 3×3): stages off gives **477 physical qubits / 1,363,950 ns**;
+> adding `DynamicMemoryCompute(0.5, least_recently_used)` gives **256 qubits /
+> 1,852,200 ns** — it trades runtime for qubits, which is what the stage is for.
+> Filling in defaults for an unselected stage would add that swing to every run.
+
+Order is a correctness property, not a presentation choice: `estimate.py` builds
+the stages from a fixed sequence and folds left to right, never by iterating a
+set or a dict's keys.
+
+**Two measured findings recorded rather than hidden:**
+
+- **`unmemory` is currently INERT on this pipeline.** With it on and everything
+  else equal the estimate is unchanged (477 qubits / 1,363,950 ns either way). It
+  is recorded-but-not-yet-influential, a test pins the current measurement, and
+  any UI exposing it must label it as such.
+- **Some Dynamic Memory Compute settings have no feasible frontier.**
+  `computeCapacityPercentage: 0.25` with `least_frequently_used` returns a
+  resolved **failed** result (`ESTIMATION_FAILED`) for that workload. That is the
+  estimator answering honestly, in the same way a sparse `tStatesPerRotation`
+  does — not an adapter bug.
+
+**2. Four optional QPU parameters**, restored to the spec by the Jul 31 Config
+Descriptions tab: Majorana `tErrorRate` and `targetYear`; Neutral Atom
+`dataQubitSpacing` and `targetYear`. All optional, and **omitting one means "let
+qdk apply its own default"** — which is exactly what every pre-v1.4.0 record did.
+`targetYear` is **inert on our pipeline** on both architectures: qdk consumes a
+target year only through a trace transform that accepts one, and ours does not.
+
+**3. `provenance`** — whether a model helped author the configuration:
+`{ authoredBy: "human" | "model_assisted", model?: string }`. Optional; absence
+means human-authored. It exists now because `RunConfig` is
+`additionalProperties: false`, so an audit trail could not have been added later
+without another contract change.
+
+> Provenance records **that** a model was involved and optionally **which one**.
+> It never records the prompt. Prompts are user content, the run store is local
+> and unencrypted, and "what did you ask it" is not a question a run record
+> should be able to answer. The object is closed, so a prompt cannot be added by
+> a well-meaning producer either.
+
 ## Contract Rules
 
 1. **`raw` is sacred.** Whatever the engine emits is stored verbatim and

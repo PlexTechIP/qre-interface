@@ -402,6 +402,20 @@ qubits but slowing execution).
 On/Off. No parameters. **Verified present on qdk 1.30.0**: `qdk.qre.Unmemory()`
 takes no arguments.
 
+> ⚠️ **Measured INERT on our pipeline (2026-07-31).** Wired end to end in
+> contract v1.4.0 and estimated with the stage on and off, everything else held
+> equal: Quantum Dynamics 3×3 returns **477 physical qubits / 1,363,950 ns
+> either way**. It is a recorded-but-not-influential control and must be
+> labelled as such. `traceTransformV14.test.ts` pins the current measurement, so
+> the day it stops being inert the suite says so.
+>
+> By contrast **Dynamic Memory Compute is live**: the same workload goes to
+> **256 qubits / 1,852,200 ns** with `DynamicMemoryCompute(0.5,
+> least_recently_used)` — it trades runtime for qubits, which is what the stage
+> is for. Note also that some settings have **no feasible frontier point**
+> (capacity 0.25 with least-frequently-used returns a failed run); that is an
+> honest estimator answer, like a sparse T-count-per-rotation, not a bug.
+
 ### Total Fault Tolerant Execution Error
 
 | Field | Type | Default |

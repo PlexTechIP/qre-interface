@@ -16,6 +16,21 @@ export type ConfigToInvocationResult =
 function invalid(message: string): ConfigToInvocationResult {
   return { ok: false, error: { code: "INVALID_CONFIG", message } };
 }
+
+/**
+ * v1.4.0 `targetYear`, shared by Majorana and Neutral Atom: an integer >= 0.
+ * Inert on this pipeline (qdk reads a target year only through a trace
+ * transform that accepts one), but still range-checked — a recorded-only field
+ * that accepts nonsense still puts nonsense in the run record.
+ */
+function isTargetYear(value: number): boolean {
+  return Number.isInteger(value) && value >= 0;
+}
+
+/** v1.4.0 Majorana `tErrorRate`: 0 < x <= 0.05, matching the schema. */
+function inTErrorRateRange(value: number): boolean {
+  return Number.isFinite(value) && value > 0 && value <= 0.05;
+}
  
 export function configToInvocation(config: RunConfig, timeoutMs: number): ConfigToInvocationResult {
   // --- application ---
@@ -127,6 +142,16 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     if (!(architecture.operationTime > 0)) {
       return invalid(`Majorana operationTime must be > 0, got ${architecture.operationTime}.`);
     }
+    // v1.4.0, both optional. Absent is valid — qdk derives tErrorRate and
+    // ignores an absent targetYear — but a PRESENT value is range-checked here
+    // like every other architecture field, because a config can reach the engine
+    // over IPC without passing the renderer's schema validation.
+    if (architecture.tErrorRate !== undefined && !inTErrorRateRange(architecture.tErrorRate)) {
+      return invalid(`Majorana tErrorRate must be in (0, 0.05], got ${architecture.tErrorRate}.`);
+    }
+    if (architecture.targetYear !== undefined && !isTargetYear(architecture.targetYear)) {
+      return invalid(`Majorana targetYear must be an integer >= 0, got ${architecture.targetYear}.`);
+    }
     if (magicStateFactories.some((factory) => factory !== "round_based")) {
       return invalid(`Majorana architectures only support magicStateFactory "round_based".`);
     }
@@ -157,6 +182,11 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       positive(na.maxAcceleration, "maxAcceleration"),
       factor(na.surfaceCodeOneQubitTimeFactor, "surfaceCodeOneQubitTimeFactor"),
       factor(na.surfaceCodeTwoQubitTimeFactor, "surfaceCodeTwoQubitTimeFactor"),
+      // v1.4.0, both optional; absent is valid and means "let qdk default it".
+      na.dataQubitSpacing === undefined ? null : positive(na.dataQubitSpacing, "dataQubitSpacing"),
+      na.targetYear === undefined || isTargetYear(na.targetYear)
+        ? null
+        : invalid(`NeutralAtom targetYear must be an integer >= 0, got ${na.targetYear}.`),
     ];
     for (const failure of checks) {
       if (failure) return failure;
@@ -216,7 +246,22 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
               twoQubitGateTime: architecture.twoQubitGateTime ?? null,
             }
           : architecture.type === "majorana"
-            ? { type: "majorana", errorRate: architecture.errorRate, operationTime: architecture.operationTime }
+            ? {
+                type: "majorana",
+                errorRate: architecture.errorRate,
+                operationTime: architecture.operationTime,
+                // v1.4.0, both optional. SPREAD rather than assign undefined:
+                // `exactOptionalPropertyTypes` makes absent and undefined
+                // different types, and an absent field has to stay absent all
+                // the way to estimate.py — where omitting the kwarg is what lets
+                // qdk apply its own default.
+                ...(architecture.tErrorRate !== undefined
+                  ? { tErrorRate: architecture.tErrorRate }
+                  : {}),
+                ...(architecture.targetYear !== undefined
+                  ? { targetYear: architecture.targetYear }
+                  : {}),
+              }
             : {
                 type: "neutralAtom",
                 rydbergTime: architecture.rydbergTime,
@@ -231,6 +276,12 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
                 maxAcceleration: architecture.maxAcceleration,
                 surfaceCodeOneQubitTimeFactor: architecture.surfaceCodeOneQubitTimeFactor,
                 surfaceCodeTwoQubitTimeFactor: architecture.surfaceCodeTwoQubitTimeFactor,
+                ...(architecture.dataQubitSpacing !== undefined
+                  ? { dataQubitSpacing: architecture.dataQubitSpacing }
+                  : {}),
+                ...(architecture.targetYear !== undefined
+                  ? { targetYear: architecture.targetYear }
+                  : {}),
               },
       qecCode: config.qecCode,
       magicStateFactories,

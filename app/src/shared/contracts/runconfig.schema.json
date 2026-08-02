@@ -20,7 +20,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.3.0",
+      "const": "1.4.0",
       "description": "Contract version."
     },
     "id": {
@@ -215,6 +215,17 @@
               ],
               "description": "Default UI value: 1e-5; select-only."
             },
+            "tErrorRate": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 0.05,
+              "description": "T Error Rate (v1.4.0). Optional; omitted means qdk derives it from errorRate."
+            },
+            "targetYear": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Target Year (v1.4.0). Optional. INERT on this pipeline: qdk reads a target year only through a trace transform that accepts one. Recorded, not influential."
+            },
             "operationTime": {
               "type": "number",
               "exclusiveMinimum": 0,
@@ -288,6 +299,11 @@
               "exclusiveMinimum": 0,
               "description": "Atom Spacing (µm). Default UI value: 3.0."
             },
+            "dataQubitSpacing": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Data Qubit Spacing (µm) (v1.4.0). Optional; omitted means qdk's own default of 12.0. Measured bit-identical across 6.0/12.0/30.0 on this pipeline as of qdk 1.30.0."
+            },
             "maxVelocity": {
               "type": "number",
               "exclusiveMinimum": 0,
@@ -307,6 +323,11 @@
               "type": "integer",
               "minimum": 1,
               "description": "Surface Code Two-Qubit Time Factor. Default UI value: 1."
+            },
+            "targetYear": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Target Year (v1.4.0). Optional. INERT on this pipeline, as on Majorana. Recorded, not influential."
             }
           }
         }
@@ -389,6 +410,56 @@
         "slowDownFactor": {
           "const": 1,
           "description": "Lattice Surgery: fixed optimistic slowdown factor; no other value is selectable."
+        },
+        "dynamicMemoryCompute": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "computeCapacityPercentage",
+            "evictionStrategy"
+          ],
+          "description": "Stage 0 (v1.4.0). PRESENT ONLY when the stage runs — absence means the stage is not in the pipeline, and is NOT equivalent to the stage running at these defaults. Both parameters are required once present, so qdk never silently supplies one.",
+          "properties": {
+            "computeCapacityPercentage": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "description": "Fraction of capacity given to compute. qdk default: 0.5."
+            },
+            "evictionStrategy": {
+              "enum": [
+                "least_recently_used",
+                "least_frequently_used",
+                "first_available"
+              ],
+              "description": "qdk default: least_recently_used."
+            }
+          }
+        },
+        "unmemory": {
+          "type": "boolean",
+          "description": "Stage 3 (v1.4.0). Absent or false means the stage is not in the pipeline."
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoredBy"
+      ],
+      "description": "How this configuration was authored (v1.4.0). Optional; absence means human-authored. An audit field — it records THAT a model was involved and optionally WHICH, never the prompt. The schema is closed so a prompt cannot be added by a well-meaning producer.",
+      "properties": {
+        "authoredBy": {
+          "enum": [
+            "human",
+            "model_assisted"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "description": "Provider/model identifier, informational and free-form. Never the prompt.",
+          "minLength": 1
         }
       }
     },

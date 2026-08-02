@@ -1,5 +1,5 @@
 /**
- * Contract types — RunConfig & RunResult (v1.3.0).
+ * Contract types — RunConfig & RunResult (v1.4.0).
  *
  * CANONICAL, PM-owned, frozen with the schemas in this folder. Import these
  * types (copy this file into your workspace verbatim until the shared app
@@ -8,6 +8,28 @@
  * report it in the channel.
  *
  * Changes only via the contract-change process (docs/engineering-workflow.md).
+ *
+ * v1.4.0 (ADDITIVE, backward-compatible — every v1.3.0 record is already a
+ * valid v1.4.0 record, which is why `upgradeRunConfig` gains no branch):
+ *
+ *  - `traceTransform` gains two OPTIONAL pipeline stages, `dynamicMemoryCompute`
+ *    and `unmemory`, making the full ordered pipeline
+ *    `DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory`. An off stage is
+ *    ABSENT, never present at its defaults — see `TraceTransform`.
+ *  - Majorana gains optional `tErrorRate` and `targetYear`; Neutral Atom gains
+ *    optional `dataQubitSpacing` and `targetYear`. All four are optional, and
+ *    omitting one means "let qdk use its own default" — which is exactly what
+ *    every record written before this version did.
+ *  - `provenance` records whether a model helped author the configuration. It
+ *    exists because `RunConfig` is `additionalProperties: false`, so an audit
+ *    trail for model-assisted runs was impossible to add later without another
+ *    contract change.
+ *
+ * Restored to the spec by the Jul 31 Config Descriptions tab. Two of the four
+ * QPU parameters (`targetYear` on both architectures) are INERT on our pipeline:
+ * qdk consumes a target year only through a trace transform that takes one, and
+ * ours does not. They are recorded, not influential, and any UI exposing them
+ * must say so.
  *
  * v1.3.0 (BREAKING, one field): `traceTransform` becomes a single object
  * carrying both pipeline stages' parameters — { tStatesPerRotation,
@@ -45,11 +67,11 @@
  * Every contract version this build can READ. New records are always stamped
  * with SCHEMA_VERSION; older values appear only on records loaded from the store.
  */
-export const SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0"] as const;
+export const SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"] as const;
 export type SchemaVersion = (typeof SCHEMA_VERSIONS)[number];
 
 /** Contract version stamped into every RunConfig and RunResult written today. */
-export const SCHEMA_VERSION: SchemaVersion = "1.3.0";
+export const SCHEMA_VERSION: SchemaVersion = "1.4.0";
  
 // ---------------------------------------------------------------------------
 // RunConfig — what a configured run looks like going in (Team 1 → engine)
@@ -138,6 +160,18 @@ export interface MajoranaArchitecture {
   errorRate: 0.0001 | 0.00001 | 0.000001;
   /** Nanoseconds. Default UI value: 1000. */
   operationTime: number;
+  /**
+   * T Error Rate (v1.4.0). Optional; 0 < x <= 0.05. OMITTED means qdk derives it
+   * from `errorRate`, which is what every pre-v1.4.0 record did.
+   */
+  tErrorRate?: number;
+  /**
+   * Target Year (v1.4.0). Optional; integer >= 0. **INERT on our pipeline** —
+   * qdk reads a target year only through a trace transform that accepts one, and
+   * ours does not. Recorded, not influential; label it as such wherever it is
+   * shown.
+   */
+  targetYear?: number;
 }
  
 /**
@@ -166,6 +200,13 @@ export interface NeutralAtomArchitecture {
   handoffTime: number;
   /** Atom Spacing (µm) — float > 0. Default 3.0. */
   atomSpacing: number;
+  /**
+   * Data Qubit Spacing (µm) (v1.4.0). Optional; float > 0. OMITTED means qdk's
+   * own default of 12.0 — which is what every pre-v1.4.0 record ran with.
+   * Measured bit-identical across 6.0 / 12.0 / 30.0 on our pipeline as of qdk
+   * 1.30.0, so treat it as recorded-not-yet-influential until re-measured.
+   */
+  dataQubitSpacing?: number;
   /** Max Velocity (m/s) — float > 0. Default 0.25. */
   maxVelocity: number;
   /** Max Acceleration (m/s²) — float > 0. Default 5000.0. */
@@ -174,6 +215,11 @@ export interface NeutralAtomArchitecture {
   surfaceCodeOneQubitTimeFactor: number;
   /** Surface Code Two-Qubit Time Factor — integer >= 1. Default 1. */
   surfaceCodeTwoQubitTimeFactor: number;
+  /**
+   * Target Year (v1.4.0). Optional; integer >= 0. **INERT on our pipeline**, for
+   * the same reason as Majorana's — recorded, not influential.
+   */
+  targetYear?: number;
 }
  
 export type Architecture =
@@ -352,6 +398,24 @@ export {
  */
 export type HyperparameterValues = Record<string, number | string>;
  
+export const CONFIG_AUTHORS = ["human", "model_assisted"] as const;
+export type ConfigAuthor = (typeof CONFIG_AUTHORS)[number];
+
+/**
+ * Run provenance (v1.4.0) — whether a model helped author the configuration.
+ *
+ * Deliberately minimal. It records THAT a model was involved and optionally
+ * WHICH one; it never records the prompt. Prompts are user content, the store is
+ * local and unencrypted, and "what did you ask it" is not a question a run
+ * record should be able to answer. The schema is closed, so a prompt cannot be
+ * added by a well-meaning producer either.
+ */
+export interface RunProvenance {
+  authoredBy: ConfigAuthor;
+  /** Provider/model identifier, informational and free-form. Never the prompt. */
+  model?: string;
+}
+
 export interface RunConfig {
   schemaVersion: SchemaVersion;
   /** UUID v4, stamped at Run-click (not while editing). */
@@ -392,6 +456,16 @@ export interface RunConfig {
    * benchmark applications. Drives the estimate — see HyperparameterValues.
    */
   parameters?: HyperparameterValues;
+  /**
+   * How this configuration was authored (v1.4.0). Optional; ABSENT means
+   * human-authored, which is what every record written before this version was.
+   *
+   * This is an audit field, not a feature flag: it answers "which of these
+   * estimates had a model in the loop?" and nothing else reads it to decide
+   * behaviour. It travels with Rerun, because a configuration a model drafted is
+   * still a configuration a model drafted after a human re-runs it.
+   */
+  provenance?: RunProvenance;
   /** Cap on total logical error probability. Valid range: 0 < maxError <= 1. */
   maxError: number;
   /**

@@ -103,3 +103,42 @@ describe("upgradeRunConfig absorbs both breaking changes", () => {
     expect(upgrade(noFactory).magicStateFactories).toEqual(["round_based"]);
   });
 });
+
+describe("v1.4.0 needs no migration branch, because it is additive", () => {
+  /** A v1.3.0 record: factory set and pipeline object already, no v1.4.0 fields. */
+  function v130(): RunConfig {
+    return {
+      ...(v110() as Record<string, unknown>),
+      schemaVersion: "1.3.0",
+      magicStateFactories: ["litinski19"],
+      magicStateFactory: undefined,
+      traceTransform: { ...DEFAULT_TRACE_TRANSFORM },
+    } as unknown as RunConfig;
+  }
+
+  it("passes a v1.3.0 record through by identity", () => {
+    // The assertion that keeps v1.4.0 honest about its version number. If this
+    // ever fails, v1.4.0 reshaped something and is a BREAKING change wearing a
+    // minor bump — it would owe stored records a migration branch above.
+    const record = v130();
+    delete (record as { magicStateFactory?: unknown }).magicStateFactory;
+
+    expect(upgradeRunConfig(record)).toBe(record);
+  });
+
+  it("does not invent the optional pipeline stages on an older record", () => {
+    // A pre-v1.4.0 record ran PSSPC × LatticeSurgery and nothing else. Filling
+    // in dynamicMemoryCompute here would rewrite history: the record would claim
+    // a stage that never ran when it was estimated.
+    const upgraded = upgrade(v130());
+
+    expect(upgraded.traceTransform).not.toHaveProperty("dynamicMemoryCompute");
+    expect(upgraded.traceTransform.unmemory).toBeUndefined();
+  });
+
+  it("does not invent provenance, so an old record stays human-authored", () => {
+    // Absent provenance means human-authored. Stamping "human" onto records that
+    // predate the field would assert something we never actually observed.
+    expect(upgrade(v130())).not.toHaveProperty("provenance");
+  });
+});

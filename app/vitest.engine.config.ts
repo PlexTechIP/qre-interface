@@ -10,6 +10,7 @@ export default defineConfig({
       "src/main/engine/benchmarkSmoke.test.ts",
       "src/main/engine/benchmarkHyperparameters.test.ts",
       "src/main/engine/traceTransformPipeline.test.ts",
+      "src/main/engine/traceTransformV14.test.ts",
       "src/main/engine/memoryOptimization.test.ts",
       "src/main/engine/conformance.test.ts",
       "src/main/engine/ipcConformance.test.ts",
