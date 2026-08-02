@@ -287,9 +287,42 @@ The seven fields map 1:1 onto `LogicalCounts` keys.
 >
 > ⚠️ **qdk does NOT validate an explicitly-supplied value.** Measured on 1.30.0:
 > `Majorana(error_rate=1e-5, t_error_rate=0.9)` and `t_error_rate=-0.1` are both
-> accepted and used verbatim as the T-gate error rate. So our `(0, 0.05]` check is
-> the *only* thing standing between a typo and a nonsense estimate — which makes
-> the `configToInvocation` range check load-bearing, not belt-and-braces.
+> accepted and used verbatim as the T-gate error rate. `__post_init__` only
+> *derives* a value when the field is `None`; anything already there is passed
+> through untouched, and `provided_isa` casts it onto the `T` instruction.
+>
+> ✅ **Resolved (2026-08-02): the bound is now enforced on both sides.**
+> `estimate.py` range-checks `tErrorRate` in `build_architecture` before the
+> `Majorana` model is constructed, and reports `INVALID_CONFIG` — not
+> `ESTIMATION_FAILED` — because nothing was estimated and the analyst's next
+> step is to correct a field. `configToInvocation`'s identical `(0, 0.05]` check
+> stays where it is: it is the one that produces a fast, in-process rejection
+> for the UI. It is now the first line of defence rather than the only one, so a
+> config that reaches the engine over IPC without passing through our form is
+> still refused. Pinned by `majoranaTErrorRate.test.ts`, which bypasses the
+> TypeScript guard on purpose and hands the wrapper the values qdk would accept.
+
+> ⚠️ **Supplying a T Error Rate disables qdk's check on Error Rate.** Found
+> while fixing the above, and worse than it. `__post_init__` reaches its
+> `error_rate` domain test *inside* the `if t_error_rate is None:` branch, so
+> the moment a T Error Rate is present the `[1e-4, 1e-5, 1e-6]` rule stops being
+> applied. Measured on 1.30.0: `Majorana(error_rate=0.5, t_error_rate=0.01)`
+> constructs, where the same Error Rate alone raises. qdk's rule is also a
+> *tolerance* test (`abs(x - 1e-4) <= 1e-8`), so it admits values this doc's
+> enum does not.
+>
+> **A bad Error Rate does not reliably fail the run.** `errorRate=-1e-5` with a
+> T Error Rate present estimates *successfully* and reports a total error of
+> **-0.0032** — a negative probability, which passes our row mapper (it checks
+> only that the number is finite) and renders on the Results surface. `0.5`
+> does fail, but as `ESTIMATION_FAILED` advising the analyst to relax Max
+> Error, which points at the wrong field.
+>
+> ✅ **Resolved (2026-08-02) the same way.** `estimate.py` now checks Error Rate
+> against the exact enum before building the model, reporting `INVALID_CONFIG`
+> and naming the field. Exact membership, deliberately stricter than qdk's
+> tolerance, because this doc and the schema are what the contract means.
+> Pinned by `majoranaErrorRate.test.ts`.
 
 #### Neutral Atom
 

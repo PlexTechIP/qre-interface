@@ -79,7 +79,7 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 | gateBased `gateTime` | **Required, > 0**; serialized in ns |
 | gateBased `measurementTime` | **Required, > 0**; serialized in ns |
 | gateBased `twoQubitGateTime` | Optional; `null` or a positive number in ns |
-| majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`** |
+| majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`**, by EXACT membership. Enforced in BOTH `configToInvocation.ts` and `estimate.py`: qdk's own domain check sits inside the branch that derives `tErrorRate`, so supplying a `tErrorRate` skips it, and it is a tolerance test (`abs(x - 1e-4) <= 1e-8`) that admits values this enum does not. An unguarded negative rate does not fail — it estimates and reports a **negative total error** |
 | majorana `operationTime` | Default `1000`; **> 0**, serialized in ns |
 | majorana `tErrorRate` | Optional (v1.4.0); omitted means qdk derives it from `errorRate`. A present value must be a finite number in **(0, 0.05]**. Enforced in BOTH `configToInvocation.ts` and `estimate.py`, because qdk itself validates neither: it only derives a value when one is absent, and feeds a supplied one straight to the `T` instruction. `0.9` and `-0.1` estimate happily on qdk 1.30.0 |
 | `qecCode` | Coupled to architecture: gateBased → `surface_code`; majorana → `three_aux` |

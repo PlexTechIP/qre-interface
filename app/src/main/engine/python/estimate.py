@@ -171,6 +171,48 @@ def checked_optional_rate(value: Any, label: str, *, above: float, at_most: floa
     return number
 
 
+# Majorana `error_rate`, mirroring runconfig.schema.json's enum and
+# configToInvocation. EXACT membership, not qdk's tolerance test — see
+# `checked_majorana_error_rate`.
+MAJORANA_ERROR_RATES = (1e-4, 1e-5, 1e-6)
+MAJORANA_ERROR_RATES_TEXT = ", ".join(f"{rate:.0e}" for rate in MAJORANA_ERROR_RATES)
+
+
+def checked_majorana_error_rate(value: Any) -> float:
+    """Pin Majorana's REQUIRED `error_rate` to the exact set the contract allows.
+
+    qdk does have a domain check for this one, but it cannot be relied on for
+    two independent reasons, both measured on 1.30.0:
+
+    1. It sits INSIDE `__post_init__`'s `if self.t_error_rate is None:` branch,
+       so supplying a `t_error_rate` — which this wrapper does whenever the
+       contract carries one — skips it entirely. `Majorana(error_rate=0.5,
+       t_error_rate=0.01)` constructs, where the same error_rate alone raises.
+    2. It is a TOLERANCE test (`abs(x - 1e-4) <= 1e-8`), so it admits values
+       the contract's enum does not.
+
+    The consequence is worse than the `t_error_rate` gap. A negative rate does
+    not fail the run: it estimates successfully and reports a NEGATIVE total
+    error (-0.0032 for error_rate=-1e-5), which `mapRow` accepts — it checks
+    only that the value is finite — and the Results surface renders as a
+    probability. That is a wrong number on screen, not a failed run.
+
+    Membership is exact, matching the schema and configToInvocation. There is no
+    float-equality hazard: JSON's `1e-5` parses to the same double as Python's.
+    """
+    # `bool` is a subclass of `int` in Python, so it has to be excluded before
+    # the membership test rather than left to it. Short-circuiting means
+    # `float()` only runs once the value is known to be numeric, which is what
+    # keeps a string or None out of it.
+    numeric = not isinstance(value, bool) and isinstance(value, (int, float))
+    if not numeric or float(value) not in MAJORANA_ERROR_RATES:
+        raise InvalidInvocation(
+            f"Majorana errorRate must be one of {MAJORANA_ERROR_RATES_TEXT}, "
+            f"got {value!r}."
+        )
+    return float(value)
+
+
 def build_architecture(architecture: dict[str, Any]):
     arch_type = architecture["type"]
     if arch_type == "gateBased":
@@ -192,10 +234,14 @@ def build_architecture(architecture: dict[str, Any]):
         # an absent field is therefore identical to not passing it at all, which
         # is what keeps this additive for every pre-v1.4.0 record.
         #
-        # `t_error_rate` is range-checked HERE as well as in configToInvocation,
-        # because qdk validates neither — see `checked_optional_rate`.
+        # Both rates are re-checked HERE as well as in configToInvocation.
+        # `t_error_rate` because qdk does not validate it at all; `error_rate`
+        # because qdk's own domain check runs only when `t_error_rate` is None —
+        # so it is skipped for exactly those configs where the line below passes
+        # a value through. See `checked_majorana_error_rate` for why that one is
+        # the more dangerous of the two.
         return Majorana(
-            error_rate=architecture["errorRate"],
+            error_rate=checked_majorana_error_rate(architecture.get("errorRate")),
             time=architecture["operationTime"],
             t_error_rate=checked_optional_rate(
                 architecture.get("tErrorRate"),

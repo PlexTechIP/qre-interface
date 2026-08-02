@@ -136,13 +136,29 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
   `ESTIMATION_FAILED` otherwise (including an empty Pareto frontier). Message
   substrings are not used for classification.
 
-  `InvalidInvocation` covers architecture parameters **qdk does not validate
-  itself**. Majorana's `t_error_rate` is the case that forced it: qdk 1.30.0
-  only derives a value when one is absent, and passes a supplied one straight
-  to the `T` instruction — `0.9` and `-0.1` both estimate happily. Re-checking
-  `(0, 0.05]` here means `configToInvocation`'s identical check is a first line
-  of defence rather than the only one. See `majoranaTErrorRate.test.ts`, which
-  bypasses the TypeScript guard on purpose.
+  `InvalidInvocation` covers architecture parameters **qdk does not reliably
+  validate itself**, so far both on Majorana:
+
+  - `t_error_rate` — qdk 1.30.0 only derives a value when one is absent, and
+    passes a supplied one straight to the `T` instruction. `0.9` and `-0.1`
+    both estimate happily. Re-checked against `(0, 0.05]`.
+  - `error_rate` — qdk *has* a domain check, but it sits inside
+    `__post_init__`'s `if t_error_rate is None:` branch, so supplying a
+    `t_error_rate` (which this wrapper does whenever the contract carries one)
+    skips it; and it is a tolerance test, so it admits off-enum values. This is
+    the more dangerous of the two: a negative rate estimates *successfully* and
+    reports a negative total error, which `mapRow` accepts and the Results
+    surface renders. Re-checked against the contract's exact enum.
+
+  In both cases `configToInvocation`'s identical check becomes a first line of
+  defence rather than the only one. See `majoranaTErrorRate.test.ts` and
+  `majoranaErrorRate.test.ts`, which bypass the TypeScript guard on purpose.
+
+  **Not yet covered:** `operationTime` and the Neutral Atom parameter set are
+  still TypeScript-only. Measured on 1.30.0, `time=-500` fails soft with an
+  opaque "can't convert negative int to unsigned" and `time=0` panics inside
+  pyo3 — a `BaseException` that `main()`'s `except Exception` cannot catch, so
+  it surfaces as ENGINE_CRASH. Bad diagnostics rather than wrong numbers.
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 
