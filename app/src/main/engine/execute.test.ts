@@ -88,6 +88,23 @@ describe("execute", () => {
       });
     });
 
+    it("passes a wrapper-reported INVALID_CONFIG through unchanged", () => {
+      // The wrapper refuses an out-of-range architecture value before qdk sees
+      // it. Downgrading that to ESTIMATION_FAILED would tell the analyst the
+      // estimator ran and found nothing, when in fact nothing ran and the fix
+      // is a field they can edit.
+      const stdout = JSON.stringify({
+        status: "failed",
+        code: "INVALID_CONFIG",
+        message: "Majorana tErrorRate must be in (0, 0.05], got 0.9.",
+        verbatim: { error: { type: "InvalidInvocation", message: "..." } },
+      });
+      expect(interpretProcessCompletion(0, stdout, "")).toMatchObject({
+        ok: false,
+        code: "INVALID_CONFIG",
+      });
+    });
+
     it("uses raw null only when the process emitted no output", () => {
       expect(interpretProcessCompletion(2, "", "")).toMatchObject({
         ok: false,

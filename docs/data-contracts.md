@@ -81,6 +81,7 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 | gateBased `twoQubitGateTime` | Optional; `null` or a positive number in ns |
 | majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`** |
 | majorana `operationTime` | Default `1000`; **> 0**, serialized in ns |
+| majorana `tErrorRate` | Optional (v1.4.0); omitted means qdk derives it from `errorRate`. A present value must be a finite number in **(0, 0.05]**. Enforced in BOTH `configToInvocation.ts` and `estimate.py`, because qdk itself validates neither: it only derives a value when one is absent, and feeds a supplied one straight to the `T` instruction. `0.9` and `-0.1` estimate happily on qdk 1.30.0 |
 | `qecCode` | Coupled to architecture: gateBased → `surface_code`; majorana → `three_aux` |
 | `magicStateFactories` | **A non-empty, unique SET** (v1.2.0; was the single-valued `magicStateFactory`). Default `["round_based"]`; `litinski19` / `gsj24` only on gateBased with `errorRate <= 1e-3` or qualifying Neutral Atom; Majorana is always exactly `["round_based"]`. The engine unions the set into one ISA query, so the frontier is explored across every selected factory and each row names its own in `additional.magicStateFactory` |
 | `traceTransform.tStatesPerRotation` | PSSPC stage. Default `20`; **5 <= x <= 20**. A sparse `5` is in range but has no feasible frontier point on qdk 1.30.0 — that is a failed run, not a validation error |
@@ -263,7 +264,7 @@ The canonical failure codes are:
 
 | Code | Meaning |
 |---|---|
-| `INVALID_CONFIG` | The config is schema-valid JSON but invalid for the engine or selected benchmark/upload |
+| `INVALID_CONFIG` | The config is schema-valid JSON but invalid for the engine or selected benchmark/upload. Emitted by the pre-flight validator AND by the engine wrapper, which re-checks the architecture parameters qdk does not validate itself — a run refused there never reached the estimator |
 | `COMPILE_ERROR` | The selected or uploaded program failed to compile |
 | `ESTIMATION_FAILED` | The engine ran but could not produce a feasible estimate |
 | `TIMEOUT` | The run exceeded the allowed execution timeout |

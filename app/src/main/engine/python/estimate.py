@@ -56,10 +56,21 @@ ROUND_BASED_CACHE = Path(__file__).parent / ".qre-cache" / "round-based"
 MISSING_PROPERTY = 2**63 - 1
 
 
+class InvalidInvocation(ValueError):
+    """The invocation parsed, but describes a model qdk should never be handed.
+
+    A distinct type, rather than a bare ValueError, so `failure_code_for` can
+    report INVALID_CONFIG: nothing was estimated, and the analyst's next step is
+    to correct a field rather than relax a bound or read a qdk traceback.
+    """
+
+
 def failure_code_for(exc: Exception) -> str:
-    """Classify compiler failures by QDK's structured exception type."""
+    """Classify failures by structured exception type."""
+    if isinstance(exc, InvalidInvocation):
+        return "INVALID_CONFIG"
     return "COMPILE_ERROR" if isinstance(exc, QSharpError) else "ESTIMATION_FAILED"
- 
+
  
 def _public_slots(value: Any) -> list[str]:
     slots = getattr(type(value), "__slots__", ())
@@ -116,6 +127,50 @@ def build_application(program: dict[str, Any]):
     raise ValueError(f"Unknown program format: {fmt}")
  
  
+# Majorana `t_error_rate`, mirroring runconfig.schema.json and
+# configToInvocation. 0.05 is not an arbitrary cap: it is the LARGEST value
+# qdk's own `Majorana.__post_init__` ever derives (error_rate 1e-4 -> 0.05,
+# 1e-5 -> 0.015, 1e-6 -> 0.01), so the bound is the edge of the regime qdk
+# models rather than a house rule.
+T_ERROR_RATE_ABOVE = 0
+T_ERROR_RATE_AT_MOST = 0.05
+
+
+def checked_optional_rate(value: Any, label: str, *, above: float, at_most: float):
+    """Range-check an optional error rate on the way into a qdk model.
+
+    `None` — absent, or an explicit JSON null — is returned unchanged. Absent
+    means "let qdk derive it", and substituting a value here would run a
+    configuration the saved record does not describe.
+
+    This exists because qdk does NOT check the values it is given.
+    `Majorana.__post_init__` only DERIVES `t_error_rate` when the field is
+    `None`; a value that is already there is passed through untouched, and
+    `provided_isa` casts it straight onto the `T` instruction's error rate.
+    Measured on qdk 1.30.0, `t_error_rate=0.9` and `t_error_rate=-0.1` are both
+    accepted and used verbatim — a typo becomes a confident, meaningless
+    estimate. Without this check `configToInvocation`'s identical range test is
+    the only thing in the way, which makes it load-bearing rather than
+    defensive: a config reaching the engine any other way is unguarded.
+    """
+    if value is None:
+        return None
+    # `bool` is a subclass of `int` in Python, so without this `0 < True <=
+    # 0.05` would quietly admit `true` as a rate of 1.0.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise InvalidInvocation(
+            f"{label} must be a number in ({above}, {at_most}], got {value!r}."
+        )
+    # A BOUNDED comparison is also what rejects the non-standard `NaN` /
+    # `Infinity` literals that json.loads accepts by default: every comparison
+    # against NaN is False, and the infinities fall outside any finite bound. No
+    # separate isfinite() check is needed while `at_most` is finite.
+    number = float(value)
+    if not above < number <= at_most:
+        raise InvalidInvocation(f"{label} must be in ({above}, {at_most}], got {value!r}.")
+    return number
+
+
 def build_architecture(architecture: dict[str, Any]):
     arch_type = architecture["type"]
     if arch_type == "gateBased":
@@ -136,10 +191,18 @@ def build_architecture(architecture: dict[str, Any]):
         # contract and both `Optional[...] = None` on the model. Passing None for
         # an absent field is therefore identical to not passing it at all, which
         # is what keeps this additive for every pre-v1.4.0 record.
+        #
+        # `t_error_rate` is range-checked HERE as well as in configToInvocation,
+        # because qdk validates neither — see `checked_optional_rate`.
         return Majorana(
             error_rate=architecture["errorRate"],
             time=architecture["operationTime"],
-            t_error_rate=architecture.get("tErrorRate"),
+            t_error_rate=checked_optional_rate(
+                architecture.get("tErrorRate"),
+                "Majorana tErrorRate",
+                above=T_ERROR_RATE_ABOVE,
+                at_most=T_ERROR_RATE_AT_MOST,
+            ),
             target_year=architecture.get("targetYear"),
         )
     if arch_type == "neutralAtom":
@@ -442,6 +505,22 @@ def qre_version() -> str:
     return importlib.metadata.version("qdk")
  
  
+# The suggested next step appended to every failure message, keyed by code.
+# INVALID_CONFIG gets its own: the diagnostic already names the field and its
+# range, so pointing at raw qdk diagnostics would send the analyst away from the
+# one thing they can actually fix.
+#
+# Read with .get(), never []: this is dereferenced INSIDE main()'s last-resort
+# except block, where a KeyError would escape the handler and take the process
+# down — turning a soft, explained failure into an ENGINE_CRASH traceback.
+DEFAULT_NEXT_STEP = "Review the raw diagnostics, adjust the configuration, and retry."
+NEXT_STEP = {
+    "COMPILE_ERROR": "Check the program source and entry point, then retry.",
+    "INVALID_CONFIG": "Correct the named field and retry.",
+    "ESTIMATION_FAILED": DEFAULT_NEXT_STEP,
+}
+
+
 def failure(code: str, message: str, verbatim: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "failed",
@@ -495,13 +574,8 @@ def main() -> int:
         diagnostic = str(exc)
         exc_type = type(exc).__name__
         error_code = failure_code_for(exc)
-        compile_error = error_code == "COMPILE_ERROR"
         detail = diagnostic or exc_type
-        message = (
-            f"{detail} Check the program source and entry point, then retry."
-            if compile_error
-            else f"{detail} Review the raw diagnostics, adjust the configuration, and retry."
-        )
+        message = f"{detail} {NEXT_STEP.get(error_code, DEFAULT_NEXT_STEP)}"
         print(json.dumps(failure(
             error_code,
             message,

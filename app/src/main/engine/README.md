@@ -132,8 +132,17 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
 - `execute.ts` — `TIMEOUT` on a killed subprocess, `ENGINE_CRASH` on a
   nonzero exit / non-JSON stdout / unrecognized `status`.
 - `estimate.py` — `COMPILE_ERROR` only for QDK's structured `QSharpError`
-  exception type, `ESTIMATION_FAILED` otherwise (including an empty Pareto
-  frontier). Message substrings are not used for classification.
+  exception type, `INVALID_CONFIG` for its own `InvalidInvocation`, and
+  `ESTIMATION_FAILED` otherwise (including an empty Pareto frontier). Message
+  substrings are not used for classification.
+
+  `InvalidInvocation` covers architecture parameters **qdk does not validate
+  itself**. Majorana's `t_error_rate` is the case that forced it: qdk 1.30.0
+  only derives a value when one is absent, and passes a supplied one straight
+  to the `T` instruction — `0.9` and `-0.1` both estimate happily. Re-checking
+  `(0, 0.05]` here means `configToInvocation`'s identical check is a first line
+  of defence rather than the only one. See `majoranaTErrorRate.test.ts`, which
+  bypasses the TypeScript guard on purpose.
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 
