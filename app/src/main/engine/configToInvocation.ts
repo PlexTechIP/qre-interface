@@ -18,13 +18,31 @@ function invalid(message: string): ConfigToInvocationResult {
 }
 
 /**
+ * Every integral architecture parameter, on all three models.
+ *
+ * `Number.isSafeInteger` rather than `Number.isInteger`, deliberately. Two
+ * things are being refused, and only the first is obvious:
+ *
+ * 1. A FRACTIONAL value. qdk requires a Python `int` and rejects `50.5` with
+ *    "'float' object cannot be interpreted as an integer" — an opaque
+ *    ESTIMATION_FAILED that reads as "your model was infeasible".
+ * 2. A value above 2**53 - 1. It is an integer to JavaScript, but a JSON number
+ *    no longer carries it exactly, so it cannot survive the wire into Python
+ *    without rounding (9007199254740993 -> ...992) or overflowing `float()`
+ *    outright. `estimate.py` and `runconfig.schema.json` carry the same cap.
+ */
+function isIntegral(value: number): boolean {
+  return Number.isSafeInteger(value);
+}
+
+/**
  * v1.4.0 `targetYear`, shared by Majorana and Neutral Atom: an integer >= 0.
  * Inert on this pipeline (qdk reads a target year only through a trace
  * transform that accepts one), but still range-checked — a recorded-only field
  * that accepts nonsense still puts nonsense in the run record.
  */
 function isTargetYear(value: number): boolean {
-  return Number.isInteger(value) && value >= 0;
+  return isIntegral(value) && value >= 0;
 }
 
 /** v1.4.0 Majorana `tErrorRate`: 0 < x <= 0.05, matching the schema. */
@@ -126,21 +144,30 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     if (!(architecture.errorRate > 0 && architecture.errorRate < 0.01)) {
       return invalid(`GateBased errorRate must be in (0, 0.01), got ${architecture.errorRate}.`);
     }
-    if (!(architecture.gateTime > 0)) {
-      return invalid(`GateBased gateTime must be > 0, got ${architecture.gateTime}.`);
+    if (!(isIntegral(architecture.gateTime) && architecture.gateTime > 0)) {
+      return invalid(`GateBased gateTime must be an integer > 0, got ${architecture.gateTime}.`);
     }
-    if (!(architecture.measurementTime > 0)) {
-      return invalid(`GateBased measurementTime must be > 0, got ${architecture.measurementTime}.`);
+    if (!(isIntegral(architecture.measurementTime) && architecture.measurementTime > 0)) {
+      return invalid(
+        `GateBased measurementTime must be an integer > 0, got ${architecture.measurementTime}.`,
+      );
     }
-    if (architecture.twoQubitGateTime != null && !(architecture.twoQubitGateTime > 0)) {
-      return invalid(`GateBased twoQubitGateTime must be null or > 0, got ${architecture.twoQubitGateTime}.`);
+    if (
+      architecture.twoQubitGateTime != null &&
+      !(isIntegral(architecture.twoQubitGateTime) && architecture.twoQubitGateTime > 0)
+    ) {
+      return invalid(
+        `GateBased twoQubitGateTime must be null or an integer > 0, got ${architecture.twoQubitGateTime}.`,
+      );
     }
   } else if (architecture.type === "majorana") {
     if (![0.0001, 0.00001, 0.000001].includes(architecture.errorRate)) {
       return invalid(`Majorana errorRate must be one of 1e-4, 1e-5, 1e-6, got ${architecture.errorRate}.`);
     }
-    if (!(architecture.operationTime > 0)) {
-      return invalid(`Majorana operationTime must be > 0, got ${architecture.operationTime}.`);
+    if (!(isIntegral(architecture.operationTime) && architecture.operationTime > 0)) {
+      return invalid(
+        `Majorana operationTime must be an integer > 0, got ${architecture.operationTime}.`,
+      );
     }
     // v1.4.0, both optional. Absent is valid — qdk derives tErrorRate and
     // ignores an absent targetYear — but a PRESENT value is range-checked here
@@ -160,13 +187,13 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
     // [0, 0.01), spacing/velocity/acceleration > 0, factors integers >= 1.
     const na = architecture;
     const posInt = (v: number, name: string): ConfigToInvocationResult | null =>
-      Number.isInteger(v) && v > 0 ? null : invalid(`NeutralAtom ${name} must be an integer > 0, got ${v}.`);
+      isIntegral(v) && v > 0 ? null : invalid(`NeutralAtom ${name} must be an integer > 0, got ${v}.`);
     const errRate = (v: number, name: string): ConfigToInvocationResult | null =>
       v >= 0 && v < 0.01 ? null : invalid(`NeutralAtom ${name} must be in [0, 0.01), got ${v}.`);
     const positive = (v: number, name: string): ConfigToInvocationResult | null =>
       v > 0 ? null : invalid(`NeutralAtom ${name} must be > 0, got ${v}.`);
     const factor = (v: number, name: string): ConfigToInvocationResult | null =>
-      Number.isInteger(v) && v >= 1 ? null : invalid(`NeutralAtom ${name} must be an integer >= 1, got ${v}.`);
+      isIntegral(v) && v >= 1 ? null : invalid(`NeutralAtom ${name} must be an integer >= 1, got ${v}.`);
     const checks = [
       posInt(na.rydbergTime, "rydbergTime"),
       errRate(na.rydbergError, "rydbergError"),
@@ -174,7 +201,7 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       errRate(na.singleQubitError, "singleQubitError"),
       posInt(na.measurementTime, "measurementTime"),
       errRate(na.measurementError, "measurementError"),
-      Number.isInteger(na.handoffTime) && na.handoffTime >= 0
+      isIntegral(na.handoffTime) && na.handoffTime >= 0
         ? null
         : invalid(`NeutralAtom handoffTime must be an integer >= 0, got ${na.handoffTime}.`),
       positive(na.atomSpacing, "atomSpacing"),

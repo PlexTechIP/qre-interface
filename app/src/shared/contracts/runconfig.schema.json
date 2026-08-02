@@ -171,24 +171,27 @@
               "description": "Default UI value: 1e-4."
             },
             "gateTime": {
-              "type": "number",
+              "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Nanoseconds. Required; no UI default."
+              "maximum": 9007199254740991,
+              "description": "Nanoseconds. Required; no UI default. INTEGER: qdk rejects a fractional time with \"'float' object cannot be interpreted as an integer\", and features-and-fields.md types it int [> 0]. The maximum is Number.MAX_SAFE_INTEGER — above it a JSON number no longer carries an integer exactly, and qdk fails opaquely on the conversion."
             },
             "measurementTime": {
-              "type": "number",
+              "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Nanoseconds. Required; no UI default."
+              "maximum": 9007199254740991,
+              "description": "Nanoseconds. Required; no UI default. Integral and capped as gateTime."
             },
             "twoQubitGateTime": {
-              "description": "Optional nanoseconds. If present, must be null or > 0.",
+              "description": "Optional nanoseconds. If present, must be null or an integer > 0. Integral and capped as gateTime.",
               "oneOf": [
                 {
                   "type": "null"
                 },
                 {
-                  "type": "number",
-                  "exclusiveMinimum": 0
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
                 }
               ]
             }
@@ -224,12 +227,14 @@
             "targetYear": {
               "type": "integer",
               "minimum": 0,
+              "maximum": 9007199254740991,
               "description": "Target Year (v1.4.0). Optional. INERT on this pipeline: qdk reads a target year only through a trace transform that accepts one. Recorded, not influential."
             },
             "operationTime": {
-              "type": "number",
+              "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Nanoseconds. Default UI value: 1000."
+              "maximum": 9007199254740991,
+              "description": "Nanoseconds. Default UI value: 1000. Integral and capped as gateBased.gateTime — unguarded, a fractional value is an opaque qdk TypeError and 0 panics inside pyo3."
             }
           }
         },
@@ -259,6 +264,7 @@
             "rydbergTime": {
               "type": "integer",
               "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
               "description": "Rydberg Time (ns). Default UI value: 500."
             },
             "rydbergError": {
@@ -270,6 +276,7 @@
             "singleQubitTime": {
               "type": "integer",
               "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
               "description": "Single-Qubit Time (ns). Default UI value: 1000."
             },
             "singleQubitError": {
@@ -281,6 +288,7 @@
             "measurementTime": {
               "type": "integer",
               "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
               "description": "Measurement Time (ns). Default UI value: 10000."
             },
             "measurementError": {
@@ -292,6 +300,7 @@
             "handoffTime": {
               "type": "integer",
               "minimum": 0,
+              "maximum": 9007199254740991,
               "description": "Handoff Time (ns). Default UI value: 0."
             },
             "atomSpacing": {
@@ -317,16 +326,19 @@
             "surfaceCodeOneQubitTimeFactor": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 9007199254740991,
               "description": "Surface Code Single-Qubit Time Factor. Default UI value: 1."
             },
             "surfaceCodeTwoQubitTimeFactor": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 9007199254740991,
               "description": "Surface Code Two-Qubit Time Factor. Default UI value: 1."
             },
             "targetYear": {
               "type": "integer",
               "minimum": 0,
+              "maximum": 9007199254740991,
               "description": "Target Year (v1.4.0). Optional. INERT on this pipeline, as on Majorana. Recorded, not influential."
             }
           }
