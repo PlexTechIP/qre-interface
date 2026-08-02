@@ -49,6 +49,15 @@ before §A–§C. Say so in the channel rather than deciding silently.
 - [ ] `ConfigurationSummary.tsx` and `constants/labels.ts` updated to match
 - [ ] **Team 2 owns the same rename on Results / History / Comparison / export** —
       confirm in the channel that both halves are landing this week
+- [ ] **Do NOT apply the *Quantum Dynamics → Ising Model (2D)* rename yourself.**
+      It is a one-line change to `benchmarks.json`'s `name`, which lives in
+      `src/shared/contracts/` — **the PMs make it**. The form
+      (`ApplicationSection.tsx:250`) and History/Comparison
+      (`historyLabels.ts:46`) both read that field, so one PM edit covers every
+      surface. Verify it landed; don't re-implement it
+- [ ] **Do NOT apply *Number of Qubits → Logical Qubit Count* to the contract** —
+      `numQubits` stays. It is a label in `ApplicationSection.tsx` and
+      `validation.ts`, and those are yours
 
 ## C. One factory control
 
@@ -73,16 +82,22 @@ before §A–§C. Say so in the channel rather than deciding silently.
       `NumberField.tsx`, `RadioGroup.tsx`) — not a `title=` per call site
 - [ ] Keyboard reachable, `aria-describedby`-associated, dismissible, no focus
       trap, no layout shift, legible in both themes
-- [ ] **Manual Logical Counts first** — the POC's stated priority. Copy for these
-      seven has to be **drafted**, not transcribed
-  - [ ] Rotation Count — "the analog value of a rotation"; one analog rotation may
-        translate to a multiple (like 15) of the T count
-  - [ ] Measurement Count — brief explanation despite reading as redundant
-  - [ ] Rotation Depth — **research item, see § Blockers**
-  - [ ] Number of Qubits, T Count, CCZ Count, CCiX Count — drafted
+- [ ] **Manual Logical Counts first** — the POC's stated priority. Preston's
+      second 2026-07-31 revision supplies copy for **all seven**, so this is
+      transcription, not drafting. Rotation Depth is settled: *"the maximum
+      number of sequential rotation operations in the quantum program"*
+- [ ] **Benchmark hyperparameter** tooltips — all five benchmarks now have copy
 - [ ] **QPU Specification** tooltips — transcribed **verbatim** from
       `features-and-fields.md`
 - [ ] **Micro Architecture Settings** tooltips — transcribed verbatim
+- [ ] **Trotter Step ships the corrected copy from `features-and-fields.md`**,
+      not the Google Doc's original — the Doc calls it "the number of discrete
+      steps," but `QuantumDynamics.qs` derives the step count as
+      `ceil(totalTime / trotterStep)`, so the field is a step *size*. **Ship the
+      corrected wording regardless of whether Preston has replied** — the repo
+      copy is correct and reviewed, and a tooltip that misstates a field by an
+      order of magnitude is worse than one awaiting sign-off. If he later prefers
+      different phrasing, that is a one-line follow-up
 
 ## E. The four-stage trace pipeline — UI only
 
@@ -90,13 +105,18 @@ before §A–§C. Say so in the channel rather than deciding silently.
 > already composes `DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory`
 > from a fixed sequence, `configToInvocation` already carries both stages, and
 > `traceTransformV14.test.ts` proves Dynamic Memory Compute moves a real
-> estimate (477 qubits / 1,363,950 ns → 256 qubits / 1,852,200 ns on Quantum
-> Dynamics 3×3). **Do not rebuild any of that.** Your job is the controls.
+> estimate (477 qubits / 1,363,950 ns → 256 qubits / 1,852,200 ns on Ising
+> Model (2D) 3×3). **Do not rebuild any of that.** Your job here is the controls.
+>
+> This fence is about the **trace pipeline only**. §G is genuine engine work —
+> `memoryOptimization` was never wired, and v1.4.0 did not cover it.
 
 - [ ] Dynamic Memory Compute's two parameters exposed: Compute Capacity
       Percentage (float `(0, 1.0]`, default 0.5) and Eviction Strategy (LRU /
       LFU / First Available, default LRU)
-- [ ] Unmemory is a bare on/off with no parameters
+- [ ] Unmemory is a bare on/off with no parameters, **gated on Dynamic Memory
+      Compute being enabled** — it reverses that stage, so on its own it has
+      nothing to act on
 - [ ] Both optional stages **greyed out behind a toggle**; parameters only live
       when the stage is enabled
 - [ ] **Off means the field is absent from the config, not present at its
@@ -104,8 +124,9 @@ before §A–§C. Say so in the channel rather than deciding silently.
       not undo it by always writing an object
 - [ ] **No control added for Slow Down Factor** — it is `const: 1` and stays
       disabled
-- [ ] **Unmemory is labelled recorded-only** — measured inert on this pipeline
-      (identical estimate on and off)
+- [ ] **Unmemory is NOT labelled recorded-only** — it reverses Dynamic Memory
+      Compute, so an unchanged estimate with DMC off is correct behaviour, not a
+      dead control. Gate it instead
 - [ ] **Proof it works from the UI:** toggling Dynamic Memory Compute on in the
       form and running produces different numbers from the same run with it off
 - [ ] **Halfway gate:** if the form cannot yet drive a changed estimate through
@@ -119,20 +140,47 @@ before §A–§C. Say so in the channel rather than deciding silently.
 - [ ] Neutral Atom **Data Qubit Spacing** (float `[> 0]`, default 12.0, placed
       after Atom Spacing) and **Target Year**
 - [ ] Built with the existing `NumberField` pattern in `ArchitectureSection.tsx`
-- [ ] **Every one of them labelled recorded-only** where the user can see it —
-      all four are inert or derived on our path today
+- [ ] **Each labelled with its own reason, not one copy-pasted sentence** — the
+      four differ. See the table in the technical brief § Deliverable 5:
+      **T Error Rate** is *derived*, not inert (label it "derived from Error Rate
+      when left blank"); **both Target Years** and **Data Qubit Spacing** are
+      recorded but do not affect the estimate
+- [ ] **T Error Rate's `(0, 0.05]` bound is enforced only by us** — qdk accepts
+      0.9 and -0.1 without complaint. Don't loosen it
 - [ ] **Commit `6dce3ca`'s pinned-defaults test updated deliberately**, in the
       same commit as the field, with a note. It was built to fail on exactly this
       change — don't delete it, don't skip it
 
-## G. Memory Optimization, re-measured
+## G. Memory Optimization — wire it, THEN measure
 
-- [ ] With Dynamic Memory Compute enabled, run a yoked surface code and record
-      whether the estimate moves
+> ⚠️ **You cannot measure this until you wire it.** `memoryOptimization` reaches
+> the engine nowhere today — not `configToInvocation.ts`, not `invocation.ts`,
+> not `estimate.py`. `memoryOptimization.test.ts` asserts exactly that. So the
+> "identical estimates" result already on record is **not** evidence the yoked
+> codes do nothing; it is evidence they were never sent. Measuring first and
+> reporting "no change" would confidently confirm the wrong thing.
+>
+> This is engine work, and it is yours this week — the one part of §E's "backend
+> already landed" that v1.4.0 did **not** cover.
+
+- [ ] **Wire it, following the secondary-factory pattern:** add
+      `memoryOptimization` to `QreInvocation`, map it in `configToInvocation`
+      (absent / `"none"` ⇒ omit), and layer it in `build_isa_query` —
+      `query = query * TwoDimensionalYokedSurfaceCode.q()`. Verified on qdk
+      1.30.0: `OneDimensionalYokedSurfaceCode` and
+      `TwoDimensionalYokedSurfaceCode`, both exposing `.q()`
+- [ ] **Prove it is actually in the query** before trusting any estimate — the
+      existing `expect(...).not.toContain("memoryOptimization")` assertion must
+      now be inverted, deliberately, in the same commit
+- [ ] **Then** measure: with Dynamic Memory Compute enabled, run a yoked surface
+      code and record whether the estimate moves
 - [ ] **If it moves:** re-enable the control, conditioned on stage 0 being on
-- [ ] **If it doesn't:** sharpen the existing explanation to say "measured on
-      1.30.0 with DynamicMemoryCompute enabled"
-- [ ] Either way the measurement lands in `memoryOptimization.test.ts`
+- [ ] **If it doesn't:** the explanation finally becomes *tested* rather than
+      assumed — say "measured on 1.30.0 with DynamicMemoryCompute enabled and the
+      yoked code actually in the ISA query"
+- [ ] Either way the measurement lands in `memoryOptimization.test.ts`, and that
+      file's comment about DynamicMemoryCompute being "deliberately not in our
+      pipeline" is stale as of v1.4.0 — fix it
 
 ## H. Docs — the two blank validations, then the mirror
 
@@ -152,8 +200,10 @@ before §A–§C. Say so in the channel rather than deciding silently.
 - [ ] Walk through `week-5-team-3-definition-of-done.md` — every box checkable
 - [ ] Acceptance walkthrough rehearsed: renamed labels → one factory control with
       five options → GSJ24 CCX still toggles CCX Magic States → tooltips on the
-      manual counts → DMC on vs. off giving different numbers → four new QPU
-      fields labelled recorded-only → Memory Optimization measurement stated
+      manual counts → DMC on vs. off giving different numbers → the four new QPU
+      fields each labelled with **its own** reason (T Error Rate *derived*; both
+      Target Years and Data Qubit Spacing *recorded, not influential*) → Memory
+      Optimization wired, then measured, with the result stated
 - [ ] `npm run typecheck && npm test && npm run test:engine` green; **merged to
       `main` by Wed Aug 5 EOD** — acceptance from `main`, not a branch
 
@@ -161,10 +211,16 @@ before §A–§C. Say so in the channel rather than deciding silently.
 
 - **24-hour rule:** anything blocking you for more than 24 hours goes in the
   channel, tagged to both PMs.
-- **Rotation Depth is the one item that may not resolve.** If the QDK docs don't
-  settle what it measures by the **Tue Aug 4** checkpoint, escalate. Ship the
-  other six tooltips and leave that one out rather than inventing a definition an
-  analyst will rely on.
+- **No copy questions remain open, and none gates you.** Rotation Depth is
+  defined by Preston's second 2026-07-31 revision; Trotter Step was settled
+  against `QuantumDynamics.qs` on 2026-08-01 and the corrected wording is in
+  `features-and-fields.md`. Ship from the repo copy. Preston mirroring it into
+  the Google Doc is a PM follow-up, not a dependency of yours.
+- **§G grew.** Memory Optimization now includes the engine wiring, because the
+  field never reached the estimator and the measurement is meaningless without
+  it. It is still the last thing to give if the week runs short — but if you cut
+  it, cut *both* halves and say so, rather than measuring an unwired field and
+  reporting a result.
 - **If v1.4.0 isn't on `main` when you start, don't hand-edit `contracts/`** —
   post in the channel and start on §B, §C, and §D, none of which need it.
 - **Merged, not opened.** If your teammate hasn't reviewed by Tuesday, say so and

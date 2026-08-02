@@ -14,26 +14,39 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       GSJ24 CCX are one multi-select
 - [ ] **Tooltips exist on every field in the Application, QPU Specification, and
       Micro Architecture sections**, reachable by keyboard as well as hover
-- [ ] **All seven Manual Logical Counts fields have tooltips** — or six, with
-      Rotation Depth explicitly escalated and left blank rather than guessed
+- [ ] **All seven Manual Logical Counts fields have tooltips**, transcribed
+      verbatim. Rotation Depth is defined by the second 2026-07-31 revision, so
+      there is no longer an escalation path for it
+- [ ] **The *Number of Qubits* → *Logical Qubit Count* rename is live**, with
+      `numQubits` untouched on the wire. *(The Ising Model (2D) rename is a
+      PM-made one-line edit to `benchmarks.json`; verify it landed rather than
+      applying it — that file is contract territory, and the same edit covers
+      Team 2's surfaces.)*
 - [ ] **The trace transform is a four-stage ordered pipeline in the UI.**
       The two optional stages are toggleable and greyed out when off. *(The
       contract, adapter, and `estimate.py` composition landed with v1.4.0 — your
       part is the controls and the labelling.)*
 - [ ] **Enabling Dynamic Memory Compute from the form changes the estimate.**
       Verified end to end through the UI, not just in the engine tests: on qdk
-      1.30.0 with Quantum Dynamics 3×3 the stage moves 477 qubits / 1,363,950 ns
+      1.30.0 with Ising Model (2D) 3×3 the stage moves 477 qubits / 1,363,950 ns
       to 256 qubits / 1,852,200 ns
-- [ ] **Unmemory is labelled recorded-only.** It is measured **inert** on this
-      pipeline — same estimate on and off — so the control must say so rather
-      than implying it does something. If your own testing shows otherwise, that
-      is a finding: report it, and `traceTransformV14.test.ts` needs updating
+- [ ] **Unmemory is gated on Dynamic Memory Compute, not labelled recorded-only.**
+      It *reverses* that stage, so an unchanged estimate with DMC off is the
+      correct result rather than a dead control. Selecting Unmemory alone should
+      not be reachable
 - [ ] **A Dynamic Memory Compute setting with no feasible point reads as a
       failed run, not a crash** — e.g. capacity 0.25 with least-frequently-used
 - [ ] **The four new QPU fields are present and selectable** — Majorana T Error
       Rate and Target Year, Neutral Atom Data Qubit Spacing and Target Year
-- [ ] **Memory Optimization has been re-measured with Dynamic Memory Compute
-      enabled**, and the control's state matches the measurement
+- [ ] **Memory Optimization now reaches the engine** — `memoryOptimization` is
+      present in `QreInvocation`, mapped by `configToInvocation`, and layered in
+      `build_isa_query`; the old
+      `expect(...).not.toContain("memoryOptimization")` assertion is inverted in
+      the same commit
+- [ ] **Then re-measured with Dynamic Memory Compute enabled**, and the control's
+      state matches the measurement. A "no change" result is only reportable if
+      the yoked code was demonstrably in the ISA query — measuring an unwired
+      field proves nothing
 
 ## Validation & correctness
 
@@ -55,8 +68,10 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       or an object's keys
 - [ ] **No control added for Slow Down Factor** — still `const: 1`, still disabled
 - [ ] **Every recorded-but-inert field is labelled as such where the user reads
-      it** — all four new QPU fields, in the register the Memory Optimization
-      control already uses
+      it**, in the register the Memory Optimization control already uses — and
+      with the *right* reason per field: T Error Rate is **derived**, not inert,
+      while both Target Years and Data Qubit Spacing are recorded-not-influential
+      (technical brief § Deliverable 5 has the table)
 - [ ] **Commit `6dce3ca`'s pinned-defaults test was updated deliberately**, in the
       same commit as the field it covers, with a stated reason — not deleted, not
       skipped
@@ -97,15 +112,17 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       carries v1.4.0
 - [ ] **Halfway gate honored** — an optional pipeline stage changing a real
       estimate by mid-week, or an escalation posted
-- [ ] **Rotation Depth resolved or escalated by the Tue Aug 4 checkpoint** — not
-      silently guessed
+- [ ] **Trotter Step ships the corrected wording** from `features-and-fields.md`,
+      not the Google Doc's original — the Doc describes a step count for a field
+      that is a step size
 - [ ] Checklist file updated with boxes checked
 - [ ] **Team branch merged to `main` by Wed Aug 5 EOD**; teammate reviews first,
       and a PM reviews the engine-adapter seam. A PR opened Wednesday evening is
       not a delivery
 - [ ] Acceptance walkthrough rehearsed: renames → one factory control → tooltips
-      on the manual counts → DMC on vs. off with different numbers → new QPU
-      fields labelled → Memory Optimization measurement stated
+      on the manual counts → DMC on vs. off with different numbers → the four new
+      QPU fields each labelled with its own reason → Memory Optimization wired,
+      then measured, with the result stated
 
 ## Explicitly NOT required
 
@@ -118,4 +135,5 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
   `renderer/history/`**, including the renames on those surfaces (Team 2) ·
   **any agentic work** — MCP, LLM SDKs, token UI, network calls (Teams 1 and 2) ·
   **redesigning the configuration layout** — polish within the existing tokens ·
-  **inventing a Rotation Depth definition** if the QDK docs don't supply one
+  **rewriting any tooltip copy** — it is Preston's, reviewed, and transcribed
+  verbatim; a phrasing you disagree with is a channel message, not an edit

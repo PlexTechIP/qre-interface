@@ -55,15 +55,23 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
  * Memory Optimization is recorded on the config but cannot influence an estimate
  * in this build, and the UI says so. These tests hold that claim to account.
  *
- * The yoked codes are ISATransforms that PROVIDE a MEMORY instruction. Nothing
- * demands one: MEMORY demand comes only from READ_FROM_MEMORY / WRITE_TO_MEMORY
- * trace gates, which are emitted by the DynamicMemoryCompute trace transform
- * (deliberately not in our pipeline — see features-and-fields.md § Teams TO-DO)
- * or by LogicalCounts keys the contract does not carry (numComputeQubits,
- * readFromMemoryCount, writeToMemoryCount).
+ * The yoked codes are ISATransforms that PROVIDE a MEMORY instruction. MEMORY
+ * demand comes only from READ_FROM_MEMORY / WRITE_TO_MEMORY trace gates, which
+ * are emitted by the DynamicMemoryCompute trace transform or by LogicalCounts
+ * keys the contract does not carry (numComputeQubits, readFromMemoryCount,
+ * writeToMemoryCount).
  *
- * If a future qdk or a memory-splitting trace makes these differ, that is good
- * news and these tests should fail — it means the control can be re-enabled.
+ * ⚠️ TWO THINGS HAVE CHANGED SINCE THIS WAS WRITTEN, and both matter before
+ * anyone reads the assertions below as evidence about the yoked codes:
+ *
+ *  1. DynamicMemoryCompute IS in our pipeline as of contract v1.4.0, as an
+ *     optional stage 0. The demand this file says nothing supplies now exists.
+ *  2. More importantly, `memoryOptimization` has never reached the engine at
+ *     all — see the first test. So "identical estimates" below is NOT evidence
+ *     that the yoked codes do nothing; it is evidence that they were never sent.
+ *
+ * Week-5 Team 3 (§G) wires the field through and then measures for real. Until
+ * that lands, do not cite this file as showing Memory Optimization is inert.
  */
 /**
  * The frontier with `evaluationTime` dropped. That field is how long the

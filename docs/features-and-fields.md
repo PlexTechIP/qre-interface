@@ -9,12 +9,31 @@
 > If the two disagree, `data-contracts.md` wins for wire format; this doc
 > is the source for what fields/ranges/defaults *should* exist.
 >
-> **The Config Descriptions tab (2026-07-31) is the tooltip copy** — the
-> per-field "Tooltip copy" tables below are transcribed from it verbatim and are
-> the text to render on hover. That same update added four QPU fields, merged
+> **The Config Descriptions tab is the tooltip copy** — the per-field "Tooltip
+> copy" tables below are transcribed from it verbatim and are the text to render
+> on hover. Its first revision (2026-07-31) added four QPU fields, merged
 > Secondary Factory into Magic State Factory, extended the trace transform to a
 > four-stage ordered pipeline, and renamed Max Error. Each of those **reverses a
 > ruling recorded earlier**; the reversals are flagged inline where they land.
+>
+> **Second revision, same day.** Preston re-issued the tab later on 2026-07-31.
+> It changes **no field, type, range, or default** — contract v1.4.0 is
+> unaffected — but it does three things worth knowing before you read on:
+>
+> 1. **Every benchmark hyperparameter and every Manual Logical Counts field now
+>    has copy.** Rotation Depth in particular is no longer an open research
+>    question; see [§ Manual Logical Counts](#manual-logical-counts).
+> 2. **Two display renames**: *Quantum Dynamics* → **Ising Model (2D)**, and
+>    *Number of Qubits* → **Logical Qubit Count**. Contract ids
+>    (`quantum-dynamics`, `numQubits`) do not change — see
+>    [§ Renames](#renames-2026-07-31).
+> 3. **Unmemory finally has a definition**, and it explains the measurement we
+>    took: it *reverses* Dynamic Memory Compute, so it has nothing to act on
+>    unless that stage is running. See
+>    [§ Trace Transform, Stage 3](#stage-3--unmemory-optional-off-by-default).
+>
+> Where the Config Descriptions tab and an older tab disagree, this doc follows
+> **Config Descriptions** (it is the one being revised) and flags the conflict.
 
 ## Reading this doc
 
@@ -74,42 +93,81 @@ One of: **Benchmarks**, **Saved Programs**, **Manual Logical Counts**.
 
 #### Shor's Factoring
 
-| Hyperparameter | Type | Default |
-|---|---|---|
-| Bit Size | int `[2 - 8192]` | 31 |
-| Generator | int `[2 - 65535]` | 11 |
+| Hyperparameter | Type | Default | Tooltip copy |
+|---|---|---|---|
+| Bit Size | int `[2 - 8192]` | 31 | The number of bits in the integer being factored. |
+| Generator | int `[2 - 65535]` | 11 | The integer base used to generate the factoring instance. |
 
 #### Ekerå-Håstad Factoring
 
-| Hyperparameter | Type | Default |
-|---|---|---|
-| RSA Instance | Pick 1: `RSA-100 (330-bit)`, `RSA-1024 (1024-bit)`, `RSA-2048 (2048-bit)` | RSA-100 (330-bit) |
-| Generator | int `[2 - 65535]` | 7 |
+| Hyperparameter | Type | Default | Tooltip copy |
+|---|---|---|---|
+| RSA Instance | Pick 1: `RSA-100 (330-bit)`, `RSA-1024 (1024-bit)`, `RSA-2048 (2048-bit)` | RSA-100 (330-bit) | The RSA key size (in bits) of the integer being factored. |
+| Generator | int `[2 - 65535]` | 7 | The integer base used by the factoring algorithm to generate the problem instance. |
 
-#### Quantum Dynamics
+#### Ising Model (2D)
 
-| Hyperparameter | Type | Default |
-|---|---|---|
-| Lattice N₁ | int `[1 - 1000]` | 10 |
-| Lattice N₂ | int `[1 - 1000]` | 10 |
-| Total Time | float `[> 0, <= 1e6]` | 30.0 |
-| Trotter Step | float `[1e-6 <= Trotter Step <= Total Time]` | 0.9 |
-| Coupling J | float `[any]` | 1.0 |
-| Field g | float `[any]` | 1.0 |
+> **Renamed from "Quantum Dynamics"** in the second 2026-07-31 revision, and the
+> new name is the accurate one — the bundled Q# simulates a 2D transverse-field
+> Ising model, which is what the lattice dimensions, coupling J and field g
+> describe. **Display only:** the contract id stays `quantum-dynamics`, so saved
+> records, filters, and `benchmarks.json`'s `id` are untouched.
+>
+> **It is a one-line edit to `benchmarks.json`'s `name`, and the PMs make it.**
+> That file lives under `src/shared/contracts/`, which teams do not edit. The
+> form reads benchmark names straight from it (`ApplicationSection.tsx:250`), and
+> so does History and Comparison (`historyLabels.ts:46`) — so the single edit
+> covers **both Team 3's and Team 2's surfaces at once**. Neither team should
+> hand-apply this rename anywhere.
+
+| Hyperparameter | Type | Default | Tooltip copy |
+|---|---|---|---|
+| Lattice N₁ | int `[1 - 1000]` | 10 | The number of spins (sites) along the first dimension of the 2D lattice. |
+| Lattice N₂ | int `[1 - 1000]` | 10 | The number of spins (sites) along the second dimension of the 2D lattice. |
+| Total Time | float `[> 0, <= 1e6]` | 30.0 | The total duration of the simulated quantum system evolution. |
+| Trotter Step | float `[1e-6 <= Trotter Step <= Total Time]` | 0.9 | **CORRECTED — see below.** The simulated time advanced by each Trotter step. The evolution runs ceil(Total Time ÷ Trotter Step) steps, so smaller values approximate the dynamics more accurately and produce a deeper circuit. |
+| Coupling J | float `[any]` | 1.0 | The strength of the interaction between neighboring spins in the lattice. |
+| Field g | float `[any]` | 1.0 | The strength of the transverse magnetic field applied to the spins. |
+
+> ⚠️ **The table above carries CORRECTED copy. The Google Doc's original is
+> wrong** — settled against our own Q#, not a matter of opinion. The source tab
+> says *"The number of discrete steps used to approximate the system evolution."*
+> `benchmarks/qsharp-project/src/QuantumDynamics.qs` computes:
+>
+> ```qsharp
+> let steps = MaxI(1, Ceiling(totalTime / trotterStep));
+> ...
+> TrotterStep(qs, n1, n2, couplingJ * trotterStep, fieldG * trotterStep);
+> ```
+>
+> `trotterStep` is the **time increment per step** — a duration. The number of
+> steps is *derived* from it as `ceil(Total Time / Trotter Step)`, and the value
+> is also multiplied into the coupling and field rotation angles. Shipping "the
+> number of discrete steps" would tell an analyst that the default 0.9 means
+> "0.9 steps."
+>
+> **Proposed replacement copy**, for Preston to approve:
+> *The simulated time advanced by each Trotter step. The evolution runs
+> ceil(Total Time ÷ Trotter Step) steps, so smaller values approximate the
+> dynamics more accurately and produce a deeper circuit.*
+>
+> This also explains the upper bounds under § Benchmarks: the Q# comment notes
+> that a `totalTime / trotterStep` ratio outside Int64 overflows and
+> `MaxI(1, …)` silently collapses it to a one-step evolution.
 
 #### Grover's Search
 
-| Hyperparameter | Type | Default |
-|---|---|---|
-| Search Qubits | int `[1 - 63]` | 5 |
-| Iterations | int `[>= 1]` | Computed from Search Qubits upon estimation |
+| Hyperparameter | Type | Default | Tooltip copy |
+|---|---|---|---|
+| Search Qubits | int `[1 - 63]` | 5 | The number of qubits used to represent the search space. A system with n search qubits represents 2ⁿ possible items. |
+| Iterations | int `[>= 1]` | Computed from Search Qubits upon estimation | The number of Grover search iterations performed to amplify the probability of finding the target item. |
 
 #### Phase Estimation
 
-| Hyperparameter | Type | Default |
-|---|---|---|
-| Precision | int `[1 - 63]` | 6 |
-| Register Size | int `[1 - 1000]` | 3 |
+| Hyperparameter | Type | Default | Tooltip copy |
+|---|---|---|---|
+| Precision | int `[1 - 63]` | 6 | The number of bits of accuracy used to represent the estimated phase. Higher precision requires additional quantum resources. |
+| Register Size | int `[1 - 1000]` | 3 | The number of qubits used in the phase estimation register. Larger registers provide higher precision but increase resource requirements. |
 
 ### Saved Programs
 
@@ -118,25 +176,41 @@ One of: **Benchmarks**, **Saved Programs**, **Manual Logical Counts**.
 
 ### Manual Logical Counts
 
-Fields: Number of Qubits, T Count, Rotation Count, Rotation Depth, CCZ Count,
-CCiX Count, Measurement Count
+**Section copy:** *Manually specify the logical resource requirements of a
+quantum program. These values represent logical operations before physical
+hardware and error correction overhead are applied.*
 
-**Tooltip copy — to be written, not transcribed.** The Config Descriptions tab
-supplies copy for the QPU and Micro Architecture fields but **not** for these
-seven, and they are the controls the 2026-07-31 review singled out as most
-confusing. Three have direction; four need copy drafted from the same source
-the others came from.
+The seven fields map 1:1 onto `LogicalCounts` keys.
 
-| Field | Status |
-|---|---|
-| Rotation Count | Describe as the "analog value of a rotation" — e.g. 1 analog rotation may translate to a multiple (like 15) of the T count. |
-| Rotation Depth | **Unknown.** Check the QDK documentation to establish what this actually measures before writing anything. Treat as research, not transcription — if the docs do not settle it, escalate rather than guess. |
-| Measurement Count | Needs a brief explanation despite reading as redundant ("we measure everything"). |
-| Number of Qubits, T Count, CCZ Count, CCiX Count | Copy not yet drafted. |
+| Field | Contract id | Tooltip copy |
+|---|---|---|
+| Logical Qubit Count | `numQubits` | The number of logical qubits required by the quantum program. The QRE uses this value to estimate the physical qubit resources needed after error correction. |
+| T Count | `tCount` | The total number of logical T gates required by the quantum program. T gates are non-Clifford operations that require additional resources in fault-tolerant quantum computation. |
+| Rotation Count | `rotationCount` | The total number of logical rotation operations in the quantum program. Rotations are typically decomposed into fault-tolerant operations for resource estimation. |
+| Rotation Depth | `rotationDepth` | The maximum number of sequential rotation operations in the quantum program. This affects the depth of the computation and estimated runtime. |
+| CCZ Count | `cczCount` | The total number of logical CCZ (controlled-controlled-Z) operations required by the quantum program. CCZ operations contribute to non-Clifford resource requirements. |
+| CCiX Count | `ccixCount` | The total number of logical CCiX (controlled-controlled-iX) operations required by the quantum program. These operations contribute to fault-tolerant resource estimates. |
+| Measurement Count | `measurementCount` | The total number of logical measurement operations required by the quantum program. Measurements contribute to the estimated runtime and resource requirements. |
 
-The seven fields map 1:1 onto `LogicalCounts` keys, and the contract already
-encodes `0 <= rotationDepth <= rotationCount` — that constraint is a useful
-starting point for what Rotation Depth means, but it is not a definition.
+> ✅ **Rotation Depth is settled — this is no longer a research item.** The first
+> revision left it "Unknown; check the QDK documentation," and the week-5 plan
+> carried it as the one unschedulable task with an escalation gate. The
+> definition above ("the maximum number of *sequential* rotation operations")
+> also explains the contract's existing `0 <= rotationDepth <= rotationCount`
+> constraint: a longest sequential chain cannot exceed the total count. No
+> escalation needed.
+>
+> **Rotation Count's earlier verbal framing is superseded.** The Jul 31 POC
+> described it as the "analog value of a rotation," with 1 analog rotation
+> translating to a multiple (~15) of the T count. That is a useful intuition but
+> it is not what the written copy says, and the written copy is what ships.
+> The T-count relationship lives in PSSPC's *T Count per Rotation* instead.
+
+> ⚠️ **"Number of Qubits" is renamed "Logical Qubit Count."** Display only —
+> `numQubits` stays as the contract id, the schema description, and the
+> validation key. The new name is worth having: this field counts *logical*
+> qubits, and the results surface separately reports physical qubit counts, so
+> the old label collided with a different number on the same screen.
 
 ### Notes
 
@@ -163,8 +237,8 @@ starting point for what Rotation Depth means, but it is not a definition.
 |---|---|
 | Error Rate | The error probability for physical gate operations on hardware qubits. Lower error rates reduce the overhead required for error correction. |
 | Single-Qubit Gate Time (ns) | The time required to perform a physical single-qubit operation. Affects the estimated runtime of the quantum computation. |
-| Measurement Time (ns) | The time required to measure physical qubits. Affects the runtime of operations that require measurement. |
-| Two-Qubit Gate Time (ns) | The time required for physical two-qubit operations such as CNOT and CZ gates. Two-qubit operations often contribute significantly to runtime. |
+| Measurement Time (ns) | The time required to measure physical qubits. Affects the estimated runtime of operations that require measurement. |
+| Two-Qubit Gate Time (ns) | The time required for physical two-qubit operations such as CNOT and CZ gates. Two-qubit operations often contribute significantly to estimated runtime. |
 
 #### Majorana
 
@@ -175,14 +249,47 @@ starting point for what Rotation Depth means, but it is not a definition.
 | Operation Time | int `[> 0]` | 1000 |
 | Target Year *(optional)* | int `[>= 0]` | — |
 
+**Tooltip copy**
+
+| Field | Text |
+|---|---|
+| Error Rate | The error probability for physical Clifford operations. This value is used to model hardware reliability and determine error correction requirements. |
+| T Error Rate | The error probability for physical T gate operations. If not specified, it is automatically derived from the general error rate. This affects the resources required for fault-tolerant T gate execution. |
+| Operation Time | The time required for physical operations, including Clifford operations and T gates. Affects the estimated runtime. |
+| Target Year | Specifies the target hardware generation. Currently has no effect unless a compatible trace transform is enabled. |
+
 > ⚠️ **T Error Rate and Target Year are new in the 2026-07-31 update, and both
 > reverse a ruling.** `risks-and-open-questions.md` (Resolved, 2026-07-30)
 > records: *"`t_error_rate` and `target_year` deliberately not mapped — not in
 > `features-and-fields.md`."* They are in it now, so that ruling no longer
-> holds. **Target Year is inert on our path** — per the source doc, it "needs a
-> trace transform that takes a target year," so adding it changes the record and
-> not the estimate. If it ships, it must be labelled as such, or it becomes the
-> exact class of defect week 4 existed to remove.
+> holds. **Target Year is inert on our path** — its own tooltip says so
+> ("currently has no effect unless a compatible trace transform is enabled"),
+> and none of our four stages takes one. The copy is honest about it, which
+> makes labelling the control straightforward rather than a judgement call.
+>
+> ✅ **Resolved against qdk 1.30.0's source — the Config Descriptions tab is
+> right and the QPU Specification tab is stale.** `qdk/qre/models/qubits/_msft.py`
+> declares both on the `Majorana` dataclass:
+>
+> ```python
+> t_error_rate: Optional[float] = None
+> target_year: Optional[int] = None
+> ```
+>
+> **T Error Rate's derivation is in qdk's own docstring**, and the numbers explain
+> Preston's `(0, 0.05]` bound: *"Non-Clifford operations in this architecture do
+> not have topological protection, so we assume a 5%, 1.5%, and 1% error rate for
+> non-Clifford physical T gates for the three cases."* `__post_init__` fills it
+> in when omitted — error rate 1e-4 → **0.05**, 1e-5 → **0.015**, 1e-6 → **0.01**
+> — and feeds it to the `T` instruction. `0.05` is therefore the highest value
+> qdk itself will ever derive, which makes the upper bound the edge of the
+> modelled regime rather than an arbitrary cap.
+>
+> ⚠️ **qdk does NOT validate an explicitly-supplied value.** Measured on 1.30.0:
+> `Majorana(error_rate=1e-5, t_error_rate=0.9)` and `t_error_rate=-0.1` are both
+> accepted and used verbatim as the T-gate error rate. So our `(0, 0.05]` check is
+> the *only* thing standing between a typo and a nonsense estimate — which makes
+> the `configToInvocation` range check load-bearing, not belt-and-braces.
 
 #### Neutral Atom
 
@@ -215,9 +322,30 @@ starting point for what Rotation Depth means, but it is not a definition.
 >
 > Both were also measured **empirically inert** on our path at the time of that
 > ruling (6.0 / 12.0 / 30.0 spacings and None / 2030 / 2050 target years all
-> produced bit-identical estimates). Re-measure before shipping either as a live
-> control; if they are still inert, they are recorded-only fields and must be
-> labelled that way.
+> produced bit-identical estimates), and researching qdk's source on 2026-08-01
+> explains why: `data_qubit_spacing` is attached to the `PHYSICAL_MOVE`
+> instruction as a bit-encoded property
+> (`data_qubit_spacing=_float_to_bits(self.data_qubit_spacing)`), exactly as
+> `atom_spacing`, `velocity` and `acceleration` are — it is *reported*, not fed
+> into any Python-level cost model. **Both ship as recorded-only.**
+>
+> One consequence worth knowing: because it is stored via `_float_to_bits`, this
+> is the same field family as the open known issue in
+> `risks-and-open-questions.md` where float properties read back from the
+> provenance graph arrive as raw uint64 bit patterns. If Data Qubit Spacing ever
+> surfaces on the Results surface, it will need that conversion fixed first.
+>
+> ⚠️ **Target Year's bound differs between tabs, and qdk settles neither.**
+> The QPU Specification tab says `int [> 0]`; Config Descriptions says
+> `int [>= 0]`. Measured on 1.30.0: `target_year=0` and `target_year=-5` are
+> **both accepted** — the field is a bare `Optional[int]` with no validation
+> anywhere in the package. So this is purely a product decision, not a technical
+> constraint.
+>
+> **Recommendation: keep `>= 0`.** It matches Majorana's, matches the tab being
+> actively revised, and is what contract v1.4.0 already ships. Nothing is at
+> stake in the estimate either way — see the inertness finding below — so the
+> cheapest correct move is to leave it and fix the QPU tab.
 
 **Tooltip copy**
 
@@ -229,23 +357,14 @@ starting point for what Rotation Depth means, but it is not a definition.
 | Single-Qubit Error | The error probability of physical single-qubit operations on neutral atoms. |
 | Measurement Time (ns) | The duration of physical qubit measurement operations. |
 | Measurement Error | The error probability associated with measuring physical qubits. |
-| Handoff Time (ns) | The time required to move atoms between computational regions. Affects runtime in movement-aware architectures. |
+| Handoff Time (ns) | The time required to move atoms between computational regions. Affects estimated runtime in movement-aware architectures. |
 | Atom Spacing (µm) | The physical spacing between atoms used when modeling atom placement and movement. |
 | Data Qubit Spacing (µm) | The spacing between data qubits used in the physical layout model. |
 | Max Velocity (m/s) | The maximum speed at which atoms can be transported during computation. |
 | Max Acceleration (m/s²) | The maximum acceleration allowed when transporting atoms. |
-| Surface Code Single-Qubit Time Factor | A multiplier that adjusts single-qubit operation timing during surface code error correction. |
-| Surface Code Two-Qubit Time Factor | A multiplier that adjusts two-qubit operation timing during surface code error correction. |
-| Target Year | Specifies the hardware generation being modeled by selecting operations available in a given year. |
-
-Majorana's shared fields use the Superconducting copy for Error Rate and the
-Neutral Atom copy for Operation Time equivalents; the source doc gives Majorana
-its own two:
-
-| Field | Text |
-|---|---|
-| Error Rate (Majorana) | The error probability for physical Clifford operations. This value is used to model hardware reliability and determine error correction requirements. |
-| Operation Time (Majorana) | The time required for physical operations, including Clifford operations and T gates. Affects the estimated execution time. |
+| Surface Code Single-Qubit Time Factor | A multiplier that adjusts estimated single-qubit operation timing during surface code error correction. |
+| Surface Code Two-Qubit Time Factor | A multiplier that adjusts estimated two-qubit operation timing during surface code error correction. |
+| Target Year | Specifies the target hardware generation. Currently has no effect unless a compatible trace transform is enabled. |
 
 #### Trapped Ion
 
@@ -268,8 +387,8 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 
 | Option | Text |
 |---|---|
-| Surface Code | A quantum error correction method used to protect logical qubits from physical errors. Affects physical qubit requirements. |
-| Three-Aux | A quantum error correction method using additional auxiliary qubits for stabilizer measurements. Affects physical qubit overhead. |
+| Surface Code | A quantum error correction method used to protect logical qubits from physical errors in gate-based architectures. |
+| Three-Aux | A quantum error correction method using additional auxiliary qubits for stabilizer measurements in Majorana architectures. |
 | Low-Move Surface Code | A surface code optimized for neutral-atom architectures with mobile qubits. |
 
 ### Magic State Factory (default = Round-Based Factory) — multi-select
@@ -284,7 +403,15 @@ and never sees a "primary vs secondary" distinction.
 | Litinski19 Factory | Superconducting or Neutral Atom | Superconducting: Error Rate <= 1e-3. Neutral Atom: Rydberg Error, Single-Qubit Error, Measurement Error <= 1e-3 |
 | GSJ24 Factory | Superconducting or Neutral Atom | Superconducting: Error Rate <= 1e-3. Neutral Atom: Rydberg Error <= 1e-3; Single-Qubit Error, Measurement Error < 1e-2 |
 | Magic Up-to-Clifford | Any except Majorana | NOT compatible with Majorana |
-| GSJ24 CCX Factory | Superconducting or Neutral Atom | Bound to CCX Magic States (§ Trace Transform, stage 1) |
+| GSJ24 CCX Factory | **Any** | Bound to CCX Magic States (§ Trace Transform, stage 1) |
+
+> ⚠️ **GSJ24 CCX has no architecture restriction — do not add one.** An earlier
+> draft of this table said "Superconducting or Neutral Atom," inferred from the
+> GSJ24 *Factory* row above it. That was wrong. The source doc lists only "Bound
+> to CCX Magic States"; `runconfig.schema.json` has exactly one conditional on
+> `secondaryFactories` and it covers `magic_up_to_clifford` alone; and
+> `configToInvocation` rejects `magic_up_to_clifford` on Majorana and nothing
+> else. Restricting GSJ24 CCX would be a constraint no other layer enforces.
 
 > ⚠️ **Merging the control does not mean flattening the composition.** The five
 > options are not interchangeable in the engine
@@ -306,35 +433,59 @@ and never sees a "primary vs secondary" distinction.
 | Round-Based Factory | A method for producing high-quality magic states used for non-Clifford operations such as T gates. |
 | Litinski19 Factory | A magic state factory design based on Litinski's 2019 fault-tolerant quantum computing architecture. |
 | GSJ24 Factory | A magic state cultivation method that produces high-quality T states from physical operations. |
-| Magic Up-to-Clifford | An optimization that provides alternative representations of magic operations to reduce resource costs. |
+| Magic Up-to-Clifford | An optimization that converts certain magic operations into equivalent Clifford operations to reduce resource costs. |
 | GSJ24 CCX Factory | A factory that converts magic states into CCX (Toffoli) resources for fault-tolerant computation. |
 
 ### Memory Optimization (default = None) — **conditionally unavailable**
 
-- 1D Yoked Surface Code
-- 2D Yoked Surface Code
+**Section copy:** *Memory optimization techniques that reduce quantum memory
+resource requirements.*
 
-**Tooltip copy:** *A memory optimization technique that reduces resource costs
-for storing quantum information.*
+| Option | Tooltip copy |
+|---|---|
+| 1D Yoked Surface Code | A memory optimization technique using a 1D yoked surface code structure to reduce quantum memory resource requirements. |
+| 2D Yoked Surface Code | A memory optimization technique using a 2D yoked surface code structure to reduce quantum memory resource requirements. |
 
-The control is present but disabled, and the field is still recorded on
-`RunConfig`. Selecting a yoked code cannot change an estimate **as the pipeline
-stands today**: the yoked codes *provide* a `MEMORY` instruction, and nothing in
-the current pipeline *demands* one. `MEMORY` demand comes only from
-`READ_FROM_MEMORY` / `WRITE_TO_MEMORY` trace gates, which are emitted by the
+The control is present but disabled, and the field is recorded on `RunConfig`.
+
+> ⚠️ **Read this before measuring anything: the yoked codes do not currently
+> reach the engine at all.** `memoryOptimization` appears in **no** engine file —
+> not `configToInvocation.ts`, not `invocation.ts`, not `estimate.py`. The
+> existing test states it outright:
+>
+> ```ts
+> describe("Memory Optimization does not reach the estimator")
+>   expect(Object.keys(result.invocation)).not.toContain("memoryOptimization")
+> ```
+>
+> So the "identical estimates" result on record is **not evidence that the yoked
+> codes do nothing** — it is evidence that they were never sent. Anyone who
+> enables Dynamic Memory Compute and re-runs the same comparison will still see
+> no change, and would draw exactly the wrong conclusion from it.
+
+**The reasoning for why they were expected to be inert still stands**, and is
+worth keeping: the yoked codes *provide* a `MEMORY` instruction, and nothing in
+the pre-v1.4.0 pipeline *demanded* one. `MEMORY` demand comes only from
+`READ_FROM_MEMORY` / `WRITE_TO_MEMORY` trace gates, emitted by the
 `DynamicMemoryCompute` trace transform or by `LogicalCounts` keys the contract
-does not carry. Measured on qdk 1.30.0: layering either yoked code onto the ISA
-query returns identical estimates.
+does not carry.
 
-> ⚠️ **The 2026-07-31 update may reactivate this field.** That update restores
-> `DynamicMemoryCompute` as an optional first stage of the trace pipeline
-> (below) — and `DynamicMemoryCompute` is precisely the source of the `MEMORY`
-> demand whose absence makes the yoked codes inert. **If Dynamic Memory Compute
-> ships, re-measure Memory Optimization with it enabled before leaving this
-> control disabled.** The two items must be sequenced together: shipping the
-> pipeline stage without re-testing the yoked codes would leave a control
-> disabled that has become live, which is the same class of defect as a control
-> that does nothing.
+> ✅ **v1.4.0 supplies the missing demand, so this is now testable — and Team 3
+> owns closing it (week-5 § G).** Two steps, in order:
+>
+> 1. **Wire it.** Add `memoryOptimization` to `QreInvocation`, map it in
+>    `configToInvocation`, and layer it in `build_isa_query` — the yoked codes
+>    compose exactly like the secondary factories do
+>    (`query = query * TwoDimensionalYokedSurfaceCode.q()`). Verified present on
+>    qdk 1.30.0 as `OneDimensionalYokedSurfaceCode` and
+>    `TwoDimensionalYokedSurfaceCode`, both exposing `.q()`.
+> 2. **Then measure**, with Dynamic Memory Compute enabled. Only now does a "no
+>    change" result mean anything.
+>
+> If it moves, re-enable the control conditioned on stage 0 being on. If it still
+> does not, the explanation finally becomes true rather than untested — and
+> `memoryOptimization.test.ts` should say "measured on 1.30.0 with
+> DynamicMemoryCompute enabled and the yoked code actually in the ISA query."
 
 ### Trace Transform
 
@@ -355,10 +506,13 @@ LATTICE_SURGERY in trace transformation 'PSSPC'"*.
 
 #### Stage 0 — Dynamic Memory Compute *(optional, off by default)*
 
-| Field | Type | Default |
-|---|---|---|
-| Compute Capacity Percentage | float `(0, 1.0]` | 0.5 |
-| Eviction Strategy | enum: `Least Recently Used`, `Least Frequently Used`, `First Available` | Least Recently Used |
+**Stage copy:** *An optimization technique that dynamically manages quantum
+memory resources during execution.*
+
+| Field | Type | Default | Tooltip copy |
+|---|---|---|---|
+| Compute Capacity Percentage | float `(0, 1.0]` | 0.5 | The percentage of available memory resources reserved for active computation. Higher values allocate more resources to computation and less to memory storage. |
+| Eviction Strategy | enum: `Least Recently Used`, `Least Frequently Used`, `First Available` | Least Recently Used | The strategy used to decide which stored quantum data is removed from memory when additional space is needed. |
 
 **UI behaviour (from the source doc):** greyed out behind a checkbox or toggle.
 When the stage is off, its defaults must **not** be applied — the stage is
@@ -381,8 +535,14 @@ stage and a stage running at its defaults are different estimates.
 | T Count per Rotation | int `[5 - 20]` | 20 | Renamed from "T States / Rotation" in the 2026-07-31 update. A sparse `5` is in range but currently yields no feasible frontier point |
 | CCX Magic States | bool | False | Bound to GSJ24 CCX Factory |
 
-**Tooltip copy:** *A compilation method that translates logical quantum
-operations into resources used for estimation.*
+**Stage copy:** *A compilation method that converts logical operations into
+fault-tolerant resources for estimation, including rotation synthesis and
+non-Clifford resource accounting.*
+
+| Field | Tooltip copy |
+|---|---|
+| T Count per Rotation | The number of T gates used to approximate arbitrary rotation operations. Higher values increase non-Clifford resource requirements and may increase physical resource estimates. |
+| CCX Magic States | Determines whether CCX (Toffoli) operations are represented using dedicated magic states during resource estimation. |
 
 #### Stage 2 — Lattice Surgery *(always)*
 
@@ -390,37 +550,65 @@ operations into resources used for estimation.*
 |---|---|---|
 | Slow Down Factor | float, fixed at `1.0` | 1.0 |
 
-**Tooltip copy:** *A compilation method that models fault-tolerant operations
+**Stage copy:** *A compilation method that models fault-tolerant operations
 using lattice surgery techniques.*
 
-Slow Down Factor keeps its name — it accurately describes trading time for
-space (running fewer factories consumes fewer magic states, saving physical
-qubits but slowing execution).
+| Field | Tooltip copy |
+|---|---|
+| Slow Down Factor | A multiplier applied to operation timing when estimating runtime using lattice surgery. Higher values increase the estimated runtime. |
+
+Slow Down Factor keeps its name. Note the second revision **redefines what it
+means**: the Jul 31 POC described it as trading time for space (fewer factories,
+fewer magic states, fewer physical qubits, slower execution); the written copy
+describes it plainly as a runtime multiplier. The written copy is what ships.
+Either way the control stays fixed at 1.0 and is not user-settable, so nothing
+in the build changes.
 
 #### Stage 3 — Unmemory *(optional, off by default)*
 
 On/Off. No parameters. **Verified present on qdk 1.30.0**: `qdk.qre.Unmemory()`
 takes no arguments.
 
-> ⚠️ **Measured INERT on our pipeline (2026-07-31).** Wired end to end in
-> contract v1.4.0 and estimated with the stage on and off, everything else held
-> equal: Quantum Dynamics 3×3 returns **477 physical qubits / 1,363,950 ns
-> either way**. It is a recorded-but-not-influential control and must be
-> labelled as such. `traceTransformV14.test.ts` pins the current measurement, so
-> the day it stops being inert the suite says so.
+**Stage copy:** *Reverses Dynamic Memory Compute by removing memory operations
+and mapping memory qubits back to compute qubits. This produces a trace without
+a memory model.*
+
+> ✅ **This definition explains our measurement, and it changes how the control
+> should be built.** The first revision gave Unmemory no description, so when
+> v1.4.0 measured it as producing an identical estimate on and off (Ising Model
+> 3×3: **477 physical qubits / 1,363,950 ns either way**) the only honest reading
+> was "inert, label it recorded-only."
 >
-> By contrast **Dynamic Memory Compute is live**: the same workload goes to
-> **256 qubits / 1,852,200 ns** with `DynamicMemoryCompute(0.5,
-> least_recently_used)` — it trades runtime for qubits, which is what the stage
-> is for. Note also that some settings have **no feasible frontier point**
-> (capacity 0.25 with least-frequently-used returns a failed run); that is an
-> honest estimator answer, like a sparse T-count-per-rotation, not a bug.
+> It is not inert. It **reverses Dynamic Memory Compute** — so with that stage
+> off there is no memory model to remove, and doing nothing is the correct
+> behaviour, not a dead control. **Unmemory is meaningful only when Dynamic
+> Memory Compute is on**, which is a dependency between two controls rather than
+> a field to apologise for.
+>
+> Implication for the UI: gate Unmemory on Dynamic Memory Compute being enabled,
+> the same way DMC's own parameters are gated on DMC. Labelling it
+> "recorded-only" would now be wrong.
+>
+> By contrast **Dynamic Memory Compute is live on its own**: the same workload
+> goes to **256 qubits / 1,852,200 ns** with `DynamicMemoryCompute(0.5,
+> least_recently_used)`. Note also that some settings have **no feasible frontier
+> point** (capacity 0.25 with least-frequently-used returns a failed run); that
+> is an honest estimator answer, like a sparse T-count-per-rotation, not a bug.
+>
+> `traceTransformV14.test.ts` pins the current measurements. The Unmemory-alone
+> case stays pinned as "no change" because that is now the *expected* result, not
+> a known gap — and a DMC-plus-Unmemory case is worth adding once someone
+> establishes what the pair should do together.
 
 ### Total Fault Tolerant Execution Error
 
 | Field | Type | Default |
 |---|---|---|
 | Total Fault Tolerant Execution Error | float `[0.01 - 1.0]` | 1.0 |
+
+**Tooltip copy:** *The maximum allowed error probability for the entire
+fault-tolerant computation. Lower values require additional resources to achieve
+higher reliability.*
 
 Renamed from **Max Error** in the 2026-07-31 update. The reason is
 disambiguation: "max error" could be read as algorithm success probability or as
@@ -454,12 +642,14 @@ migration is implied.
 Display labels only — every contract field id and engine keyword stays as it is,
 so no saved record needs migrating.
 
-| Current label | New label | Reasoning |
-|---|---|---|
-| Max Error | **Total Fault Tolerant Execution Error** | "Max error" could mean algorithm success probability or synthesis error. The new name isolates it to the overhead/error of fault-tolerant computation (e.g. surface-code distance error). |
-| T States / Rotation | **T Count Per Rotation** | More intuitive and accurate under the PSSPC stage. |
-| Low Move (Surface Code) | *unchanged* — keep "Low Move" | It likely means "slow move," but it stays "low move" to remain strictly consistent with the QDK code base. |
-| Slowdown Factor | *unchanged* | Accurately describes trading time for space — consuming fewer magic states by running 2 factories instead of 10 saves physical qubits but slows execution. |
+| Current label | New label | Contract id (unchanged) | Reasoning |
+|---|---|---|---|
+| Max Error | **Total Fault Tolerant Execution Error** | `maxError` | "Max error" could mean algorithm success probability or synthesis error. The new name isolates it to the overhead/error of fault-tolerant computation (e.g. surface-code distance error). |
+| T States / Rotation | **T Count Per Rotation** | `tStatesPerRotation` | More intuitive and accurate under the PSSPC stage. |
+| Quantum Dynamics | **Ising Model (2D)** | `quantum-dynamics` | The bundled Q# simulates a 2D transverse-field Ising model — the lattice dimensions, coupling J and field g are exactly that. Affects `benchmarks.json`'s `name`, never its `id`. |
+| Number of Qubits | **Logical Qubit Count** | `numQubits` | The field counts *logical* qubits while the results surface reports physical qubit counts; the old label collided with a different number on the same screen. |
+| Low Move (Surface Code) | *unchanged* — keep "Low Move" | — | It likely means "slow move," but it stays "low move" to remain strictly consistent with the QDK code base. |
+| Slowdown Factor | *unchanged* | `slowDownFactor` | Kept, though its *description* changed in the second revision — see [§ Stage 2](#stage-2--lattice-surgery-always). |
 
 Labels appear on more surfaces than the configuration form: the Markdown export,
 the Comparison table, and History all render them. They move together or the
@@ -514,21 +704,73 @@ Still open:
 New in the 2026-07-31 update:
 
 - Add hover tooltips to every field, using the **Tooltip copy** tables above as
-  the text. All manual logical-count inputs need one — they are the most
-  confusing controls in the form.
-  - **Rotation Count** — describe as the "analog value of a rotation," e.g.
-    clarify that 1 analog rotation might translate to a multiple (like 15) of
-    the T count.
-  - **Rotation Depth** — **copy not yet written.** Requires checking the QDK
-    documentation to establish what it actually means before the tooltip can be
-    written. This is a research item, not a transcription item.
-  - **Measurement Count** — still needs a brief explanation even though it reads
-    as redundant ("we measure everything"), for clarity.
+  the text. **All copy now exists** — the second revision filled in every
+  benchmark hyperparameter and all seven Manual Logical Counts fields, so this is
+  transcription throughout, with one exception:
+  - ⚠️ **Trotter Step ships CORRECTED copy**, already written into the table in
+    [§ Ising Model (2D)](#ising-model-2d). The Google Doc's original describes a
+    step count for a field that is a step size. Preston needs to approve the
+    replacement wording in his doc; the repo already carries it.
+- ~~**Rotation Depth** — copy not yet written; requires checking the QDK
+  documentation.~~ **Resolved by the second revision**: "the maximum number of
+  sequential rotation operations in the quantum program."
 - Merge Magic State Factory and Secondary Factory into one multi-select list.
 - Model the trace transform as the ordered pipeline above, with Dynamic Memory
   Compute and Unmemory as optional stages, greyed out behind a toggle so their
-  defaults do not apply when unselected.
-- Apply the renames in [§ Renames](#renames-2026-07-31).
+  defaults do not apply when unselected. **Unmemory additionally gates on Dynamic
+  Memory Compute being on** — it reverses that stage, so on its own it has
+  nothing to act on.
+- Apply the renames in [§ Renames](#renames-2026-07-31) — now six rows, including
+  **Ising Model (2D)** and **Logical Qubit Count**.
 - Add the four new QPU fields: Majorana T Error Rate and Target Year, Neutral
   Atom Data Qubit Spacing and Target Year — each subject to the inert-field
   warnings recorded against them above.
+
+### Questions answered against qdk 1.30.0 (2026-08-01)
+
+The three open questions from the second revision were researched against the
+shipped qdk 1.30.0 source, our own Q#, and Microsoft's published API reference.
+All three are settled; none blocks the week.
+
+1. **Trotter Step is a step size, not a count** — settled by
+   `QuantumDynamics.qs`, which derives the step count as
+   `ceil(totalTime / trotterStep)`. **Corrected copy is already in the table**
+   under [§ Ising Model (2D)](#ising-model-2d); Preston needs to mirror it into
+   the Google Doc. *Needs his sign-off, nothing else.*
+2. **Majorana's T Error Rate and Target Year are real** — both are declared on
+   qdk's `Majorana` dataclass. The Config Descriptions tab is correct; the QPU
+   Specification tab is stale and should be caught up. Contract v1.4.0 already
+   ships both correctly.
+3. **Target Year's bound is ours to pick** — qdk validates nothing and accepts
+   `0` and negatives. Recommendation: keep `>= 0`.
+
+Two findings that were not part of the questions:
+
+- ⚠️ **`target_year` and `dataQubitSpacing` are set as instruction properties and
+  read by no Python-level consumer.** In qdk 1.30.0's Python source, `target_year`
+  appears only where the two architecture models *set* it (Majorana
+  `MEAS_XX`/`MEAS_ZZ`; Neutral Atom `CZ`/`CNOT`) plus a `TARGET_YEAR` property-key
+  constant. `data_qubit_spacing` is the same shape — attached to `PHYSICAL_MOVE`
+  via `_float_to_bits(...)`, alongside `atom_spacing`, `velocity` and
+  `acceleration`. No transform, estimator, or factory in the Python layer reads
+  either.
+
+  **This is not proof of inertness, and should not be quoted as such.** The
+  estimator core is a native extension (`qdk/_native.abi3.so`) whose binary
+  contains both property names — expected, since `property_keys` registers them,
+  but it means source inspection cannot rule out a native consumer. **The
+  empirical measurement is the load-bearing evidence**: spacings of 6.0 / 12.0 /
+  30.0 and target years of None / 2030 / 2050 all produce bit-identical estimates
+  on our pipeline. Label from the measurement, and re-measure after any qdk bump
+  rather than trusting the grep.
+
+  Preston's note — "current trace transforms do not consume a Target Year" — is
+  therefore right, and stated at exactly the right strength. The useful addition
+  is that `data_qubit_spacing` is in the same category, which his tab does not say.
+- ⚠️ **`target_year` and `data_qubit_spacing` are undocumented by Microsoft.**
+  The published `NeutralAtom` API reference lists **12** constructor parameters;
+  the shipped 1.30.0 package has **14**. The two extras are exactly these. They
+  are real and functional, but a Microsoft-branded deliverable would be exposing
+  two parameters Microsoft's own public reference does not describe — worth a
+  question at a Friday check-in, and it also explains why the week-4 audit
+  concluded they were not in the spec.

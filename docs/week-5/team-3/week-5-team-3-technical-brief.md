@@ -133,14 +133,22 @@ most of them:
    POC called these the most confusing controls in the form, and
    `features-and-fields.md` § Manual Logical Counts says plainly that this copy
    **does not exist yet**: three fields have direction, four need drafting.
-   - *Rotation Count* — "the analog value of a rotation"; one analog rotation may
-     translate to a multiple (like 15) of the T count.
-   - *Measurement Count* — needs a brief explanation even though it reads as
-     redundant.
-   - *Rotation Depth* — **nobody knows.** See § The one unschedulable item.
-2. **QPU Specification** — copy is written; transcribe from
+   All seven are written as of Preston's second 2026-07-31 revision — including
+   *Rotation Depth*, which the first revision left open — so this is
+   transcription, not drafting.
+2. **Benchmark hyperparameters** — copy for all five benchmarks, new in the
+   second revision.
+3. **QPU Specification** — copy is written; transcribe from
    `features-and-fields.md` § QPU Specification.
-3. **Micro Architecture Settings** — copy is written; same source.
+4. **Micro Architecture Settings** — copy is written; same source.
+
+**One piece of copy was corrected before it reached you.** The Google Doc's
+*Trotter Step* entry reads "the number of discrete steps used to approximate the
+system evolution," but the field is a float bounded above by Total Time and
+defaulting to 0.9 — a step *size*. `QuantumDynamics.qs` derives the step count
+from it as `ceil(totalTime / trotterStep)`. `features-and-fields.md` already
+carries the corrected wording; **transcribe from there, not from the Doc**, and
+Preston is mirroring the fix upstream.
 
 Transcribe the copy **verbatim**. It is Preston's, it has been reviewed, and
 improvements at this stage just make the repo and the Google Doc disagree.
@@ -232,17 +240,35 @@ They go in `ArchitectureSection.tsx`, which already renders every QPU field
 through `NumberField` — follow the existing pattern rather than inventing a new
 one, and put Data Qubit Spacing after Atom Spacing to match the spec's order.
 
-**All four are inert or derived on our path today.** Both Target Years are marked
-"inert atm" in the source doc — they need a trace transform that consumes a
-target year, and ours doesn't. Data Qubit Spacing measured bit-identical across
-6.0 / 12.0 / 30.0 on a real Neutral Atom run. T Error Rate is auto-derived from
-Error Rate unless overridden.
+**All four are inert or derived on our path today** — and after the 2026-08-01
+research against qdk 1.30.0's source, each has a *different* reason, so the
+labelling should not be one copy-pasted sentence:
+
+| Field | Why it is recorded-only | What the label should say |
+|---|---|---|
+| Majorana **T Error Rate** | Genuinely live if you set it — but omitted it is derived from Error Rate (1e-4 → 0.05, 1e-5 → 0.015, 1e-6 → 0.01, straight from qdk's `__post_init__`) | *Not* recorded-only. Label it "derived from Error Rate when left blank" |
+| Majorana **Target Year** | Set on `MEAS_XX`/`MEAS_ZZ` as a property; no transform of ours consumes a target year | Recorded, does not affect the estimate |
+| Neutral Atom **Target Year** | Set on `CZ`/`CNOT`, same story | Recorded, does not affect the estimate |
+| Neutral Atom **Data Qubit Spacing** | Attached to `PHYSICAL_MOVE` as a bit-encoded property, like `atom_spacing` / `velocity` / `acceleration`; measured bit-identical across 6.0 / 12.0 / 30.0 | Recorded, does not affect the estimate |
+
+> ⚠️ **T Error Rate's `(0, 0.05]` bound is enforced by us alone.** Measured on
+> 1.30.0: `Majorana(error_rate=1e-5, t_error_rate=0.9)` and `-0.1` are both
+> accepted and fed straight to the `T` instruction. `configToInvocation` already
+> range-checks it — do not weaken that, and do not assume the engine will catch a
+> bad value. The upper bound is not arbitrary: 0.05 is the highest value qdk
+> itself ever derives (its docstring calls it the 5% non-Clifford error rate for
+> the pessimistic case).
 
 **So labelling is part of this deliverable, not a nicety.** Week 4 spent an
 entire week removing controls that changed nothing while looking like they did.
 Shipping four more unlabelled would undo that in an afternoon. Use the same
 honest register the Memory Optimization control uses today — it says what it is
 and why, in the field's own help text, where a user will actually read it.
+
+**Do not quote "qdk reads it nowhere" as proof.** The estimator core is a native
+extension whose binary contains both property names; the Python-level search only
+shows no *Python* consumer. The measurement is the evidence, so if a future qdk
+bump changes these numbers, re-measure rather than trusting the earlier search.
 
 > ⚠️ **Expect a test to fail, and let it.** Commit `6dce3ca` pins the QDK
 > `NeutralAtom` defaults *we deliberately don't model* — including
@@ -252,31 +278,75 @@ and why, in the field's own help text, where a user will actually read it.
 
 ---
 
-## Deliverable 6 — Re-measure Memory Optimization once stage 0 exists
+## Deliverable 6 — Wire Memory Optimization, then measure it
 
-Nobody asked for this and it is the most interesting finding available to you.
+The most interesting item in your week, and the one with a trap in front of it.
 
 Memory Optimization is disabled today, with this reasoning in the code and in
 `features-and-fields.md`: the yoked codes only **provide** a `MEMORY`
-instruction, and nothing in the current pipeline **demands** one. `MEMORY` demand
-comes from `READ_FROM_MEMORY` / `WRITE_TO_MEMORY` trace gates — which are emitted
-by `DynamicMemoryCompute`.
+instruction, and nothing in the pre-v1.4.0 pipeline **demanded** one. `MEMORY`
+demand comes from `READ_FROM_MEMORY` / `WRITE_TO_MEMORY` trace gates — which are
+emitted by `DynamicMemoryCompute`. v1.4.0 added that stage, so the demand now
+exists.
 
-You are about to add `DynamicMemoryCompute`.
+### The trap: the field has never reached the engine
 
-So: once stage 0 works, run a yoked surface code with it enabled and see whether
-the estimate moves. Two possible outcomes, both worth having in writing:
+`memoryOptimization` appears in **no** engine file — not `configToInvocation.ts`,
+not `invocation.ts`, not `estimate.py`. `memoryOptimization.test.ts` asserts it:
+
+```ts
+expect(Object.keys(result.invocation)).not.toContain("memoryOptimization")
+```
+
+So the "identical estimates" result already on record does **not** show the yoked
+codes are inert. It shows they were never sent. If you enable Dynamic Memory
+Compute, re-run that comparison, and see no change, you will have measured
+nothing and confirmed the wrong conclusion with real numbers behind it — which is
+worse than not measuring at all.
+
+### Step 1 — wire it
+
+This is engine work, and it is the one piece of the backend v1.4.0 did **not**
+cover. Follow the pattern the secondary factories already use:
+
+- Add `memoryOptimization?: "yoked_1d" | "yoked_2d"` to `QreInvocation` (inline
+  the union, like every sibling field in that file).
+- Map it in `configToInvocation` — absent **or `"none"`** means omit the key, so
+  an unselected optimization stays absent all the way to Python, exactly as the
+  optional trace stages do.
+- Layer it in `build_isa_query`, after the factories:
+
+  ```python
+  if memory_optimization is not None:
+      query = query * YOKED_CODES[memory_optimization]
+  ```
+
+  Verified on qdk 1.30.0: `OneDimensionalYokedSurfaceCode` and
+  `TwoDimensionalYokedSurfaceCode` both expose `.q()` and compose exactly like
+  `SurfaceCode.q()`. Resolve them by name with an explicit `ValueError`, the way
+  `resolve_eviction_strategy` does — not a bare dict subscript.
+
+**Invert the existing assertion in the same commit.** That test was written to
+pin the *old* truth; leaving it green while the field now reaches the engine
+would mean the suite is lying in the other direction.
+
+### Step 2 — then measure
+
+With the yoked code genuinely in the ISA query and Dynamic Memory Compute
+enabled, compare against the same run without it. Two outcomes, both worth having
+in writing:
 
 - **It moves.** Memory Optimization is live under the new pipeline, and a
-  disabled control has become functional — which is the same class of defect as a
-  control that does nothing, in the opposite direction. Re-enable it, conditioned
-  on stage 0 being on.
-- **It doesn't.** The current explanation gets sharper, and the code comment
-  should say "measured on 1.30.0 with DynamicMemoryCompute enabled" instead of
-  what it says now.
+  disabled control has become functional — the same class of defect as a control
+  that does nothing, in the opposite direction. Re-enable it, conditioned on
+  stage 0 being on.
+- **It doesn't.** The explanation finally becomes *tested* rather than assumed.
+  Say so precisely: "measured on 1.30.0 with DynamicMemoryCompute enabled and the
+  yoked code actually in the ISA query."
 
-Either way it is a measurement, and `memoryOptimization.test.ts` already exists
-as the place to record it.
+`memoryOptimization.test.ts` is where it lands — and its comment claiming
+DynamicMemoryCompute is "deliberately not in our pipeline" is stale as of v1.4.0.
+Fix that while you are in there.
 
 ---
 
@@ -304,22 +374,19 @@ Then mirror both into Google Docs, per the Jul 31 ask.
 
 ---
 
-## The one unschedulable item
+## The unschedulable item — closed
 
-**Rotation Depth.** Nobody can write that tooltip yet — the POC action list says
-in as many words that the QDK documentation needs checking to establish what it
-actually measures.
+**Rotation Depth is defined.** Preston's second 2026-07-31 revision supplies the
+copy: *"the maximum number of sequential rotation operations in the quantum
+program. This affects the depth of the computation and estimated runtime."* The
+research task and its Tue Aug 4 escalation gate are both closed.
 
-Treat it as research, not transcription:
+Worth noting because it also validates something already in the contract: a
+longest *sequential* chain cannot exceed the total count, which is exactly the
+`0 <= rotationDepth <= rotationCount` constraint v1.1.0 encoded on a hunch.
 
-- The contract already encodes `0 <= rotationDepth <= rotationCount`, which is a
-  useful constraint and **not** a definition.
-- The seven Manual Logical Counts fields map 1:1 onto `LogicalCounts` keys, so
-  the QDK's own documentation for that type is the place to start.
-- **If the docs don't settle it by the Tue Aug 4 checkpoint, escalate.** Ship the
-  other six tooltips and leave Rotation Depth without one rather than inventing a
-  definition an analyst will rely on. A missing tooltip is a gap; a wrong one is a
-  wrong number in somebody's report.
+What replaces it as the open copy question is **Trotter Step** (above) — smaller,
+and it does not block anything else.
 
 ---
 
