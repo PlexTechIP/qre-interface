@@ -11,6 +11,7 @@ from __future__ import annotations
  
 import importlib.metadata
 import json
+import math
 import sys
 from dataclasses import fields, is_dataclass
 from pathlib import Path
@@ -127,100 +128,175 @@ def build_application(program: dict[str, Any]):
     raise ValueError(f"Unknown program format: {fmt}")
  
  
-# Majorana `t_error_rate`, mirroring runconfig.schema.json and
-# configToInvocation. 0.05 is not an arbitrary cap: it is the LARGEST value
-# qdk's own `Majorana.__post_init__` ever derives (error_rate 1e-4 -> 0.05,
-# 1e-5 -> 0.015, 1e-6 -> 0.01), so the bound is the edge of the regime qdk
-# models rather than a house rule.
-T_ERROR_RATE_ABOVE = 0
-T_ERROR_RATE_AT_MOST = 0.05
+# ---------------------------------------------------------------------------
+# Architecture parameter bounds
+# ---------------------------------------------------------------------------
+#
+# qdk validates NO architecture parameter. `GateBased`, `Majorana` and
+# `NeutralAtom` are plain dataclasses whose only `__post_init__` logic is
+# Majorana's `t_error_rate` derivation, so every field below constructs happily
+# from a negative, zero, or absurd value. Measured on 1.30.0, that lands three
+# ways:
+#
+#   * a WRONG NUMBER reported as success -- `gateBased error_rate=-1e-4`
+#     estimates and returns `error: -9.99e-05`, a negative probability, on the
+#     DEFAULT architecture;
+#   * a soft failure blaming the wrong thing -- "math domain error" for
+#     `atom_spacing=-3`, reported as ESTIMATION_FAILED;
+#   * a hard crash -- `majorana time=0` panics inside pyo3, and PanicException
+#     derives from BaseException, so `main()`'s `except Exception` never sees it
+#     and the run comes back ENGINE_CRASH ("verify the Python environment").
+#
+# The rules below are transcribed from runconfig.schema.json's three
+# architecture variants and use the schema's own vocabulary, so the two can be
+# diffed by eye. `configToInvocation` checks the same bounds first; these are
+# the second line of defence, for a config that reaches the engine another way.
+#
+# ONE DELIBERATE DIVERGENCE from the schema: the four time fields marked
+# `integer` below are typed `number` there, but qdk requires a Python int and
+# rejects 50.5 with "'float' object cannot be interpreted as an integer".
+# Enforcing it here turns that into a named field error. See
+# risks-and-open-questions.md -- the schema is what should move.
+
+GATE_BASED_RULES: dict[str, dict[str, Any]] = {
+    "errorRate": {"exclusive_minimum": 0, "exclusive_maximum": 0.01},
+    "gateTime": {"exclusive_minimum": 0, "integer": True},
+    "measurementTime": {"exclusive_minimum": 0, "integer": True},
+    "twoQubitGateTime": {"exclusive_minimum": 0, "integer": True, "optional": True},
+}
+
+# `errorRate` is an enum rather than a range, and EXACT rather than qdk's own
+# tolerance test (`abs(x - 1e-4) <= 1e-8`), matching the schema. qdk's check is
+# unusable anyway: it sits inside `__post_init__`'s `if t_error_rate is None:`
+# branch, so supplying a `t_error_rate` skips it entirely.
+#
+# `tErrorRate`'s (0, 0.05] is not an arbitrary cap: 0.05 is the LARGEST value
+# qdk's own derivation ever produces (error_rate 1e-4 -> 0.05, 1e-5 -> 0.015,
+# 1e-6 -> 0.01), so the bound is the edge of the regime qdk models.
+MAJORANA_RULES: dict[str, dict[str, Any]] = {
+    "errorRate": {"enum": (1e-4, 1e-5, 1e-6)},
+    "operationTime": {"exclusive_minimum": 0, "integer": True},
+    "tErrorRate": {"exclusive_minimum": 0, "maximum": 0.05, "optional": True},
+    "targetYear": {"minimum": 0, "integer": True, "optional": True},
+}
+
+NEUTRAL_ATOM_RULES: dict[str, dict[str, Any]] = {
+    "rydbergTime": {"exclusive_minimum": 0, "integer": True},
+    "rydbergError": {"minimum": 0, "exclusive_maximum": 0.01},
+    "singleQubitTime": {"exclusive_minimum": 0, "integer": True},
+    "singleQubitError": {"minimum": 0, "exclusive_maximum": 0.01},
+    "measurementTime": {"exclusive_minimum": 0, "integer": True},
+    "measurementError": {"minimum": 0, "exclusive_maximum": 0.01},
+    "handoffTime": {"minimum": 0, "integer": True},
+    "atomSpacing": {"exclusive_minimum": 0},
+    "dataQubitSpacing": {"exclusive_minimum": 0, "optional": True},
+    "maxVelocity": {"exclusive_minimum": 0},
+    "maxAcceleration": {"exclusive_minimum": 0},
+    "surfaceCodeOneQubitTimeFactor": {"minimum": 1, "integer": True},
+    "surfaceCodeTwoQubitTimeFactor": {"minimum": 1, "integer": True},
+    "targetYear": {"minimum": 0, "integer": True, "optional": True},
+}
 
 
-def checked_optional_rate(value: Any, label: str, *, above: float, at_most: float):
-    """Range-check an optional error rate on the way into a qdk model.
+def _constraint_text(rule: dict[str, Any]) -> str:
+    """Describe a rule the way configToInvocation's messages describe it."""
+    if "enum" in rule:
+        return "one of " + ", ".join(f"{value:.0e}" for value in rule["enum"])
 
-    `None` — absent, or an explicit JSON null — is returned unchanged. Absent
-    means "let qdk derive it", and substituting a value here would run a
-    configuration the saved record does not describe.
+    prefix = "an integer " if rule.get("integer") else ""
+    low = (
+        ("[", ">=", rule["minimum"])
+        if "minimum" in rule
+        else ("(", ">", rule["exclusive_minimum"])
+        if "exclusive_minimum" in rule
+        else None
+    )
+    high = (
+        ("]", "<=", rule["maximum"])
+        if "maximum" in rule
+        else (")", "<", rule["exclusive_maximum"])
+        if "exclusive_maximum" in rule
+        else None
+    )
+    if low and high:
+        return f"{prefix}in {low[0]}{low[2]}, {high[2]}{high[0]}"
+    if low:
+        return f"{prefix}{low[1]} {low[2]}"
+    if high:
+        return f"{prefix}{high[1]} {high[2]}"
+    return f"{prefix}a number"
 
-    This exists because qdk does NOT check the values it is given.
-    `Majorana.__post_init__` only DERIVES `t_error_rate` when the field is
-    `None`; a value that is already there is passed through untouched, and
-    `provided_isa` casts it straight onto the `T` instruction's error rate.
-    Measured on qdk 1.30.0, `t_error_rate=0.9` and `t_error_rate=-0.1` are both
-    accepted and used verbatim — a typo becomes a confident, meaningless
-    estimate. Without this check `configToInvocation`'s identical range test is
-    the only thing in the way, which makes it load-bearing rather than
-    defensive: a config reaching the engine any other way is unguarded.
+
+def checked_number(value: Any, label: str, rule: dict[str, Any]):
+    """Check one architecture parameter against its rule, or refuse the run.
+
+    An absent OPTIONAL field stays absent: for every optional parameter here
+    that means "let qdk derive or default it", and substituting a value would
+    run a configuration the saved record does not describe. An absent REQUIRED
+    field falls through to the same refusal as a bad one, so it is named rather
+    than raising a bare KeyError three frames down.
+
+    An `integer` rule is a check on the VALUE, not the JSON type, and the result
+    is coerced with `int()`. JavaScript cannot tell 1000 from 1000.0, so a
+    producer emitting the latter is describing the same configuration -- but
+    qdk rejects the float outright, so coercing is what keeps the boundary
+    forgiving about representation while strict about value.
     """
-    if value is None:
+    if value is None and rule.get("optional"):
         return None
-    # `bool` is a subclass of `int` in Python, so without this `0 < True <=
-    # 0.05` would quietly admit `true` as a rate of 1.0.
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise InvalidInvocation(
-            f"{label} must be a number in ({above}, {at_most}], got {value!r}."
-        )
-    # A BOUNDED comparison is also what rejects the non-standard `NaN` /
-    # `Infinity` literals that json.loads accepts by default: every comparison
-    # against NaN is False, and the infinities fall outside any finite bound. No
-    # separate isfinite() check is needed while `at_most` is finite.
-    number = float(value)
-    if not above < number <= at_most:
-        raise InvalidInvocation(f"{label} must be in ({above}, {at_most}], got {value!r}.")
-    return number
 
-
-# Majorana `error_rate`, mirroring runconfig.schema.json's enum and
-# configToInvocation. EXACT membership, not qdk's tolerance test — see
-# `checked_majorana_error_rate`.
-MAJORANA_ERROR_RATES = (1e-4, 1e-5, 1e-6)
-MAJORANA_ERROR_RATES_TEXT = ", ".join(f"{rate:.0e}" for rate in MAJORANA_ERROR_RATES)
-
-
-def checked_majorana_error_rate(value: Any) -> float:
-    """Pin Majorana's REQUIRED `error_rate` to the exact set the contract allows.
-
-    qdk does have a domain check for this one, but it cannot be relied on for
-    two independent reasons, both measured on 1.30.0:
-
-    1. It sits INSIDE `__post_init__`'s `if self.t_error_rate is None:` branch,
-       so supplying a `t_error_rate` — which this wrapper does whenever the
-       contract carries one — skips it entirely. `Majorana(error_rate=0.5,
-       t_error_rate=0.01)` constructs, where the same error_rate alone raises.
-    2. It is a TOLERANCE test (`abs(x - 1e-4) <= 1e-8`), so it admits values
-       the contract's enum does not.
-
-    The consequence is worse than the `t_error_rate` gap. A negative rate does
-    not fail the run: it estimates successfully and reports a NEGATIVE total
-    error (-0.0032 for error_rate=-1e-5), which `mapRow` accepts — it checks
-    only that the value is finite — and the Results surface renders as a
-    probability. That is a wrong number on screen, not a failed run.
-
-    Membership is exact, matching the schema and configToInvocation. There is no
-    float-equality hazard: JSON's `1e-5` parses to the same double as Python's.
-    """
     # `bool` is a subclass of `int` in Python, so it has to be excluded before
-    # the membership test rather than left to it. Short-circuiting means
-    # `float()` only runs once the value is known to be numeric, which is what
-    # keeps a string or None out of it.
+    # the numeric tests rather than left to them. Short-circuiting keeps
+    # `float()` away from strings, None, lists and dicts.
     numeric = not isinstance(value, bool) and isinstance(value, (int, float))
-    if not numeric or float(value) not in MAJORANA_ERROR_RATES:
-        raise InvalidInvocation(
-            f"Majorana errorRate must be one of {MAJORANA_ERROR_RATES_TEXT}, "
-            f"got {value!r}."
+    number = float(value) if numeric else None
+
+    if number is None or not math.isfinite(number):
+        # isfinite() IS load-bearing here, unlike in a fully-bounded range:
+        # json.loads accepts the non-standard `Infinity` literal, and a field
+        # with no upper bound (atomSpacing, maxVelocity) would otherwise pass it
+        # straight through to qdk.
+        ok = False
+    elif "enum" in rule:
+        ok = number in rule["enum"]
+    else:
+        ok = (
+            (not rule.get("integer") or number.is_integer())
+            and ("minimum" not in rule or number >= rule["minimum"])
+            and ("exclusive_minimum" not in rule or number > rule["exclusive_minimum"])
+            and ("maximum" not in rule or number <= rule["maximum"])
+            and ("exclusive_maximum" not in rule or number < rule["exclusive_maximum"])
         )
-    return float(value)
+
+    if not ok:
+        raise InvalidInvocation(
+            f"{label} must be {_constraint_text(rule)}, got {value!r}."
+        )
+    return int(number) if rule.get("integer") else number
+
+
+def checked_fields(
+    architecture: dict[str, Any], label: str, rules: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Validate every declared parameter of an architecture, returning the values."""
+    return {
+        name: checked_number(architecture.get(name), f"{label} {name}", rule)
+        for name, rule in rules.items()
+    }
 
 
 def build_architecture(architecture: dict[str, Any]):
     arch_type = architecture["type"]
     if arch_type == "gateBased":
+        checked = checked_fields(architecture, "GateBased", GATE_BASED_RULES)
         return GateBased(
-            error_rate=architecture["errorRate"],
-            gate_time=architecture["gateTime"],
-            measurement_time=architecture["measurementTime"],
-            two_qubit_gate_time=architecture.get("twoQubitGateTime"),
+            error_rate=checked["errorRate"],
+            gate_time=checked["gateTime"],
+            measurement_time=checked["measurementTime"],
+            # Optional: None here means "let qdk derive it from gate_time",
+            # which is what every config without a two-qubit time has always
+            # done. It is NOT a value being substituted.
+            two_qubit_gate_time=checked["twoQubitGateTime"],
         )
     if arch_type == "majorana":
         # `time` is the contract's "Operation Time" (features-and-fields.md).
@@ -234,22 +310,14 @@ def build_architecture(architecture: dict[str, Any]):
         # an absent field is therefore identical to not passing it at all, which
         # is what keeps this additive for every pre-v1.4.0 record.
         #
-        # Both rates are re-checked HERE as well as in configToInvocation.
-        # `t_error_rate` because qdk does not validate it at all; `error_rate`
-        # because qdk's own domain check runs only when `t_error_rate` is None —
-        # so it is skipped for exactly those configs where the line below passes
-        # a value through. See `checked_majorana_error_rate` for why that one is
-        # the more dangerous of the two.
+        # Every parameter is re-checked HERE as well as in configToInvocation,
+        # because qdk checks none of them usefully — see MAJORANA_RULES.
+        checked = checked_fields(architecture, "Majorana", MAJORANA_RULES)
         return Majorana(
-            error_rate=checked_majorana_error_rate(architecture.get("errorRate")),
-            time=architecture["operationTime"],
-            t_error_rate=checked_optional_rate(
-                architecture.get("tErrorRate"),
-                "Majorana tErrorRate",
-                above=T_ERROR_RATE_ABOVE,
-                at_most=T_ERROR_RATE_AT_MOST,
-            ),
-            target_year=architecture.get("targetYear"),
+            error_rate=checked["errorRate"],
+            time=checked["operationTime"],
+            t_error_rate=checked["tErrorRate"],
+            target_year=checked["targetYear"],
         )
     if arch_type == "neutralAtom":
         # Field names follow the 1.30.0 NeutralAtom model. Times are integer
@@ -260,24 +328,25 @@ def build_architecture(architecture: dict[str, Any]):
         # defaults to 12.0 — so an absent contract value must OMIT the kwarg
         # rather than pass None. Omitting also avoids duplicating qdk's default
         # here, where it would silently pin the old value if qdk ever changed it.
+        checked = checked_fields(architecture, "NeutralAtom", NEUTRAL_ATOM_RULES)
         optional: dict[str, Any] = {}
-        if architecture.get("dataQubitSpacing") is not None:
-            optional["data_qubit_spacing"] = architecture["dataQubitSpacing"]
+        if checked["dataQubitSpacing"] is not None:
+            optional["data_qubit_spacing"] = checked["dataQubitSpacing"]
 
         return NeutralAtom(
-            rydberg_time=architecture["rydbergTime"],
-            rydberg_error=architecture["rydbergError"],
-            one_qubit_time=architecture["singleQubitTime"],
-            one_qubit_error=architecture["singleQubitError"],
-            measurement_time=architecture["measurementTime"],
-            measurement_error=architecture["measurementError"],
-            handoff_time=architecture["handoffTime"],
-            atom_spacing=architecture["atomSpacing"],
-            max_velocity=architecture["maxVelocity"],
-            max_acceleration=architecture["maxAcceleration"],
-            surface_code_one_qubit_time_factor=architecture["surfaceCodeOneQubitTimeFactor"],
-            surface_code_two_qubit_time_factor=architecture["surfaceCodeTwoQubitTimeFactor"],
-            target_year=architecture.get("targetYear"),
+            rydberg_time=checked["rydbergTime"],
+            rydberg_error=checked["rydbergError"],
+            one_qubit_time=checked["singleQubitTime"],
+            one_qubit_error=checked["singleQubitError"],
+            measurement_time=checked["measurementTime"],
+            measurement_error=checked["measurementError"],
+            handoff_time=checked["handoffTime"],
+            atom_spacing=checked["atomSpacing"],
+            max_velocity=checked["maxVelocity"],
+            max_acceleration=checked["maxAcceleration"],
+            surface_code_one_qubit_time_factor=checked["surfaceCodeOneQubitTimeFactor"],
+            surface_code_two_qubit_time_factor=checked["surfaceCodeTwoQubitTimeFactor"],
+            target_year=checked["targetYear"],
             **optional,
         )
     raise ValueError(f"Unknown architecture type: {arch_type}")

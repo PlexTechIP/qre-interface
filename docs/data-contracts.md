@@ -69,6 +69,16 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 
 ### Validation Rules
 
+> **Every architecture bound below is enforced twice** — in
+> `configToInvocation.ts` before the engine spawns, and again in `estimate.py`
+> before the qdk model is constructed. That is not belt-and-braces: qdk
+> validates **no** architecture parameter (its three models are plain
+> dataclasses), so an unguarded value does not reliably fail. Measured on
+> 1.30.0, a negative `gateBased errorRate` estimates *successfully* and reports
+> a negative total error, which passes the row mapper and renders. The
+> wrapper's rules are transcribed from `runconfig.schema.json`, which stays the
+> authority on the full field list.
+
 | Field | Rule |
 |---|---|
 | `application.type` | `"benchmark"` or `"uploaded"` |
@@ -76,12 +86,14 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 | uploaded `format` | `"qsharp"`, `"openqasm"`, or `"qir"` |
 | `architecture.type` | `"gateBased"` (default) or `"majorana"` |
 | gateBased `errorRate` | Default `1e-4`; **0 < x < 0.01** |
-| gateBased `gateTime` | **Required, > 0**; serialized in ns |
-| gateBased `measurementTime` | **Required, > 0**; serialized in ns |
-| gateBased `twoQubitGateTime` | Optional; `null` or a positive number in ns |
-| majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`**, by EXACT membership. Enforced in BOTH `configToInvocation.ts` and `estimate.py`: qdk's own domain check sits inside the branch that derives `tErrorRate`, so supplying a `tErrorRate` skips it, and it is a tolerance test (`abs(x - 1e-4) <= 1e-8`) that admits values this enum does not. An unguarded negative rate does not fail — it estimates and reports a **negative total error** |
-| majorana `operationTime` | Default `1000`; **> 0**, serialized in ns |
-| majorana `tErrorRate` | Optional (v1.4.0); omitted means qdk derives it from `errorRate`. A present value must be a finite number in **(0, 0.05]**. Enforced in BOTH `configToInvocation.ts` and `estimate.py`, because qdk itself validates neither: it only derives a value when one is absent, and feeds a supplied one straight to the `T` instruction. `0.9` and `-0.1` estimate happily on qdk 1.30.0 |
+| gateBased `gateTime` | **Required, > 0**; serialized in ns. qdk requires an INTEGER value and rejects `50.5` with "'float' object cannot be interpreted as an integer", so `estimate.py` enforces integrality even though the schema types this `number` — see the open question in `risks-and-open-questions.md` |
+| gateBased `measurementTime` | **Required, > 0**; serialized in ns. Integral, as `gateTime` |
+| gateBased `twoQubitGateTime` | Optional; `null` or a positive integral number in ns. `null` means "let qdk derive it from `gateTime`" |
+| majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`**, by EXACT membership. qdk's own domain check is unusable: it sits inside the branch that derives `tErrorRate`, so supplying a `tErrorRate` skips it, and it is a tolerance test (`abs(x - 1e-4) <= 1e-8`) that admits values this enum does not |
+| majorana `operationTime` | Default `1000`; **> 0**, serialized in ns, integral as `gateTime`. Unguarded, `0` does not fail soft — it panics inside pyo3 and surfaces as `ENGINE_CRASH` |
+| majorana `tErrorRate` | Optional (v1.4.0); omitted means qdk derives it from `errorRate`. A present value must be a finite number in **(0, 0.05]**. qdk validates it not at all — it feeds a supplied value straight to the `T` instruction, so `0.9` and `-0.1` estimate happily |
+| majorana `targetYear` | Optional (v1.4.0); **integer >= 0**. Inert on this pipeline; recorded, not influential |
+| neutralAtom (all 12 required + `dataQubitSpacing`, `targetYear`) | Bounds per `runconfig.schema.json`'s `neutralAtom` variant, which is the authority for the field list. The times and the two surface-code factors are integers; the three error rates are **[0, 0.01)**; spacing, velocity and acceleration are **> 0**. An unguarded negative `rydbergError` does not fail — it estimates and silently changes the answer (0.0109 against a true 0.991) |
 | `qecCode` | Coupled to architecture: gateBased → `surface_code`; majorana → `three_aux` |
 | `magicStateFactories` | **A non-empty, unique SET** (v1.2.0; was the single-valued `magicStateFactory`). Default `["round_based"]`; `litinski19` / `gsj24` only on gateBased with `errorRate <= 1e-3` or qualifying Neutral Atom; Majorana is always exactly `["round_based"]`. The engine unions the set into one ISA query, so the frontier is explored across every selected factory and each row names its own in `additional.magicStateFactory` |
 | `traceTransform.tStatesPerRotation` | PSSPC stage. Default `20`; **5 <= x <= 20**. A sparse `5` is in range but has no feasible frontier point on qdk 1.30.0 — that is a failed run, not a validation error |

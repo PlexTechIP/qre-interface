@@ -136,29 +136,43 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
   `ESTIMATION_FAILED` otherwise (including an empty Pareto frontier). Message
   substrings are not used for classification.
 
-  `InvalidInvocation` covers architecture parameters **qdk does not reliably
-  validate itself**, so far both on Majorana:
+  `InvalidInvocation` covers **every architecture parameter, on all three
+  models** — because qdk validates none of them. `GateBased`, `Majorana` and
+  `NeutralAtom` are plain dataclasses whose only `__post_init__` logic is
+  Majorana's `t_error_rate` derivation, so a negative, zero, or absurd value
+  constructs happily. Measured on 1.30.0, that lands three ways:
 
-  - `t_error_rate` — qdk 1.30.0 only derives a value when one is absent, and
-    passes a supplied one straight to the `T` instruction. `0.9` and `-0.1`
-    both estimate happily. Re-checked against `(0, 0.05]`.
-  - `error_rate` — qdk *has* a domain check, but it sits inside
-    `__post_init__`'s `if t_error_rate is None:` branch, so supplying a
-    `t_error_rate` (which this wrapper does whenever the contract carries one)
-    skips it; and it is a tolerance test, so it admits off-enum values. This is
-    the more dangerous of the two: a negative rate estimates *successfully* and
-    reports a negative total error, which `mapRow` accepts and the Results
-    surface renders. Re-checked against the contract's exact enum.
+  - **A wrong number, reported as success.** `gateBased errorRate=-1e-4`
+    estimates and returns `error: -9.99e-05` — a negative probability, on the
+    *default* architecture. `mapRow` accepts it (it checks only
+    `isFiniteNumber`) and the Results surface renders it. Same shape for
+    `majorana errorRate=-1e-5` (-0.0032) and `neutralAtom rydbergError=-1.0`,
+    which returns 0.0109 where the true answer is 0.991.
+  - **A soft failure blaming the wrong thing.** `gateTime=-50` →
+    "can't convert negative int to unsigned"; `atomSpacing=-3` → "math domain
+    error". Both ESTIMATION_FAILED, which reads as "your model was infeasible".
+  - **A hard crash.** `majorana operationTime=0` panics inside pyo3.
+    `PanicException` derives from `BaseException`, so `main()`'s
+    `except Exception` never sees it: stdout is empty and the run comes back
+    ENGINE_CRASH, "verify the Python environment", for a bad config.
 
-  In both cases `configToInvocation`'s identical check becomes a first line of
-  defence rather than the only one. See `majoranaTErrorRate.test.ts` and
-  `majoranaErrorRate.test.ts`, which bypass the TypeScript guard on purpose.
+  The bounds live in one table per architecture (`GATE_BASED_RULES`,
+  `MAJORANA_RULES`, `NEUTRAL_ATOM_RULES`), transcribed from
+  `runconfig.schema.json` in the schema's own vocabulary so the two can be
+  diffed by eye, and the messages match `configToInvocation`'s word for word.
+  That check remains the first line of defence — it rejects in-process without
+  spawning Python — and this is the second, for a config that arrives another
+  way. Pinned by `architectureBounds.test.ts`, `majoranaErrorRate.test.ts` and
+  `majoranaTErrorRate.test.ts`, which all bypass the TypeScript guard on
+  purpose.
 
-  **Not yet covered:** `operationTime` and the Neutral Atom parameter set are
-  still TypeScript-only. Measured on 1.30.0, `time=-500` fails soft with an
-  opaque "can't convert negative int to unsigned" and `time=0` panics inside
-  pyo3 — a `BaseException` that `main()`'s `except Exception` cannot catch, so
-  it surfaces as ENGINE_CRASH. Bad diagnostics rather than wrong numbers.
+  **One deliberate divergence from the schema:** `gateTime`,
+  `measurementTime`, `twoQubitGateTime` and Majorana's `operationTime` are
+  typed `number` there, but qdk requires a Python `int` and rejects `50.5` with
+  "'float' object cannot be interpreted as an integer". The wrapper enforces
+  integral values so that surfaces as a named field error. It checks the VALUE,
+  not the JSON type — `1000.0` is accepted and coerced, since JavaScript cannot
+  distinguish it from `1000`.
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 

@@ -21,6 +21,7 @@ export default defineConfig({
       "src/main/engine/magicStateFactories.test.ts",
       "src/main/engine/majoranaTErrorRate.test.ts",
       "src/main/engine/majoranaErrorRate.test.ts",
+      "src/main/engine/architectureBounds.test.ts",
       "src/main/engine/execute.test.ts",
       "src/main/engine/qreEngine.test.ts",
     ],
