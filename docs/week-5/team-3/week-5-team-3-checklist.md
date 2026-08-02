@@ -84,26 +84,33 @@ before §A–§C. Say so in the channel rather than deciding silently.
       `features-and-fields.md`
 - [ ] **Micro Architecture Settings** tooltips — transcribed verbatim
 
-## E. The four-stage trace pipeline
+## E. The four-stage trace pipeline — UI only
 
-- [ ] `build_trace_query` composes
-      **`DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory`**, in that
-      order, built from a fixed sequence — never from iteration over a set
-- [ ] **An off stage is absent from the product, not present at its defaults** —
-      DMC off means the query is exactly `PSSPC × LatticeSurgery`
-- [ ] Dynamic Memory Compute's two parameters wired: Compute Capacity Percentage
-      (float `(0, 1.0]`, default 0.5) and Eviction Strategy (LRU / LFU / First
-      Available, default LRU)
-- [ ] Unmemory is on/off with no parameters
-- [ ] Both optional stages **greyed out behind a toggle** in the UI; parameters
-      only live when the stage is enabled
+> **The backend for this landed with contract v1.4.0.** `build_trace_query`
+> already composes `DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory`
+> from a fixed sequence, `configToInvocation` already carries both stages, and
+> `traceTransformV14.test.ts` proves Dynamic Memory Compute moves a real
+> estimate (477 qubits / 1,363,950 ns → 256 qubits / 1,852,200 ns on Quantum
+> Dynamics 3×3). **Do not rebuild any of that.** Your job is the controls.
+
+- [ ] Dynamic Memory Compute's two parameters exposed: Compute Capacity
+      Percentage (float `(0, 1.0]`, default 0.5) and Eviction Strategy (LRU /
+      LFU / First Available, default LRU)
+- [ ] Unmemory is a bare on/off with no parameters
+- [ ] Both optional stages **greyed out behind a toggle**; parameters only live
+      when the stage is enabled
+- [ ] **Off means the field is absent from the config, not present at its
+      defaults.** The contract and engine already honour this — the form must
+      not undo it by always writing an object
 - [ ] **No control added for Slow Down Factor** — it is `const: 1` and stays
       disabled
-- [ ] **Proof it works:** a run with Dynamic Memory Compute on produces a
-      *different estimate* from the same run with it off, with real numbers, in
-      `npm run test:engine`. Same for Unmemory
-- [ ] **Halfway gate:** if neither optional stage has changed an estimate by the
-      time you're half through the week, escalate rather than pushing on
+- [ ] **Unmemory is labelled recorded-only** — measured inert on this pipeline
+      (identical estimate on and off)
+- [ ] **Proof it works from the UI:** toggling Dynamic Memory Compute on in the
+      form and running produces different numbers from the same run with it off
+- [ ] **Halfway gate:** if the form cannot yet drive a changed estimate through
+      the pipeline by the time you're half through the week, escalate rather
+      than pushing on
 
 ## F. Four new QPU fields
 

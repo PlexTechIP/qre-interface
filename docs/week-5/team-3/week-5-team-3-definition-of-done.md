@@ -16,13 +16,20 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       Micro Architecture sections**, reachable by keyboard as well as hover
 - [ ] **All seven Manual Logical Counts fields have tooltips** — or six, with
       Rotation Depth explicitly escalated and left blank rather than guessed
-- [ ] **The trace transform is a four-stage ordered pipeline.**
-      `DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory`, with the two
-      optional stages toggleable and greyed out when off
-- [ ] **Dynamic Memory Compute changes an estimate.** A run with it on returns
-      different numbers from the same run with it off, demonstrated with real
-      values — not "it serializes"
-- [ ] **Unmemory changes an estimate**, on the same standard
+- [ ] **The trace transform is a four-stage ordered pipeline in the UI.**
+      The two optional stages are toggleable and greyed out when off. *(The
+      contract, adapter, and `estimate.py` composition landed with v1.4.0 — your
+      part is the controls and the labelling.)*
+- [ ] **Enabling Dynamic Memory Compute from the form changes the estimate.**
+      Verified end to end through the UI, not just in the engine tests: on qdk
+      1.30.0 with Quantum Dynamics 3×3 the stage moves 477 qubits / 1,363,950 ns
+      to 256 qubits / 1,852,200 ns
+- [ ] **Unmemory is labelled recorded-only.** It is measured **inert** on this
+      pipeline — same estimate on and off — so the control must say so rather
+      than implying it does something. If your own testing shows otherwise, that
+      is a finding: report it, and `traceTransformV14.test.ts` needs updating
+- [ ] **A Dynamic Memory Compute setting with no feasible point reads as a
+      failed run, not a crash** — e.g. capacity 0.25 with least-frequently-used
 - [ ] **The four new QPU fields are present and selectable** — Majorana T Error
       Rate and Target Year, Neutral Atom Data Qubit Spacing and Target Year
 - [ ] **Memory Optimization has been re-measured with Dynamic Memory Compute
