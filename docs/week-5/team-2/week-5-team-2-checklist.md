@@ -32,15 +32,15 @@ model proposes, and presses Run — with the key never leaving the main process.
 
 ## B. Face the schema problem before you build on it
 
-- [ ] **Re-count the unsupported keywords** in `runconfig.schema.json` after
+- [x] **Re-count the unsupported keywords** in `runconfig.schema.json` after
       v1.4.0 — `if`/`then`, `not`, `allOf`, `exclusiveMinimum`, `format` are all
       rejected by strict structured-output modes
-- [ ] Decide your approach: a **lowered generation schema** derived from the
+- [x] Decide your approach: a **lowered generation schema** derived from the
       canonical one, or something else you can defend
-- [ ] **The canonical schema stays the real gate** via the existing
+- [x] **The canonical schema stays the real gate** via the existing
       `validateRunConfigSchema()` — a bad draft surfaces as ordinary Ajv errors in
       `ValidationSummary.tsx`, not a new failure surface
-- [ ] **Write the drift test** — it fails when the canonical schema gains
+- [x] **Write the drift test** — it fails when the canonical schema gains
       something the lowered one doesn't have. This outlives the feature
 - [ ] **Halfway gate:** if the model has not produced one valid draft
       configuration by the time you're half through the week, escalate. Consider

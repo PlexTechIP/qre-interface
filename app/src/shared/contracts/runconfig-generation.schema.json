@@ -1,0 +1,393 @@
+{
+  "title": "GeneratedRunDraft",
+  "description": "Lowered strict-output schema for natural-language configuration proposals. This is not RunConfig and cannot be executed directly. Numeric bounds and cross-field rules are described in prose; the canonical RunConfig schema remains the execution gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "application",
+    "architecture",
+    "magicStateFactories",
+    "secondaryFactories",
+    "memoryOptimization",
+    "parameters",
+    "traceTransform",
+    "maxError"
+  ],
+  "properties": {
+    "name": {
+      "description": "Optional analyst-facing run name. Use null to let the app generate one.",
+      "anyOf": [{ "type": "string" }, { "type": "null" }]
+    },
+    "application": {
+      "description": "A bundled benchmark or manual logical-count input. Uploaded files are selected locally by the analyst and cannot be proposed here.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "benchmarkId"],
+          "properties": {
+            "type": { "type": "string", "const": "benchmark" },
+            "benchmarkId": {
+              "type": "string",
+              "enum": [
+                "shors-factoring",
+                "ekera-hastad-factoring",
+                "quantum-dynamics",
+                "grovers-search",
+                "phase-estimation"
+              ],
+              "description": "Bundled benchmark identifier."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "numQubits",
+            "tCount",
+            "rotationCount",
+            "rotationDepth",
+            "cczCount",
+            "ccixCount",
+            "measurementCount"
+          ],
+          "properties": {
+            "type": { "type": "string", "const": "manualCounts" },
+            "numQubits": {
+              "type": "integer",
+              "description": "Logical qubit count. Must be at least 1."
+            },
+            "tCount": {
+              "type": "integer",
+              "description": "T count. Must be a non-negative whole number."
+            },
+            "rotationCount": {
+              "type": "integer",
+              "description": "Rotation count. Must be a non-negative whole number."
+            },
+            "rotationDepth": {
+              "type": "integer",
+              "description": "Rotation depth. Must be non-negative and no greater than rotationCount."
+            },
+            "cczCount": {
+              "type": "integer",
+              "description": "CCZ count. Must be a non-negative whole number."
+            },
+            "ccixCount": {
+              "type": "integer",
+              "description": "CCiX count. Must be a non-negative whole number."
+            },
+            "measurementCount": {
+              "type": "integer",
+              "description": "Measurement count. Must be a non-negative whole number."
+            }
+          }
+        }
+      ]
+    },
+    "architecture": {
+      "description": "Physical architecture proposal. Architecture-specific limits remain enforced by canonical validation.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "errorRate",
+            "gateTime",
+            "measurementTime",
+            "twoQubitGateTime"
+          ],
+          "properties": {
+            "type": { "type": "string", "const": "gateBased" },
+            "errorRate": {
+              "type": "number",
+              "description": "Physical error rate. Must be greater than 0 and less than 0.01; default 0.0001."
+            },
+            "gateTime": {
+              "type": "integer",
+              "description": "Single-qubit gate time in ns. Required whole number greater than 0."
+            },
+            "measurementTime": {
+              "type": "integer",
+              "description": "Measurement time in ns. Required whole number greater than 0."
+            },
+            "twoQubitGateTime": {
+              "description": "Optional two-qubit gate time in ns. Use null to let qdk derive it; otherwise use a whole number greater than 0.",
+              "anyOf": [{ "type": "integer" }, { "type": "null" }]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "errorRate",
+            "operationTime",
+            "tErrorRate",
+            "targetYear"
+          ],
+          "properties": {
+            "type": { "type": "string", "const": "majorana" },
+            "errorRate": {
+              "type": "number",
+              "enum": [0.0001, 0.00001, 0.000001],
+              "description": "Majorana physical error rate."
+            },
+            "operationTime": {
+              "type": "integer",
+              "description": "Operation time in ns. Must be a whole number greater than 0; default 1000."
+            },
+            "tErrorRate": {
+              "description": "Optional T error rate. Use null to let qdk derive it; otherwise greater than 0 and at most 0.05.",
+              "anyOf": [{ "type": "number" }, { "type": "null" }]
+            },
+            "targetYear": {
+              "description": "Optional non-negative target year. Use null to omit it. This value is recorded but currently inert.",
+              "anyOf": [{ "type": "integer" }, { "type": "null" }]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "rydbergTime",
+            "rydbergError",
+            "singleQubitTime",
+            "singleQubitError",
+            "measurementTime",
+            "measurementError",
+            "handoffTime",
+            "atomSpacing",
+            "dataQubitSpacing",
+            "maxVelocity",
+            "maxAcceleration",
+            "surfaceCodeOneQubitTimeFactor",
+            "surfaceCodeTwoQubitTimeFactor",
+            "targetYear"
+          ],
+          "properties": {
+            "type": { "type": "string", "const": "neutralAtom" },
+            "rydbergTime": {
+              "type": "integer",
+              "description": "Rydberg time in ns. Whole number greater than 0; default 500."
+            },
+            "rydbergError": {
+              "type": "number",
+              "description": "Rydberg error. At least 0 and less than 0.01; default 0.001."
+            },
+            "singleQubitTime": {
+              "type": "integer",
+              "description": "Single-qubit time in ns. Whole number greater than 0; default 1000."
+            },
+            "singleQubitError": {
+              "type": "number",
+              "description": "Single-qubit error. At least 0 and less than 0.01; default 0.0001."
+            },
+            "measurementTime": {
+              "type": "integer",
+              "description": "Measurement time in ns. Whole number greater than 0; default 10000."
+            },
+            "measurementError": {
+              "type": "number",
+              "description": "Measurement error. At least 0 and less than 0.01; default 0.0001."
+            },
+            "handoffTime": {
+              "type": "integer",
+              "description": "Handoff time in ns. Non-negative whole number; default 0."
+            },
+            "atomSpacing": {
+              "type": "number",
+              "description": "Atom spacing in micrometers. Greater than 0; default 3.0."
+            },
+            "dataQubitSpacing": {
+              "description": "Optional data-qubit spacing in micrometers. Use null to omit it; otherwise greater than 0.",
+              "anyOf": [{ "type": "number" }, { "type": "null" }]
+            },
+            "maxVelocity": {
+              "type": "number",
+              "description": "Maximum atom velocity in m/s. Greater than 0; default 0.25."
+            },
+            "maxAcceleration": {
+              "type": "number",
+              "description": "Maximum atom acceleration in m/s squared. Greater than 0; default 5000."
+            },
+            "surfaceCodeOneQubitTimeFactor": {
+              "type": "integer",
+              "description": "Surface-code single-qubit time factor. Whole number at least 1; default 1."
+            },
+            "surfaceCodeTwoQubitTimeFactor": {
+              "type": "integer",
+              "description": "Surface-code two-qubit time factor. Whole number at least 1; default 1."
+            },
+            "targetYear": {
+              "description": "Optional non-negative target year. Use null to omit it. This value is recorded but currently inert.",
+              "anyOf": [{ "type": "integer" }, { "type": "null" }]
+            }
+          }
+        }
+      ]
+    },
+    "magicStateFactories": {
+      "type": "array",
+      "description": "Non-empty unique factory set. round_based is always allowed; litinski19 and gsj24 have architecture/error-rate coupling rules checked by the app.",
+      "items": {
+        "type": "string",
+        "enum": ["round_based", "litinski19", "gsj24"]
+      }
+    },
+    "secondaryFactories": {
+      "type": "array",
+      "description": "Secondary factory set. Use an empty array for none. magic_up_to_clifford is incompatible with Majorana; gsj24_ccx tracks CCX magic-state synthesis.",
+      "items": {
+        "type": "string",
+        "enum": ["magic_up_to_clifford", "gsj24_ccx"]
+      }
+    },
+    "memoryOptimization": {
+      "type": "string",
+      "enum": ["none", "yoked_1d", "yoked_2d"],
+      "description": "Memory optimization selection. Use none unless the requested pipeline supports a yoked code."
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Known bundled-benchmark parameters. Fill parameters for the selected benchmark and use null for every irrelevant parameter.",
+      "required": [
+        "bitSize",
+        "generator",
+        "rsaInstance",
+        "latticeN1",
+        "latticeN2",
+        "totalTime",
+        "trotterStep",
+        "couplingJ",
+        "fieldG",
+        "searchQubits",
+        "precision",
+        "registerSize"
+      ],
+      "properties": {
+        "bitSize": {
+          "description": "Shor bit size, whole number from 2 through 8192; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        },
+        "generator": {
+          "description": "Factoring generator, whole number from 2 through 65535; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        },
+        "rsaInstance": {
+          "description": "Ekera-Hastad RSA instance; otherwise null.",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["rsa-100", "rsa-1024", "rsa-2048"]
+            },
+            { "type": "null" }
+          ]
+        },
+        "latticeN1": {
+          "description": "Ising-model first lattice dimension, whole number from 1 through 1000; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        },
+        "latticeN2": {
+          "description": "Ising-model second lattice dimension, whole number from 1 through 1000; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        },
+        "totalTime": {
+          "description": "Ising-model total time, greater than 0 and at most 1e6; otherwise null.",
+          "anyOf": [{ "type": "number" }, { "type": "null" }]
+        },
+        "trotterStep": {
+          "description": "Ising-model Trotter step, at least 1e-6 and no greater than totalTime; otherwise null.",
+          "anyOf": [{ "type": "number" }, { "type": "null" }]
+        },
+        "couplingJ": {
+          "description": "Ising-model coupling J, any finite real number; otherwise null.",
+          "anyOf": [{ "type": "number" }, { "type": "null" }]
+        },
+        "fieldG": {
+          "description": "Ising-model field g, any finite real number; otherwise null.",
+          "anyOf": [{ "type": "number" }, { "type": "null" }]
+        },
+        "searchQubits": {
+          "description": "Grover search-qubit count, whole number from 1 through 63; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        },
+        "precision": {
+          "description": "Phase-estimation precision, whole number from 1 through 63; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        },
+        "registerSize": {
+          "description": "Phase-estimation register size, whole number from 1 through 1000; otherwise null.",
+          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        }
+      }
+    },
+    "traceTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Ordered Dynamic Memory Compute, PSSPC, Lattice Surgery, Unmemory pipeline proposal.",
+      "required": [
+        "tStatesPerRotation",
+        "ccxMagicStates",
+        "slowDownFactor",
+        "dynamicMemoryCompute",
+        "unmemory"
+      ],
+      "properties": {
+        "tStatesPerRotation": {
+          "type": "integer",
+          "description": "PSSPC T count per arbitrary rotation, whole number from 5 through 20; default 20."
+        },
+        "ccxMagicStates": {
+          "type": "boolean",
+          "description": "Whether PSSPC synthesizes CCX from magic states; default false."
+        },
+        "slowDownFactor": {
+          "const": 1,
+          "description": "Fixed Lattice Surgery slowdown factor. Always 1."
+        },
+        "dynamicMemoryCompute": {
+          "description": "Use null when stage 0 is off; otherwise provide both stage settings.",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["computeCapacityPercentage", "evictionStrategy"],
+              "properties": {
+                "computeCapacityPercentage": {
+                  "type": "number",
+                  "description": "Compute-capacity fraction, greater than 0 and at most 1; qdk default 0.5."
+                },
+                "evictionStrategy": {
+                  "type": "string",
+                  "enum": [
+                    "least_recently_used",
+                    "least_frequently_used",
+                    "first_available"
+                  ]
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "unmemory": {
+          "type": "boolean",
+          "description": "Whether stage 3 is enabled. It is currently inert on this pipeline; default false."
+        }
+      }
+    },
+    "maxError": {
+      "type": "number",
+      "description": "Total fault-tolerant execution error cap, greater than 0 and at most 1; default 1."
+    }
+  }
+}
