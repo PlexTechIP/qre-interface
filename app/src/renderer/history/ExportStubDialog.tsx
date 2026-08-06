@@ -1,10 +1,13 @@
 import { useState } from "react";
 
 import { applicationKey, type RunRecord } from "../../shared/types";
+import { normalizeTraceTransform } from "../../shared/traceTransform";
 import { formatMetric } from "../results/formatMetric";
 import { getAdditionalFieldDefinitions } from "../results/resultFields";
 import {
   ARCHITECTURE_LABELS,
+  T_COUNT_PER_ROTATION_LABEL,
+  TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
   factorySetLabel,
   QEC_LABELS,
   applicationLabel,
@@ -57,6 +60,8 @@ export function buildRunExportMarkdown(record: RunRecord): string {
     `- **Architecture:** ${ARCHITECTURE_LABELS[config.architecture.type] ?? config.architecture.type}`,
     `- **QEC code:** ${QEC_LABELS[config.qecCode] ?? config.qecCode}`,
     `- **Magic-state ${config.magicStateFactories.length > 1 ? "factories" : "factory"}:** ${factorySetLabel(config)}`,
+    `- **${TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL}:** ${config.maxError}`,
+    `- **${T_COUNT_PER_ROTATION_LABEL}:** ${normalizeTraceTransform(config.traceTransform).tStatesPerRotation}`,
     `- **QRE version:** ${result.qreVersion}`,
     `- **Created:** ${config.createdAt}`,
     `- **Completed:** ${result.completedAt}`,

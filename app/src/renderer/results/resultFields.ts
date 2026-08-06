@@ -9,6 +9,10 @@ import {
   describeTraceTransform,
   normalizeTraceTransform,
 } from "../../shared/traceTransform";
+import {
+  T_COUNT_PER_ROTATION_LABEL,
+  TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+} from "../history/historyLabels";
 
 export interface ResultFieldDefinition {
   key: string;
@@ -110,7 +114,7 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
     "numTsPerRotation",
     {
       key: "numTsPerRotation",
-      label: "T States / Rotation",
+      label: T_COUNT_PER_ROTATION_LABEL,
       unitLabel: "T states",
       description: "T states used to synthesize each arbitrary rotation.",
     },
@@ -208,7 +212,7 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       { label: "QEC Code", value: "Unknown" },
       { label: "Factory", value: "Unknown" },
       { label: "Trace Transform", value: "Unknown" },
-      { label: "Max Error", value: "Unknown" },
+      { label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL, value: "Unknown" },
       { label: "QRE Version", value: qreVersion },
     ];
   }
@@ -234,7 +238,10 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       label: "Trace Transform",
       value: describeTraceTransform(normalizeTraceTransform(config.traceTransform)),
     },
-    { label: "Max Error", value: String(config.maxError) },
+    {
+      label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+      value: String(config.maxError),
+    },
     { label: "QRE Version", value: qreVersion },
   ];
 }

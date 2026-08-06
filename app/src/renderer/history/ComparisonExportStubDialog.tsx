@@ -44,7 +44,7 @@ export function buildComparisonExportMarkdown(
         `- **${record.config.name}** — ${record.result.status}, QRE ${record.result.qreVersion}, created ${record.config.createdAt}`,
     ),
     "",
-    "## Resource comparison",
+    "## Configuration and resource comparison",
     "",
     [
       "| Field",
@@ -65,7 +65,11 @@ export function buildComparisonExportMarkdown(
         // A bare "—" here would carry the same ambiguity the table deliberately
         // removed ("field not reported" vs "the run never produced results").
         ...row.metrics.map((metric, index) =>
-          markdownCell(columns[index]?.failed ? "No result data" : formatMetric(metric)),
+          markdownCell(
+            columns[index]?.failed && !row.availableOnFailedRun
+              ? "No result data"
+              : formatMetric(metric),
+          ),
         ),
         "|",
       ].join(" | "),

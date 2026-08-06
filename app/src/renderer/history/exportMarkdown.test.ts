@@ -32,6 +32,19 @@ function recordReportingExtraFields() {
 }
 
 describe("run export — frontier completeness", () => {
+  it("uses the approved configuration labels in run and comparison Markdown", () => {
+    const record = buildRunRecord();
+    const runMarkdown = buildRunExportMarkdown(record);
+    const comparisonMarkdown = buildComparisonExportMarkdown([record]);
+
+    for (const markdown of [runMarkdown, comparisonMarkdown]) {
+      expect(markdown).toContain("Total Fault Tolerant Execution Error");
+      expect(markdown).toContain("T Count Per Rotation");
+      expect(markdown).not.toContain("Max Error");
+      expect(markdown).not.toContain("T States / Rotation");
+    }
+  });
+
   it("emits a column for every additional field the run reported", () => {
     const markdown = buildRunExportMarkdown(recordReportingExtraFields());
 

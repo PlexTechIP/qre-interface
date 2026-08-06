@@ -7,7 +7,13 @@ import {
 } from "../results/resultFields";
 import { formatMetric } from "../results/formatMetric";
 import { resolveSelectedFrontierRow } from "../results/selectedRows";
-import { ARCHITECTURE_LABELS, applicationLabel } from "./historyLabels";
+import { normalizeTraceTransform } from "../../shared/traceTransform";
+import {
+  ARCHITECTURE_LABELS,
+  T_COUNT_PER_ROTATION_LABEL,
+  TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+  applicationLabel,
+} from "./historyLabels";
 
 /**
  * Pure derivation layer for the Comparison surface. It turns a selected set of
@@ -34,6 +40,8 @@ export interface ComparisonColumn {
   application: string;
   architecture: string;
   qreVersion: string;
+  maxError: number;
+  tCountPerRotation: number;
   failed: boolean;
   /** Zero-based representative row index after safe fallback. */
   selectedIndex: number;
@@ -59,6 +67,8 @@ export function toComparisonColumn(
     architecture: ARCHITECTURE_LABELS[config.architecture.type] ?? config.architecture.type,
     // Authoritative engine version is result.qreVersion, NOT config.qreVersion.
     qreVersion: result.qreVersion,
+    maxError: config.maxError,
+    tCountPerRotation: normalizeTraceTransform(config.traceTransform).tStatesPerRotation,
     failed: result.status === "failed",
     selectedIndex: selected.index,
     frontierCount: selected.count,
@@ -79,33 +89,66 @@ export interface ComparisonRow {
   label: string;
   unitLabel: string;
   metrics: (FieldMetric | null)[];
+  /** Configuration values still exist when estimation failed. */
+  availableOnFailedRun: boolean;
 }
 
 /**
- * Build the comparison table's rows: the six defaults always, then any additional
- * fields not hidden by the field filter. Metrics align 1:1 with `columns`.
+ * Build the comparison table's rows: the two cross-run configuration values,
+ * the six default result fields, then any additional result fields not hidden
+ * by the field filter. Metrics align 1:1 with `columns`.
  */
 export function buildComparisonRows(
   columns: readonly ComparisonColumn[],
   hiddenKeys: ReadonlySet<string>,
 ): ComparisonRow[] {
+  const configuration: ComparisonRow[] = [
+    {
+      key: "config.maxError",
+      label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+      unitLabel: "probability",
+      metrics: columns.map((column) => ({
+        value: column.maxError,
+        unit: "probability",
+        display: String(column.maxError),
+      })),
+      availableOnFailedRun: true,
+    },
+    {
+      key: "config.tStatesPerRotation",
+      label: T_COUNT_PER_ROTATION_LABEL,
+      unitLabel: "T states",
+      metrics: columns.map((column) => ({
+        value: column.tCountPerRotation,
+        unit: "T states",
+        display: String(column.tCountPerRotation),
+      })),
+      availableOnFailedRun: true,
+    },
+  ];
+
   const defaults: ComparisonRow[] = DEFAULT_FIELD_DEFINITIONS.map((def) => ({
     key: def.key,
     label: def.label,
     unitLabel: def.unitLabel,
     metrics: columns.map((col) => (col.row ? getDefaultMetric(col.row, def.key) : null)),
+    availableOnFailedRun: false,
   }));
 
   const additional: ComparisonRow[] = additionalFieldDefinitions(columns)
+    // The configuration row above already carries the exact submitted value;
+    // avoid a duplicate label when qdk also reports NUM_TS_PER_ROTATION.
+    .filter((def) => def.key !== "numTsPerRotation")
     .filter((def) => !hiddenKeys.has(def.key))
     .map((def) => ({
       key: def.key,
       label: def.label,
       unitLabel: def.unitLabel,
       metrics: columns.map((col) => col.row?.additional?.[def.key] ?? null),
+      availableOnFailedRun: false,
     }));
 
-  return [...defaults, ...additional];
+  return [...configuration, ...defaults, ...additional];
 }
 
 /** One metric's bar across all selected runs. */

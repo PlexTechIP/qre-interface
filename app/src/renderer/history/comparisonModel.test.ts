@@ -8,6 +8,7 @@ import {
 import type { FrontierRow, RunRecord } from "../../shared/types";
 import {
   COMPARE_MIN_SELECTION,
+  buildComparisonRows,
   buildFrontierSeries,
   compareSelectionWarning,
   toComparisonColumn,
@@ -84,6 +85,43 @@ describe("comparison representative row", () => {
     const record = recordWithSeveralRows();
 
     expect(toComparisonColumn(record, 1).frontier).toHaveLength(3);
+  });
+
+  it("shows the renamed configuration fields for every compared run", () => {
+    const column = toComparisonColumn(buildRunRecord());
+    const rows = buildComparisonRows([column], new Set());
+
+    expect(rows.find((row) => row.key === "config.maxError")).toMatchObject({
+      label: "Total Fault Tolerant Execution Error",
+      availableOnFailedRun: true,
+    });
+    expect(
+      rows.find((row) => row.key === "config.tStatesPerRotation"),
+    ).toMatchObject({
+      label: "T Count Per Rotation",
+      availableOnFailedRun: true,
+    });
+  });
+
+  it("does not duplicate T Count Per Rotation when qdk also reports it", () => {
+    const record = buildRunRecord({
+      result: {
+        frontier: [
+          buildFrontierRow({
+            additional: {
+              numTsPerRotation: {
+                value: 20,
+                unit: "T states",
+                display: "20",
+              },
+            },
+          }),
+        ],
+      },
+    });
+    const rows = buildComparisonRows([toComparisonColumn(record)], new Set());
+
+    expect(rows.filter((row) => row.label === "T Count Per Rotation")).toHaveLength(1);
   });
 });
 

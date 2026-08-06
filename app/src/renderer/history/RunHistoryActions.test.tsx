@@ -40,6 +40,9 @@ describe("Run History — per-run actions (Part D)", () => {
 
     // Reuses Team 2's Results components — success rendering.
     expect(await screen.findByText("Configuration Summary")).toBeInTheDocument();
+    expect(
+      screen.getByText("Total Fault Tolerant Execution Error"),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Estimation Results" })).toBeInTheDocument();
 
     // Back returns to the list.

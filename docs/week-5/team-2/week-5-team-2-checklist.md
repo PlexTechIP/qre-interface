@@ -90,10 +90,10 @@ model proposes, and presses Run — with the key never leaving the main process.
 
 ## G. The renames on your surfaces
 
-- [ ] **Max Error → Total Fault Tolerant Execution Error** and **T States /
+- [x] **Max Error → Total Fault Tolerant Execution Error** and **T States /
       Rotation → T Count Per Rotation** in `historyLabels.ts`, the Markdown
       export, and the comparison table
-- [ ] **Contract field ids unchanged** — `maxError`, `tStatesPerRotation`
+- [x] **Contract field ids unchanged** — `maxError`, `tStatesPerRotation`
 - [ ] Confirm in the channel that Team 3's half (the configuration form) is
       landing the same week — exported numbers and on-screen labels must agree
 

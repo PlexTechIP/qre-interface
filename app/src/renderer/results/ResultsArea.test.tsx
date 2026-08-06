@@ -51,6 +51,9 @@ describe("ResultsArea frontier display", () => {
     expect(screen.getByText("Quantum Dynamics - GateBased 1e-4 - Surface - PSSPC")).toBeInTheDocument();
     expect(screen.getByText("Configuration Summary")).toBeInTheDocument();
     expect(
+      screen.getByText("Total Fault Tolerant Execution Error"),
+    ).toBeInTheDocument();
+    expect(
       screen.getByText(/history and comparison use your selected pareto point/i),
     ).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /pareto frontier scatter plot/i })).toBeInTheDocument();

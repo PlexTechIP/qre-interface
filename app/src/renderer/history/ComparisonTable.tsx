@@ -2,11 +2,12 @@ import { formatMetric } from "../results/formatMetric";
 import { buildComparisonRows, type ComparisonColumn } from "./comparisonModel";
 
 /**
- * The comparison table — one column per selected run, one row per result field.
- * The six defaults always show; additional rows are toggled by the field filter
- * (owned by the parent, passed as `hiddenKeys`). Every value routes through Team
- * 2's `formatMetric` (`value` + `unit`, never `display`). This IS the text
- * equivalent for the bar charts — pure, no store/engine knowledge.
+ * The comparison table — one column per selected run, with configuration rows
+ * followed by result-field rows. The six result defaults always show;
+ * additional result rows are toggled by the field filter (owned by the parent,
+ * passed as `hiddenKeys`). Every value routes through Team 2's `formatMetric`
+ * (`value` + `unit`, never `display`). This IS the text equivalent for the bar
+ * charts — pure, no store/engine knowledge.
  */
 export interface ComparisonTableProps {
   columns: ComparisonColumn[];
@@ -63,7 +64,9 @@ export function ComparisonTable({ columns, hiddenKeys }: ComparisonTableProps) {
                 // A failed run reports no frontier at all, so EVERY cell in its
                 // column would otherwise be an ambiguous "—" that reads the same
                 // as "this one field wasn't reported". Say which it is.
-                const failed = columns[index]?.failed ?? false;
+                const failed =
+                  (columns[index]?.failed ?? false) &&
+                  !row.availableOnFailedRun;
                 return (
                   <td
                     key={columns[index]?.id ?? index}
