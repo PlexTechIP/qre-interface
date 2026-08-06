@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InMemoryRunStore } from "../shared/runStore";
 import {
@@ -23,6 +23,29 @@ describe("App shell wiring", () => {
     expect(
       screen.getByRole("heading", { name: "Run Configuration" }),
     ).toBeVisible();
+  });
+
+  it("moves an offline demo proposal into the existing editable form without running", async () => {
+    const estimatorRun = vi.fn(window.estimator.run);
+    window.estimator = { run: estimatorRun };
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Run description" }),
+      "Estimate Grover search",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Review request" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send and create draft" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Run Configuration" }),
+    ).toBeVisible();
+    expect(screen.getByDisplayValue("Model-assisted Grover estimate")).toBeVisible();
+    expect(screen.getByDisplayValue("50")).toBeVisible();
+    expect(estimatorRun).not.toHaveBeenCalled();
   });
 
   it("the Results nav item shows the results surface, not the configuration form", async () => {

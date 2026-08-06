@@ -19,14 +19,14 @@ model proposes, and presses Run — with the key never leaving the main process.
 
 ## A. Day 0
 
-- [ ] **Wait for the channel go-ahead** confirming contract v1.4.0 is on `main`,
+- [x] **Wait for the channel go-ahead** confirming contract v1.4.0 is on `main`,
       then create `week-5/team-2` off `main`. It merges to `main` by
       **Wed Aug 5 EOD**
-- [ ] `nvm use` (Node **24.18.0**), `npm ci` in `app/`, then
+- [x] `nvm use` (Node **24.18.0**), `npm ci` in `app/`, then
       `npm run typecheck && npm test` — green before you change anything
-- [ ] Confirm the **provenance field** landed in v1.4.0 and read its shape. Use
+- [x] Confirm the **provenance field** landed in v1.4.0 and read its shape. Use
       it; don't add your own
-- [ ] **Decide and post your design in the channel** — where the entry point
+- [x] **Decide and post your design in the channel** — where the entry point
       lives, what the proposal panel does, which provider you adapt first. The
       design is yours; sharing it early is how the PMs stay out of your way
 
@@ -71,14 +71,14 @@ model proposes, and presses Run — with the key never leaving the main process.
 
 ## E. The feature
 
-- [ ] Prose in → a **draft `FormState`**, never a stamped `RunConfig`
+- [x] Prose in → a **draft `FormState`**, never a stamped `RunConfig`
 - [ ] Every proposed field is visible and editable before anything runs
-- [ ] Nothing runs until the analyst presses the existing Run button — `id` and
+- [x] Nothing runs until the analyst presses the existing Run button — `id` and
       `createdAt` are still stamped only there
-- [ ] **The analyst sees exactly what will be sent, before it is sent**
-- [ ] A **permanent, visible indicator** of whether networked features are on and
+- [x] **The analyst sees exactly what will be sent, before it is sent**
+- [x] A **permanent, visible indicator** of whether networked features are on and
       which provider they point at
-- [ ] Model-assisted runs carry the v1.4.0 **provenance** value
+- [x] Model-assisted runs carry the v1.4.0 **provenance** value
 
 ## F. The offline non-negotiable still holds
 
@@ -94,7 +94,7 @@ model proposes, and presses Run — with the key never leaving the main process.
       Rotation → T Count Per Rotation** in `historyLabels.ts`, the Markdown
       export, and the comparison table
 - [x] **Contract field ids unchanged** — `maxError`, `tStatesPerRotation`
-- [ ] Confirm in the channel that Team 3's half (the configuration form) is
+- [x] Confirm in the channel that Team 3's half (the configuration form) is
       landing the same week — exported numbers and on-screen labels must agree
 
 ## H. Acceptance prep

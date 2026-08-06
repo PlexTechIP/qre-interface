@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
  
-import type { RunConfig, RunResult } from "../shared/types";
+import type { RunConfig, RunProvenance, RunResult } from "../shared/types";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
 import { ConfigurationSummary } from "./components/ConfigurationSummary";
@@ -35,25 +35,34 @@ interface RunConfigurationProps {
   onRunComplete?: (config: RunConfig, result: RunResult) => void;
   /** Saved configuration to load into the editable form for a Rerun. */
   initialConfig?: RunConfig | null;
+  /** Model proposal already mapped into Team 3's existing editable form shape. */
+  initialDraft?: FormState | undefined;
+  /** Kept outside FormState and attached only when Run is pressed. */
+  provenance?: RunProvenance | undefined;
 }
  
 /** The Run Configuration surface — the seven inputs + summary + validation. */
 export function RunConfiguration({
   onRunComplete,
   initialConfig = null,
+  initialDraft,
+  provenance,
 }: RunConfigurationProps = {}): React.JSX.Element {
   const [state, setState] = useState<FormState>(() =>
-    initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState(),
+    initialDraft ??
+    (initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState()),
   );
   const { runState, start, retry, edit } = useRunFlow();
  
   // A Rerun hands a reconstructed config down as `initialConfig`; load it into
   // the editable form when it changes.
   useEffect(() => {
-    if (initialConfig) {
+    if (initialDraft) {
+      setState(initialDraft);
+    } else if (initialConfig) {
       setState(formStateFromRunConfig(initialConfig));
     }
-  }, [initialConfig]);
+  }, [initialConfig, initialDraft]);
  
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).
@@ -181,7 +190,7 @@ export function RunConfiguration({
             type="button"
             className="run-button run-button--full"
             disabled={!valid}
-            onClick={() => start(state)}
+            onClick={() => start(state, provenance)}
           >
             Run estimate
           </button>

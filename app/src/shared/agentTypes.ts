@@ -73,3 +73,57 @@ export type GeneratedRunDraft = Pick<
   parameters: GeneratedBenchmarkParameters;
   traceTransform: GeneratedTraceTransform;
 };
+
+/** The exact, renderer-visible envelope sent to a configured provider. */
+export interface AgentDraftRequest {
+  /** Natural-language configuration request entered by the analyst. */
+  prompt: string;
+  /** Identifies the lowered structured-output contract used for generation. */
+  generationSchema: "runconfig-generation-v1.4.0";
+}
+
+export type AgentProviderStatus =
+  | {
+      available: true;
+      networkEnabled: boolean;
+      provider: string;
+      model: string;
+      /** Local demo is deterministic and makes no network request. */
+      mode: "provider" | "local_demo";
+    }
+  | {
+      available: false;
+      networkEnabled: false;
+      provider: null;
+      model: null;
+      mode: "unavailable";
+      message: string;
+    };
+
+export type AgentDraftFailureCode =
+  | "AUTHENTICATION"
+  | "RATE_LIMITED"
+  | "NETWORK"
+  | "TIMEOUT"
+  | "REFUSED"
+  | "INVALID_RESPONSE";
+
+/** Provider failures are expected outcomes and therefore resolve as data. */
+export type AgentDraftResult =
+  | {
+      ok: true;
+      draft: GeneratedRunDraft;
+      provider: string;
+      model: string;
+    }
+  | {
+      ok: false;
+      code: AgentDraftFailureCode;
+      message: string;
+    };
+
+/** Renderer-facing seam. It intentionally has no credential getter. */
+export interface AgentService {
+  getStatus(): Promise<AgentProviderStatus>;
+  requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult>;
+}
