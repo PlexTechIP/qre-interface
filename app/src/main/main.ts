@@ -1,6 +1,9 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerCredentialHandlers } from "./credentialHandler.js";
+import { CredentialStore } from "./credentialStore.js";
+import { AnthropicCredentialValidator } from "./credentialValidator.js";
 import { killLiveEngineProcesses } from "./engine/execute.js";
 import { resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
@@ -56,6 +59,12 @@ app.whenReady().then(() => {
       : path.join(app.getPath("userData"), "run-history.sqlite");
   runStore = new SqliteRunStore(dbPath);
   registerStoreHandlers(ipcMain, runStore);
+
+  // A separate, non-SQLite file for the encrypted provider key — never in
+  // the same store as run history, never JSON.
+  const credentialPath = path.join(app.getPath("userData"), "provider-credential.enc");
+  const credentialStore = new CredentialStore(credentialPath, safeStorage);
+  registerCredentialHandlers(ipcMain, credentialStore, new AnthropicCredentialValidator());
 
   createWindow();
   app.on("activate", () => {

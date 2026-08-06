@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
+  AgentDraftRequest,
+  AgentDraftResult,
+  AgentProviderStatus,
+  AgentService,
+} from "../shared/agentTypes.js";
+import type {
   EstimatorService,
   RunConfig,
   RunFilter,
@@ -10,6 +16,8 @@ import type {
 } from "../shared/types.js";
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
+  AGENT_DRAFT_CHANNEL,
+  AGENT_STATUS_CHANNEL,
   ESTIMATOR_RUN_CHANNEL,
   UPLOAD_PREFLIGHT_CHANNEL,
   STORE_DELETE_CHANNEL,
@@ -60,9 +68,22 @@ const uploads = {
   },
 };
 
+// window.agent — the fifth surface. No credential getter: the renderer can
+// only ask getStatus() (a boolean-shaped "is a provider configured") and
+// requestDraft() (which rejects only if that check was skipped).
+const agent: AgentService = {
+  getStatus(): Promise<AgentProviderStatus> {
+    return ipcRenderer.invoke(AGENT_STATUS_CHANNEL) as Promise<AgentProviderStatus>;
+  },
+  requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult> {
+    return ipcRenderer.invoke(AGENT_DRAFT_CHANNEL, request) as Promise<AgentDraftResult>;
+  },
+};
+
 contextBridge.exposeInMainWorld("estimator", estimator);
 contextBridge.exposeInMainWorld("uploads", uploads);
 contextBridge.exposeInMainWorld("store", store);
+contextBridge.exposeInMainWorld("agent", agent);
 contextBridge.exposeInMainWorld("files", {
   getPathForFile(
     file: Parameters<typeof webUtils.getPathForFile>[0],

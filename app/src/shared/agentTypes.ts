@@ -122,6 +122,18 @@ export type AgentDraftResult =
       message: string;
     };
 
+/** Storage-layer refusal — distinct from a provider rejecting the key itself. */
+export type CredentialStorageFailureCode = "BACKEND_UNAVAILABLE" | "WRITE_FAILED";
+
+/**
+ * Configuring a provider key: validated once with a cheap request, then
+ * stored. Both provider and storage failures are expected domain outcomes —
+ * they resolve as data, exactly like AgentDraftResult, never throw.
+ */
+export type CredentialConfigureResult =
+  | { ok: true }
+  | { ok: false; code: AgentDraftFailureCode | CredentialStorageFailureCode; message: string };
+
 /** Renderer-facing seam. It intentionally has no credential getter. */
 export interface AgentService {
   getStatus(): Promise<AgentProviderStatus>;

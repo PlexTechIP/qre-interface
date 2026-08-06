@@ -1,4 +1,4 @@
-# Week 5 — Team 2 (Melody + Rishabh) — Checklist: The LLM Interface
+yo # Week 5 — Team 2 (Melody + Rishabh) — Checklist: The LLM Interface
 
 **Due: Wednesday Aug 5 EOD** — the single deadline for the week.
 **Tue Aug 4** 5–6pm is the checkpoint meeting.
@@ -48,25 +48,25 @@ model proposes, and presses Run — with the key never leaving the main process.
 
 ## C. Credential storage — the constraints, verbatim
 
-- [ ] Key stored via **`safeStorage`**, encrypted blob under
+- [x] Key stored via **`safeStorage`**, encrypted blob under
       `app.getPath("userData")`
-- [ ] **Never** in `run-history.sqlite`, a config JSON, `localStorage`, or
+- [x] **Never** in `run-history.sqlite`, a config JSON, `localStorage`, or
       renderer memory — grep-checkable
-- [ ] **`getSelectedStorageBackend()` checked**; on `basic_text` the app refuses
+- [x] **`getSelectedStorageBackend()` checked**; on `basic_text` the app refuses
       to store a key and says why
-- [ ] **No getter.** The renderer can ask "is a provider configured?" and get a
+- [x] **No getter.** The renderer can ask "is a provider configured?" and get a
       boolean; there is no channel that returns the key
-- [ ] Validate the key once on entry with a cheap request, and report failure as
+- [x] Validate the key once on entry with a cheap request, and report failure as
       data
 
 ## D. The preload surface
 
-- [ ] A **fifth** surface, alongside `estimator`, `uploads`, `store`, `files`
-- [ ] **Estimator convention:** provider failures — 401, 429, TLS, network down,
+- [x] A **fifth** surface, alongside `estimator`, `uploads`, `store`, `files`
+- [x] **Estimator convention:** provider failures — 401, 429, TLS, network down,
       timeout, refusal — **resolve** carrying a typed failure
-- [ ] **Reject only on programmer error:** a draft requested with no credential,
+- [x] **Reject only on programmer error:** a draft requested with no credential,
       or any attempt to read the token back
-- [ ] Note in your PR whether the week-4 architecture doc's decision rule was
+- [x] Note in your PR whether the week-4 architecture doc's decision rule was
       actually usable for this — it was written for exactly this moment
 
 ## E. The feature
@@ -83,10 +83,21 @@ model proposes, and presses Run — with the key never leaving the main process.
 ## F. The offline non-negotiable still holds
 
 - [ ] **With no provider configured and no network**, configuration, execution,
-      history, comparison, and export all still work — demonstrated, not asserted
-- [ ] No key, prompt, or provider response is ever written to
-      `run-history.sqlite`
-- [ ] The feature is removable — nothing in the core path depends on it existing
+      history, comparison, and export all still work — demonstrated, not asserted.
+      Static audit passes (no agent/credential import anywhere in the core
+      config→run→history→export path); still needs a live click-through before
+      Section H, not just this read
+- [x] No key, prompt, or provider response is ever written to
+      `run-history.sqlite` — `RunProvenance` is `{authoredBy, model?}` only
+      (`shared/types.ts:413-417`), the key lives in a separate encrypted file
+      never touching the sqlite path, and `SqliteRunStore.save()` serializes
+      only `RunRecord`
+- [x] The feature is removable — nothing in the core path depends on it
+      existing. `window.agent` is optional-typed and unimported by
+      `useRunFlow.ts` / `toRunConfig.ts` / `RunConfiguration.tsx`. Note:
+      `main.ts` doesn't call `registerAgentHandlers` yet (no `DraftGenerator`
+      chosen), so this is currently true by omission — revisit once the
+      provider adapter lands
 
 ## G. The renames on your surfaces
 
