@@ -1,3 +1,4 @@
+import { CONFIG_DEFINITIONS } from "../constants/configDefinitions";
 import { NumberField } from "./NumberField";
 
 interface MaxErrorSectionProps {
@@ -6,7 +7,7 @@ interface MaxErrorSectionProps {
   onChange: (value: number | null) => void;
 }
 
-/** Input 6 — Max Error. 0 < x <= 1; 1.0 (unconstrained) is valid. */
+/** Input 6 — Total Fault Tolerant Execution Error. 0 < x <= 1; 1.0 is valid. */
 export function MaxErrorSection({
   value,
   error,
@@ -23,12 +24,13 @@ export function MaxErrorSection({
   return (
     <section className="form-section" aria-labelledby="max-error-heading">
       <h2 id="max-error-heading" className="form-section__title">
-        6 · Max Error
+        6 · Total Fault Tolerant Execution Error
       </h2>
       <div className="form-grid">
         <NumberField
           id="max-error"
-          label="Maximum total error"
+          label="Total Fault Tolerant Execution Error"
+          definition={CONFIG_DEFINITIONS.maxError}
           required
           value={value}
           onChange={onChange}

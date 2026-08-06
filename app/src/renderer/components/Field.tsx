@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 
+import { DefinitionTip } from "./DefinitionTip";
+
 interface FieldProps {
   id: string;
   label: ReactNode;
+  definition?: string | undefined;
   help?: string | undefined;
   error?: string | undefined;
   required?: boolean | undefined;
@@ -13,6 +16,7 @@ interface FieldProps {
 export function Field({
   id,
   label,
+  definition,
   help,
   error,
   required,
@@ -20,15 +24,22 @@ export function Field({
 }: FieldProps): React.JSX.Element {
   return (
     <div className={`field${error ? " field--error" : ""}`}>
-      <label className="field__label" htmlFor={id}>
-        {label}
-        {required ? (
-          <span className="field__req" title="Required">
-            {" "}
-            *
-          </span>
+      <div className="field__label-row">
+        <label className="field__label" htmlFor={id}>
+          {label}
+          {required ? (
+            <span className="field__req" title="Required">
+              {" "}
+              *
+            </span>
+          ) : null}
+        </label>
+        {definition ? (
+          <DefinitionTip label={typeof label === "string" ? label : id}>
+            {definition}
+          </DefinitionTip>
         ) : null}
-      </label>
+      </div>
       {children}
       {help ? (
         <p className="field__help" id={`${id}-help`}>

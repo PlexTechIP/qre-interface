@@ -171,7 +171,7 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| T States / Rotation | int `[5 - 20]` | 20 | |
+| T Count Per Rotation | int `[5 - 20]` | 20 | |
 | CCX Magic States | bool | False | Bound to GSJ24 CCX Factory |
 
 ### Lattice Surgery
@@ -179,7 +179,7 @@ Trapped Ion is slated for removal — see [Notes § Teams TO-DO](#teams-to-do).
 | Field | Type | Default |
 |---|---|---|
 | Slow Down Factor | float, fixed at `1.0` | 1.0 |
-| Max Error | float `[0.01 - 1.0]` | 1.0 |
+| Total Fault Tolerant Execution Error | float `[0.01 - 1.0]` | 1.0 |
 
 ---
 

@@ -9,12 +9,14 @@ import {
   MAGIC_STATE_FACTORY_LABELS,
   QEC_LABELS,
 } from "../constants/labels";
+import { CONFIG_DEFINITIONS } from "../constants/configDefinitions";
 import {
   deriveQecCode,
   type ArchitectureForm,
   type PsspcForm,
   type TraceTransformForm,
 } from "../state/formState";
+import { DefinitionTip } from "./DefinitionTip";
 import { Field } from "./Field";
 
 interface MicroArchitectureSectionProps {
@@ -126,6 +128,7 @@ export function MicroArchitectureSection({
         <Field
           id="micro-qec"
           label="QEC Code"
+          definition={CONFIG_DEFINITIONS.qecCode}
           help={`Locked to architecture (${archLabel} → ${qecLabel}).`}
         >
           <select
@@ -147,6 +150,7 @@ export function MicroArchitectureSection({
         <Field
           id="micro-factory"
           label="Magic State Factory"
+          definition={CONFIG_DEFINITIONS.magicStateFactory}
           help={
             magicStateFactoryAllowed
               ? "Filtered by architecture and error rate."
@@ -191,6 +195,7 @@ export function MicroArchitectureSection({
               <span className="field-eyebrow__optional">(optional)</span>
             </>
           }
+          definition={CONFIG_DEFINITIONS.secondaryFactory}
           help="Optional · defaults to None"
         >
           <select
@@ -220,6 +225,7 @@ export function MicroArchitectureSection({
               <span className="field-eyebrow__optional">(optional)</span>
             </>
           }
+          definition={CONFIG_DEFINITIONS.memoryOptimization}
           help="Optional · defaults to None"
         >
           <select
@@ -240,15 +246,25 @@ export function MicroArchitectureSection({
       <hr className="micro-divider" />
 
       <div className="field-block">
-        <span className="field-eyebrow">Trace Transform</span>
+        <span className="field-eyebrow field-eyebrow--with-tip">
+          Trace Transform
+          <DefinitionTip label="Trace Transform">
+            {CONFIG_DEFINITIONS.traceTransform}
+          </DefinitionTip>
+        </span>
 
         <div className="micro-transform">
         <div className="micro-subgroup">
           <span className="micro-subgroup__label">PSSPC Parameters</span>
           <div className="field">
-            <label className="field__label" htmlFor="micro-tstates">
-              T States / Rotation
-            </label>
+            <div className="field__label-row">
+              <label className="field__label" htmlFor="micro-tstates">
+                T Count Per Rotation
+              </label>
+              <DefinitionTip label="T Count Per Rotation">
+                {CONFIG_DEFINITIONS.tStatesPerRotation}
+              </DefinitionTip>
+            </div>
             <div className="slider-row">
               <input
                 id="micro-tstates"
@@ -269,7 +285,7 @@ export function MicroArchitectureSection({
                 min={5}
                 max={20}
                 step={1}
-                aria-label="T states per rotation"
+                aria-label="T Count Per Rotation"
                 value={tStates}
                 onChange={(event) => {
                   const next = Number(event.target.value);
@@ -287,11 +303,17 @@ export function MicroArchitectureSection({
             </div>
           </div>
 
-          <label className="toggle-field">
-            <span className="field__label">CCX Magic States</span>
+          <div className="toggle-field">
+            <span className="field__label-row">
+              <span className="field__label">CCX Magic States</span>
+              <DefinitionTip label="CCX Magic States">
+                {CONFIG_DEFINITIONS.ccxMagicStates}
+              </DefinitionTip>
+            </span>
             <button
               type="button"
               role="switch"
+              aria-label="CCX Magic States"
               aria-checked={traceTransform.psspc.ccxMagicStates}
               className={`toggle${traceTransform.psspc.ccxMagicStates ? " toggle--on" : ""}`}
               onClick={() =>
@@ -303,7 +325,7 @@ export function MicroArchitectureSection({
             <span className="toggle-field__state">
               {traceTransform.psspc.ccxMagicStates ? "On" : "Off"}
             </span>
-          </label>
+          </div>
         </div>
 
         <div className="micro-subgroup">
@@ -311,6 +333,7 @@ export function MicroArchitectureSection({
           <Field
             id="micro-slowdown"
             label="Slow Down Factor"
+            definition={CONFIG_DEFINITIONS.latticeSlowdown}
             help="Fixed at 1.0 (optimistic)"
           >
             <input
@@ -352,7 +375,12 @@ export function MicroArchitectureSection({
       <hr className="micro-divider" />
 
       <div className="field-block">
-        <span className="field-eyebrow">Max Error</span>
+        <span className="field-eyebrow field-eyebrow--with-tip">
+          Total Fault Tolerant Execution Error
+          <DefinitionTip label="Total Fault Tolerant Execution Error">
+            {CONFIG_DEFINITIONS.maxError}
+          </DefinitionTip>
+        </span>
         <div className="field">
           <div className="slider-row">
             <input
@@ -363,7 +391,7 @@ export function MicroArchitectureSection({
               min={0.01}
               max={1}
               step={0.01}
-              aria-label="Maximum total error"
+              aria-label="Total Fault Tolerant Execution Error"
               value={maxError ?? 1}
               onChange={(event) => onMaxErrorChange(Number(event.target.value))}
             />
@@ -373,7 +401,7 @@ export function MicroArchitectureSection({
               min={0.01}
               max={1}
               step={0.01}
-              aria-label="Maximum total error value"
+              aria-label="Total Fault Tolerant Execution Error value"
               value={maxError ?? ""}
               onChange={(event) => {
                 const raw = event.target.value;

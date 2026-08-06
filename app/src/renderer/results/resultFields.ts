@@ -106,7 +106,7 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
     "numTsPerRotation",
     {
       key: "numTsPerRotation",
-      label: "T States / Rotation",
+      label: "T Count Per Rotation",
       unitLabel: "T states",
       description: "T states used to synthesize each arbitrary rotation.",
     },
@@ -204,7 +204,7 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       { label: "QEC Code", value: "Unknown" },
       { label: "Factory", value: "Unknown" },
       { label: "Trace Transform", value: "Unknown" },
-      { label: "Max Error", value: "Unknown" },
+      { label: "Total Fault Tolerant Execution Error", value: "Unknown" },
       { label: "QRE Version", value: qreVersion },
     ];
   }
@@ -223,7 +223,7 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
         humanizeIdentifier(config.magicStateFactory),
     },
     { label: "Trace Transform", value: summarizeTransform(config.traceTransform) },
-    { label: "Max Error", value: String(config.maxError) },
+    { label: "Total Fault Tolerant Execution Error", value: String(config.maxError) },
     { label: "QRE Version", value: qreVersion },
   ];
 }

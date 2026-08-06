@@ -4,8 +4,10 @@ import {
   type HyperparamField,
   type HyperparamValue,
 } from "../constants/hyperparameters";
+import { HYPERPARAMETER_DEFINITIONS } from "../constants/configDefinitions";
 import type { BenchmarkId } from "../../shared/types";
 import { findBenchmark } from "../constants/staticOptions";
+import { DefinitionTip } from "./DefinitionTip";
 
 interface HyperparametersPanelProps {
   benchmarkId: string;
@@ -48,9 +50,15 @@ export function HyperparametersPanel({
           const message = field.kind === "computed" ? undefined : errorFor(field.key);
           return (
             <div key={field.key} className={`hparam${message ? " hparam--error" : ""}`}>
-              <label className="hparam__label" htmlFor={`hparam-${field.key}`}>
-                {field.label}
-              </label>
+              <div className="field__label-row">
+                <label className="hparam__label" htmlFor={`hparam-${field.key}`}>
+                  {field.label}
+                </label>
+                <DefinitionTip label={field.label}>
+                  {HYPERPARAMETER_DEFINITIONS[field.key] ??
+                    (field.kind === "computed" ? field.note : field.help ?? field.label)}
+                </DefinitionTip>
+              </div>
               <HyperparamControl
                 field={field}
                 value={values[field.key]}

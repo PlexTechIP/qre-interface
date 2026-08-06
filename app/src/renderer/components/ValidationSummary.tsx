@@ -14,7 +14,7 @@ const LABELS: Record<Exclude<keyof FieldErrors, "hyperparams">, string> = {
   measurementTime: "Measurement time",
   twoQubitGateTime: "Two-qubit gate time",
   operationTime: "Operation time",
-  tStatesPerRotation: "T states per rotation",
+  tStatesPerRotation: "T Count Per Rotation",
   maxError: "Max error",
 };
 

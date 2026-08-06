@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+
+import { DefinitionTip } from "./DefinitionTip";
 
 interface NumberFieldProps {
   id: string;
-  label: string;
+  label: ReactNode;
   value: number | null;
   onChange: (value: number | null) => void;
+  definition?: string | undefined;
   help?: string | undefined;
   error?: string | undefined;
   required?: boolean | undefined;
@@ -29,6 +32,7 @@ export function NumberField({
   label,
   value,
   onChange,
+  definition,
   help,
   error,
   required,
@@ -59,15 +63,22 @@ export function NumberField({
 
   return (
     <div className={`field${showError ? " field--error" : ""}`}>
-      <label className="field__label" htmlFor={id}>
-        {label}
-        {required ? (
-          <span className="field__req" title="Required">
-            {" "}
-            *
-          </span>
+      <div className="field__label-row">
+        <label className="field__label" htmlFor={id}>
+          {label}
+          {required ? (
+            <span className="field__req" title="Required">
+              {" "}
+              *
+            </span>
+          ) : null}
+        </label>
+        {definition ? (
+          <DefinitionTip label={typeof label === "string" ? label : id}>
+            {definition}
+          </DefinitionTip>
         ) : null}
-      </label>
+      </div>
       <div className="field__control">
         <input
           id={id}

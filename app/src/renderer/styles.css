@@ -1175,9 +1175,82 @@ select {
   font-weight: 700;
 }
 
+.field__label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .field__req {
   color: var(--color-danger-text);
   font-weight: 800;
+}
+
+.definition-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  line-height: 1;
+}
+
+.definition-tip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+  padding: 0;
+  background: var(--color-well-bg);
+  color: var(--color-muted);
+  cursor: help;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.definition-tip__trigger:hover,
+.definition-tip__trigger:focus-visible {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.definition-tip__bubble {
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: min(290px, 72vw);
+  transform: translateX(-50%) translateY(4px);
+  border: 1px solid var(--color-card-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--color-surface);
+  box-shadow: 0 12px 40px var(--color-shadow-soft);
+  color: var(--color-body);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+  visibility: hidden;
+}
+
+.definition-tip:hover .definition-tip__bubble,
+.definition-tip:focus-within .definition-tip__bubble {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  visibility: visible;
 }
 
 .field__optional,
@@ -1403,6 +1476,17 @@ input[type="range"]:focus-visible,
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.field-eyebrow--with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field-eyebrow .definition-tip {
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 /* QPU + Micro field labels adopt the uppercase eyebrow treatment from the mockup. */

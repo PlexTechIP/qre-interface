@@ -54,7 +54,10 @@ export function ConfigurationSummary({
       value: TRANSFORM_LABELS[state.traceTransform.type],
     },
     { label: "Error Rate", value: errorRateSummary(state.architecture) },
-    { label: "Max Error", value: state.maxError === null ? "—" : String(state.maxError) },
+    {
+      label: "Total Fault Tolerant Execution Error",
+      value: state.maxError === null ? "—" : String(state.maxError),
+    },
     { label: "QRE Version", value: qreVersion },
   ];
 

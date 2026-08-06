@@ -1,4 +1,5 @@
 import type { ArchitectureType, MajoranaArchitecture } from "../../shared/types";
+import { CONFIG_DEFINITIONS } from "../constants/configDefinitions";
 import { MAJORANA_ERROR_RATES } from "../constants/staticOptions";
 import type {
   ArchitectureForm,
@@ -6,6 +7,7 @@ import type {
   MajoranaForm,
 } from "../state/formState";
 import type { FieldErrors } from "../state/validation";
+import { DefinitionTip } from "./DefinitionTip";
 import { Field } from "./Field";
 import { NumberField } from "./NumberField";
 
@@ -54,8 +56,11 @@ export function ArchitectureSection({
       </header>
 
       <div className="field-block">
-        <span className="field-eyebrow" id="architecture-label">
+        <span className="field-eyebrow field-eyebrow--with-tip" id="architecture-label">
           Architecture
+          <DefinitionTip label="Architecture">
+            {CONFIG_DEFINITIONS.architecture}
+          </DefinitionTip>
         </span>
         <div className="seg seg--solid" role="radiogroup" aria-labelledby="architecture-label">
           {ARCH_OPTIONS.map((option) =>
@@ -91,6 +96,7 @@ export function ArchitectureSection({
           <NumberField
             id="gb-error-rate"
             label="Error rate"
+            definition={CONFIG_DEFINITIONS.errorRate}
             value={value.gateBased.errorRate}
             onChange={(v) => setGate({ errorRate: v })}
             error={errors.errorRate}
@@ -99,6 +105,7 @@ export function ArchitectureSection({
           <NumberField
             id="gb-gate-time"
             label="Single-Qubit Gate Time (ns)"
+            definition={CONFIG_DEFINITIONS.singleQubitGateTime}
             placeholder="None"
             value={value.gateBased.gateTime}
             onChange={(v) => setGate({ gateTime: v })}
@@ -108,6 +115,7 @@ export function ArchitectureSection({
           <NumberField
             id="gb-measurement-time"
             label="Measurement Time (ns)"
+            definition={CONFIG_DEFINITIONS.measurementTime}
             placeholder="None"
             value={value.gateBased.measurementTime}
             onChange={(v) => setGate({ measurementTime: v })}
@@ -117,6 +125,7 @@ export function ArchitectureSection({
           <NumberField
             id="gb-two-qubit-time"
             label="Two-Qubit Gate Time (ns)"
+            definition={CONFIG_DEFINITIONS.twoQubitGateTime}
             placeholder="None"
             value={value.gateBased.twoQubitGateTime}
             onChange={(v) => setGate({ twoQubitGateTime: v })}
@@ -126,7 +135,12 @@ export function ArchitectureSection({
         </div>
       ) : (
         <div className="form-grid">
-          <Field id="mj-error-rate" label="Error rate" help="1e-4 / 1e-5 / 1e-6">
+          <Field
+            id="mj-error-rate"
+            label="Error rate"
+            definition={CONFIG_DEFINITIONS.majoranaErrorRate}
+            help="1e-4 / 1e-5 / 1e-6"
+          >
             <select
               id="mj-error-rate"
               className="field__input"
@@ -149,6 +163,7 @@ export function ArchitectureSection({
           <NumberField
             id="mj-operation-time"
             label="Operation Time (ns)"
+            definition={CONFIG_DEFINITIONS.majoranaOperationTime}
             placeholder="None"
             value={value.majorana.operationTime}
             onChange={(v) => setMajorana({ operationTime: v })}

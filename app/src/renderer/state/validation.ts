@@ -83,7 +83,7 @@ export function validateForm(state: FormState): FieldErrors {
     const t = traceTransform.psspc.tStatesPerRotation;
     if (!(Number.isInteger(t) && t >= 5 && t <= 20)) {
       errors.tStatesPerRotation =
-        "T states per rotation must be a whole number from 5 to 20.";
+        "T Count Per Rotation must be a whole number from 5 to 20.";
     }
   }
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { UploadedProgramFormat } from "../../shared/types";
+import { CONFIG_DEFINITIONS } from "../constants/configDefinitions";
 import { BENCHMARKS } from "../constants/staticOptions";
 import type { HyperparamValue } from "../constants/hyperparameters";
 import type {
@@ -9,6 +10,7 @@ import type {
   SavedProgram,
 } from "../state/formState";
 import type { FieldErrors } from "../state/validation";
+import { DefinitionTip } from "./DefinitionTip";
 import { HyperparametersPanel } from "./HyperparametersPanel";
 
 interface ApplicationSectionProps {
@@ -142,6 +144,9 @@ export function ApplicationSection({
       <div className="field-block">
         <span className="field-eyebrow" id="application-type-label">
           Application Type
+          <DefinitionTip label="Application Type">
+            {CONFIG_DEFINITIONS.applicationType}
+          </DefinitionTip>
         </span>
         <div className="seg" role="radiogroup" aria-labelledby="application-type-label">
           {TYPE_OPTIONS.map((option) => (
@@ -164,6 +169,9 @@ export function ApplicationSection({
           <div className="field-block">
             <span className="field-eyebrow" id="select-benchmark-label">
               Select Benchmark
+              <DefinitionTip label="Select Benchmark">
+                {CONFIG_DEFINITIONS.benchmark}
+              </DefinitionTip>
             </span>
             <div className="search-field">
               <SearchIcon />
@@ -212,6 +220,9 @@ export function ApplicationSection({
         <div className="field-block">
           <span className="field-eyebrow" id="saved-program-label">
             Your Programs
+            <DefinitionTip label="Your Programs">
+              {CONFIG_DEFINITIONS.savedPrograms}
+            </DefinitionTip>
           </span>
           {value.savedPrograms.length === 0 ? (
             <div className="saved-empty">
@@ -281,6 +292,12 @@ export function ApplicationSection({
         </div>
       ) : (
         <div className="upload-picker">
+          <span className="field-eyebrow field-eyebrow--with-tip">
+            Upload Program
+            <DefinitionTip label="Upload Program">
+              {CONFIG_DEFINITIONS.uploadProgram}
+            </DefinitionTip>
+          </span>
           <label
             className={`dropzone${dragging ? " dropzone--active" : ""}`}
             onDragOver={(event) => {
