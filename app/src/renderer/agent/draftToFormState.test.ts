@@ -19,13 +19,7 @@ function gateBasedDraft(): GeneratedRunDraft {
     secondaryFactories: [],
     memoryOptimization: "none",
     parameters: { searchQubits: 24 },
-    traceTransform: {
-      tStatesPerRotation: 18,
-      ccxMagicStates: false,
-      slowDownFactor: 1,
-      dynamicMemoryCompute: null,
-      unmemory: false,
-    },
+    traceTransform: { tStatesPerRotation: 18, ccxMagicStates: false },
     maxError: 0.25,
   };
 }
@@ -50,13 +44,25 @@ describe("draftToFormState", () => {
     });
   });
 
-  it("blocks fields the current form cannot expose instead of dropping them", () => {
+  /**
+   * Unmemory, Dynamic Memory Compute and the pinned slow-down factor used to be
+   * proposable and then refused here. They were removed from the generation
+   * schema entirely, which is stronger — the model can no longer spend a draft
+   * on them — so those refusal tests moved to the drift test, which asserts the
+   * schema cannot express them. Memory Optimization is the one that remains: it
+   * is still generated, pinned to "none", and guarded here.
+   */
+  it("blocks a yoked memory optimization instead of applying it invisibly", () => {
     const proposal = gateBasedDraft();
-    proposal.traceTransform.unmemory = true;
+    // The cast defends the wire: the model's reply is not re-validated against
+    // the generation schema on the way in, so the pinned enum is not a
+    // guarantee at this boundary.
+    (proposal as { memoryOptimization: string }).memoryOptimization = "yoked_2d";
+
     const result = draftToFormState(proposal, "provider/model");
     expect(result).toEqual({
       ok: false,
-      message: expect.stringContaining("Unmemory"),
+      message: expect.stringContaining("Memory Optimization"),
     });
   });
 
@@ -105,18 +111,23 @@ describe("draftToFormState", () => {
     expect(params).not.toHaveProperty("none");
   });
 
-  it("refuses a slow-down factor the contract pins to 1", () => {
-    const proposal = gateBasedDraft();
-    // The cast is the point: `slowDownFactor` is the literal type 1, but this
-    // value arrives as JSON from a provider and is not Ajv-checked against the
-    // generation schema before it gets here. The guard defends the wire, so the
-    // test has to reproduce what the wire can actually carry.
-    (proposal.traceTransform as { slowDownFactor: number }).slowDownFactor = 4;
-    const result = draftToFormState(proposal, "provider/model");
-    expect(result).toEqual({
-      ok: false,
-      message: expect.stringContaining("Slow Down Factor"),
-    });
+  it("leaves the pipeline stages the draft no longer carries at form defaults", () => {
+    // Dynamic Memory Compute, Unmemory and the slow-down factor are no longer
+    // proposable, so a draft must land with exactly what the analyst would see
+    // having never touched the pipeline.
+    const initial = createInitialFormState();
+    const result = draftToFormState(gateBasedDraft(), "provider/model");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { traceTransform } = result.handoff.state;
+    expect(traceTransform.dynamicMemoryCompute).toBe(
+      initial.traceTransform.dynamicMemoryCompute,
+    );
+    expect(traceTransform.unmemory).toBe(initial.traceTransform.unmemory);
+    expect(traceTransform.slowDownFactor).toBe(initial.traceTransform.slowDownFactor);
+    // …while the two that ARE proposable still come from the draft.
+    expect(traceTransform.tStatesPerRotation).toBe(18);
   });
 
   /**
@@ -250,8 +261,6 @@ describe("draftToFormState", () => {
         type: "majorana",
         errorRate: 0.00001,
         operationTime: 1000,
-        tErrorRate: null,
-        targetYear: null,
       };
       proposal.secondaryFactories = ["magic_up_to_clifford"];
       const result = draftToFormState(proposal, "provider/model");

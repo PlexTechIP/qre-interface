@@ -31,27 +31,33 @@ type GateBasedArchitecture = Extract<Architecture, { type: "gateBased" }>;
 type MajoranaArchitecture = Extract<Architecture, { type: "majorana" }>;
 type NeutralAtomArchitecture = Extract<Architecture, { type: "neutralAtom" }>;
 
-/** Optional contract values become required-and-nullable for strict output. */
+/**
+ * Optional contract values become required-and-nullable for strict output.
+ *
+ * The Majorana T error rate and target year, and the Neutral Atom data-qubit
+ * spacing and target year, are deliberately absent: `draftToFormState` refused
+ * every one of them, so offering them gave the model four ways to produce a
+ * draft the app would throw away — while each nullable field also spent one of
+ * the provider's capped union slots and inflated the decoding grammar. The
+ * analyst sets them in the form.
+ */
 export type GeneratedArchitecture =
   | RequiredNullable<GateBasedArchitecture, "twoQubitGateTime">
-  | RequiredNullable<MajoranaArchitecture, "tErrorRate" | "targetYear">
-  | RequiredNullable<
-      NeutralAtomArchitecture,
-      "dataQubitSpacing" | "targetYear"
-    >;
+  | Omit<MajoranaArchitecture, "tErrorRate" | "targetYear">
+  | Omit<NeutralAtomArchitecture, "dataQubitSpacing" | "targetYear">;
 
 type CanonicalTraceTransform = RunConfig["traceTransform"];
 
-/** An absent optional pipeline stage is represented by null in model output. */
-export type GeneratedTraceTransform = Omit<
+/**
+ * PSSPC settings only. Dynamic Memory Compute and Unmemory were refused by the
+ * mapping and `slowDownFactor` is pinned to 1 by the contract, so all three
+ * were pure grammar cost with no reachable outcome. The analyst configures the
+ * pipeline in the form.
+ */
+export type GeneratedTraceTransform = Pick<
   CanonicalTraceTransform,
-  "dynamicMemoryCompute" | "unmemory"
-> & {
-  dynamicMemoryCompute: NonNullable<
-    CanonicalTraceTransform["dynamicMemoryCompute"]
-  > | null;
-  unmemory: boolean;
-};
+  "tStatesPerRotation" | "ccxMagicStates"
+>;
 
 /**
  * Benchmark parameters, as one variant per benchmark rather than a flat record

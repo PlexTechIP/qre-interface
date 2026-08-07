@@ -3,8 +3,8 @@ import type {
   AgentDraftResult,
   GeneratedRunDraft,
 } from "../shared/agentTypes.js";
-import generationSchema from "../shared/contracts/runconfig-generation.schema.json" with { type: "json" };
 import type { DraftGenerator } from "./agentHandler.js";
+import { GENERATION_FIELD_GUIDE, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
 import { readProviderErrorReason } from "./providerErrorBody.js";
 
 /**
@@ -39,6 +39,13 @@ const SYSTEM_PROMPT = [
   "The analyst reviews and edits every field before anything runs, so prefer a complete, plausible draft over a cautious one — but never invent a benchmark, architecture, or factory that is not in the schema's enums.",
   "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
   "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
+  "",
+  // The bounds and cross-field rules the lowered schema cannot express as
+  // keywords. They live here rather than as schema descriptions because
+  // descriptions are compiled into the decoding grammar and push it over the
+  // provider's size ceiling; as prompt text they cost only input tokens.
+  "Field guidance — the schema cannot express these bounds, so respect them:",
+  GENERATION_FIELD_GUIDE,
 ].join("\n");
 
 /** The exact JSON body sent to the provider. No credential appears here. */
@@ -80,7 +87,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
       // documented failure modes that low effort avoids.
       output_config: {
         effort: "low",
-        format: { type: "json_schema", schema: generationSchema },
+        format: { type: "json_schema", schema: WIRE_GENERATION_SCHEMA },
       },
     };
   }

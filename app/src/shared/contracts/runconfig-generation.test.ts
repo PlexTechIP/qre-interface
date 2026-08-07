@@ -187,13 +187,7 @@ const VALID_GENERATED_DRAFT = {
   // One variant, matching the benchmark above — not every key with the
   // irrelevant ones nulled.
   parameters: { bitSize: 31, generator: 11 },
-  traceTransform: {
-    tStatesPerRotation: 20,
-    ccxMagicStates: false,
-    slowDownFactor: 1,
-    dynamicMemoryCompute: null,
-    unmemory: false,
-  },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false },
   maxError: 1,
 } satisfies GeneratedRunDraft;
 
@@ -248,6 +242,41 @@ describe("lowered RunConfig generation schema", () => {
     expect(
       validate({ ...VALID_GENERATED_DRAFT, id: crypto.randomUUID() }),
     ).toBe(false);
+  });
+
+  /**
+   * Six fields were removed from this schema on 2026-08-07 after two provider
+   * rejections. Every one of them was refused by `draftToFormState`, so the
+   * model could only spend a draft producing something the app discarded —
+   * while each still consumed a capped union slot and grammar budget.
+   *
+   * Asserting they are *unexpressable* is stronger than the refusal tests that
+   * used to live in draftToFormState: the model cannot reach them at all.
+   */
+  it.each([
+    ["architecture", { type: "majorana", errorRate: 0.00001, operationTime: 1000, tErrorRate: 0.02 }],
+    ["architecture", { type: "majorana", errorRate: 0.00001, operationTime: 1000, targetYear: 2033 }],
+    ["traceTransform", { tStatesPerRotation: 20, ccxMagicStates: false, unmemory: true }],
+    ["traceTransform", { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1 }],
+    [
+      "traceTransform",
+      {
+        tStatesPerRotation: 20,
+        ccxMagicStates: false,
+        dynamicMemoryCompute: { computeCapacityPercentage: 0.5, evictionStrategy: "least_recently_used" },
+      },
+    ],
+  ])("cannot express a proposal setting %s beyond what the form accepts", (key, value) => {
+    const validate = new Ajv({ allErrors: true, strict: false }).compile(generationSchema);
+
+    expect(validate({ ...VALID_GENERATED_DRAFT, [key]: value })).toBe(false);
+  });
+
+  it("offers only the memory optimization the form's disabled control permits", () => {
+    const validate = new Ajv({ allErrors: true, strict: false }).compile(generationSchema);
+
+    expect(validate({ ...VALID_GENERATED_DRAFT, memoryOptimization: "none" })).toBe(true);
+    expect(validate({ ...VALID_GENERATED_DRAFT, memoryOptimization: "yoked_2d" })).toBe(false);
   });
 
   it("does not let the model select an uploaded program path", () => {

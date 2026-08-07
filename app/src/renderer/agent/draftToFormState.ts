@@ -34,35 +34,14 @@ export type DraftMappingResult =
  */
 function unsupportedFields(draft: GeneratedRunDraft): string[] {
   const unsupported: string[] = [];
-  if (draft.architecture.type === "majorana") {
-    if (draft.architecture.tErrorRate !== null)
-      unsupported.push("Majorana T error rate");
-    if (draft.architecture.targetYear !== null)
-      unsupported.push("Majorana target year");
-  }
-  if (draft.architecture.type === "neutralAtom") {
-    if (draft.architecture.dataQubitSpacing !== null)
-      unsupported.push("data-qubit spacing");
-    if (draft.architecture.targetYear !== null)
-      unsupported.push("Neutral Atom target year");
-  }
-  if (draft.traceTransform.dynamicMemoryCompute !== null) {
-    unsupported.push("Dynamic Memory Compute");
-  }
-  if (draft.traceTransform.unmemory) unsupported.push("Unmemory");
-  // Lattice Surgery's slow-down factor is `const: 1` in the contract and
-  // read-only in the form. Refuse rather than normalize, so a model that
-  // proposed a different value is not silently overruled.
-  if (draft.traceTransform.slowDownFactor !== 1) {
-    unsupported.push("Slow Down Factor");
-  }
-  // Memory Optimization is in the lowered schema's enum but its control is
-  // DISABLED in Run Configuration ("unavailable in this build"). A proposed
-  // yoked code would therefore be applied to a field the analyst can see and
-  // cannot change — the review step is present but powerless, which is worse
-  // than either refusing or offering a working control. Week 5 also wired the
-  // field through to `build_isa_query`, so the value is no longer inert on the
-  // way to the engine. Refuse until the control is enabled.
+  // Memory Optimization's control is DISABLED in Run Configuration
+  // ("unavailable in this build"), and week 5 wired the field through to
+  // `build_isa_query`, so a proposed yoked code would reach the engine via a
+  // field the analyst can see and cannot change — a review step that is present
+  // but powerless. The schema now pins the enum to "none", so this guard should
+  // be unreachable; it stays because the model's response is not re-validated
+  // against that schema on the way in, and a silently-applied yoked code is a
+  // wrong estimate rather than a visible error.
   if (draft.memoryOptimization !== "none") {
     unsupported.push("Memory Optimization");
   }
@@ -210,6 +189,10 @@ export function draftToFormState(
         // "off" is the only state that can reach here — and `dynamicMemoryCompute`
         // must be present-and-null, not absent, because validateForm reads
         // through it.
+        // The pipeline stages the draft no longer carries (Dynamic Memory
+        // Compute, Unmemory, the pinned slow-down factor) keep the form's
+        // initial values, which is what the analyst would see having never
+        // touched them.
         traceTransform: {
           ...initial.traceTransform,
           tStatesPerRotation: draft.traceTransform.tStatesPerRotation,

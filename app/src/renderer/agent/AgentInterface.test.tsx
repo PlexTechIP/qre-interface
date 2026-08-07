@@ -13,7 +13,7 @@ const status: AgentProviderStatus = {
     { provider: "openai", displayName: "OpenAI", configured: false, models: ["gpt-5.6-terra"], defaultModel: "gpt-5.6-terra" },
   ],
 };
-const draft = { name: "Assisted estimate", application: { type: "benchmark", benchmarkId: "grovers-search" }, architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 50, measurementTime: 100, twoQubitGateTime: null }, magicStateFactories: ["round_based"], secondaryFactories: [], memoryOptimization: "none", parameters: { searchQubits: 24 }, traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1, dynamicMemoryCompute: null, unmemory: false }, maxError: 1 } satisfies GeneratedRunDraft;
+const draft = { name: "Assisted estimate", application: { type: "benchmark", benchmarkId: "grovers-search" }, architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 50, measurementTime: 100, twoQubitGateTime: null }, magicStateFactories: ["round_based"], secondaryFactories: [], memoryOptimization: "none", parameters: { searchQubits: 24 }, traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false }, maxError: 1 } satisfies GeneratedRunDraft;
 
 describe("AgentInterface", () => {
   it("previews and sends the same selected provider/model request", async () => {

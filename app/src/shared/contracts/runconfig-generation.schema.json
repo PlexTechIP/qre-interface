@@ -159,9 +159,7 @@
           "required": [
             "type",
             "errorRate",
-            "operationTime",
-            "tErrorRate",
-            "targetYear"
+            "operationTime"
           ],
           "properties": {
             "type": {
@@ -182,28 +180,6 @@
             "operationTime": {
               "type": "integer",
               "description": "Operation time in ns. Must be a whole number greater than 0; default 1000."
-            },
-            "tErrorRate": {
-              "description": "Optional T error rate. Use null to let qdk derive it; otherwise greater than 0 and at most 0.05.",
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "targetYear": {
-              "description": "Optional non-negative target year. Use null to omit it. This value is recorded but currently inert.",
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ]
             }
           }
         },
@@ -220,12 +196,10 @@
             "measurementError",
             "handoffTime",
             "atomSpacing",
-            "dataQubitSpacing",
             "maxVelocity",
             "maxAcceleration",
             "surfaceCodeOneQubitTimeFactor",
-            "surfaceCodeTwoQubitTimeFactor",
-            "targetYear"
+            "surfaceCodeTwoQubitTimeFactor"
           ],
           "properties": {
             "type": {
@@ -266,17 +240,6 @@
               "type": "number",
               "description": "Atom spacing in micrometers. Greater than 0; default 3.0."
             },
-            "dataQubitSpacing": {
-              "description": "Optional data-qubit spacing in micrometers. Use null to omit it; otherwise greater than 0.",
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "maxVelocity": {
               "type": "number",
               "description": "Maximum atom velocity in m/s. Greater than 0; default 0.25."
@@ -292,17 +255,6 @@
             "surfaceCodeTwoQubitTimeFactor": {
               "type": "integer",
               "description": "Surface-code two-qubit time factor. Whole number at least 1; default 1."
-            },
-            "targetYear": {
-              "description": "Optional non-negative target year. Use null to omit it. This value is recorded but currently inert.",
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ]
             }
           }
         }
@@ -334,11 +286,9 @@
     "memoryOptimization": {
       "type": "string",
       "enum": [
-        "none",
-        "yoked_1d",
-        "yoked_2d"
+        "none"
       ],
-      "description": "Memory optimization selection. Use none unless the requested pipeline supports a yoked code."
+      "description": "Always 'none'; the form's control is disabled in this build."
     },
     "parameters": {
       "description": "Parameters for the benchmark named in application.benchmarkId. Choose the variant that matches it; use the 'none' variant for manual logical counts or when proposing no parameters. Modelled as one variant per benchmark rather than twelve nullable fields because the API caps a structured-output schema at 16 union-typed parameters and the flat shape spent twelve of them.",
@@ -479,13 +429,10 @@
     "traceTransform": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Ordered Dynamic Memory Compute, PSSPC, Lattice Surgery, Unmemory pipeline proposal.",
+      "description": "PSSPC settings. The Dynamic Memory Compute, Lattice Surgery and Unmemory stages are configured by the analyst in the form, not proposed here.",
       "required": [
         "tStatesPerRotation",
-        "ccxMagicStates",
-        "slowDownFactor",
-        "dynamicMemoryCompute",
-        "unmemory"
+        "ccxMagicStates"
       ],
       "properties": {
         "tStatesPerRotation": {
@@ -495,46 +442,6 @@
         "ccxMagicStates": {
           "type": "boolean",
           "description": "Whether PSSPC synthesizes CCX from magic states; default false."
-        },
-        "slowDownFactor": {
-          "enum": [
-            1
-          ],
-          "description": "Fixed Lattice Surgery slowdown factor. Always 1."
-        },
-        "dynamicMemoryCompute": {
-          "description": "Use null when stage 0 is off; otherwise provide both stage settings.",
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "computeCapacityPercentage",
-                "evictionStrategy"
-              ],
-              "properties": {
-                "computeCapacityPercentage": {
-                  "type": "number",
-                  "description": "Compute-capacity fraction, greater than 0 and at most 1; qdk default 0.5."
-                },
-                "evictionStrategy": {
-                  "type": "string",
-                  "enum": [
-                    "least_recently_used",
-                    "least_frequently_used",
-                    "first_available"
-                  ]
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "unmemory": {
-          "type": "boolean",
-          "description": "Whether stage 3 is enabled. It is currently inert on this pipeline; default false."
         }
       }
     },

@@ -3,8 +3,8 @@ import type {
   AgentDraftResult,
   GeneratedRunDraft,
 } from "../shared/agentTypes.js";
-import generationSchema from "../shared/contracts/runconfig-generation.schema.json" with { type: "json" };
 import type { DraftGenerator } from "./agentHandler.js";
+import { GENERATION_FIELD_GUIDE, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
 import { readProviderErrorReason } from "./providerErrorBody.js";
 
 const MAX_TOKENS = 16_000;
@@ -18,6 +18,11 @@ const SYSTEM_PROMPT = [
   "The analyst reviews and edits every field before anything runs, so prefer a complete, plausible draft over a cautious one — but never invent a benchmark, architecture, or factory that is not in the schema's enums.",
   "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
   "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
+  "",
+  // Same split as the Anthropic adapter: descriptions are compiled into the
+  // decoding grammar, so the bounds ride in the prompt instead.
+  "Field guidance — the schema cannot express these bounds, so respect them:",
+  GENERATION_FIELD_GUIDE,
 ].join("\n");
 
 export interface OpenAiDraftRequestBody {
@@ -57,7 +62,7 @@ export class OpenAiDraftGenerator implements DraftGenerator {
         json_schema: {
           name: "runconfig_generation",
           strict: true,
-          schema: generationSchema,
+          schema: WIRE_GENERATION_SCHEMA,
         },
       },
     };

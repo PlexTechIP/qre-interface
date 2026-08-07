@@ -25,13 +25,7 @@ const DEMO_DRAFT: GeneratedRunDraft = {
   // The Grover variant only — the schema is one variant per benchmark now,
   // not every key with the irrelevant ones nulled.
   parameters: { searchQubits: 20 },
-  traceTransform: {
-    tStatesPerRotation: 20,
-    ccxMagicStates: false,
-    slowDownFactor: 1,
-    dynamicMemoryCompute: null,
-    unmemory: false,
-  },
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false },
   maxError: 1,
 };
 

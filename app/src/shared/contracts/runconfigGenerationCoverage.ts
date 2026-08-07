@@ -23,8 +23,6 @@ export const GENERATED_CANONICAL_PATHS = [
   "architecture.measurementTime",
   "architecture.twoQubitGateTime",
   "architecture.operationTime",
-  "architecture.tErrorRate",
-  "architecture.targetYear",
   "architecture.rydbergTime",
   "architecture.rydbergError",
   "architecture.singleQubitTime",
@@ -32,7 +30,6 @@ export const GENERATED_CANONICAL_PATHS = [
   "architecture.measurementError",
   "architecture.handoffTime",
   "architecture.atomSpacing",
-  "architecture.dataQubitSpacing",
   "architecture.maxVelocity",
   "architecture.maxAcceleration",
   "architecture.surfaceCodeOneQubitTimeFactor",
@@ -43,10 +40,6 @@ export const GENERATED_CANONICAL_PATHS = [
   "parameters",
   "traceTransform.tStatesPerRotation",
   "traceTransform.ccxMagicStates",
-  "traceTransform.slowDownFactor",
-  "traceTransform.dynamicMemoryCompute.computeCapacityPercentage",
-  "traceTransform.dynamicMemoryCompute.evictionStrategy",
-  "traceTransform.unmemory",
   "maxError",
 ] as const;
 
@@ -65,7 +58,25 @@ export const APP_CONTROLLED_CANONICAL_PATHS = [
  * propose a local path or generate a circuit, so uploaded-only fields stay out
  * of the natural-language generation surface.
  */
+/**
+ * Offered by the canonical contract but NOT proposable in natural language.
+ *
+ * The uploaded-program fields cannot be: choosing a local file path is not
+ * configuration by description. The rest were removed on 2026-08-07 after two
+ * provider rejections — `draftToFormState` refused every one of them, so the
+ * model could only ever spend them producing a draft the app discarded, while
+ * each still cost a capped union slot and grammar budget. `memoryOptimization`
+ * stays generated but is pinned to "none" in the schema for the same reason:
+ * its form control is disabled in this build.
+ */
 export const EXCLUDED_CANONICAL_PATHS = [
+  "architecture.tErrorRate",
+  "architecture.targetYear",
+  "architecture.dataQubitSpacing",
+  "traceTransform.slowDownFactor",
+  "traceTransform.dynamicMemoryCompute.computeCapacityPercentage",
+  "traceTransform.dynamicMemoryCompute.evictionStrategy",
+  "traceTransform.unmemory",
   "application.filePath",
   "application.format",
   "application.addToLibrary",

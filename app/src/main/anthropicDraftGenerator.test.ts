@@ -38,10 +38,16 @@ describe("AnthropicDraftGenerator request body", () => {
     expect(body.output_config.format.type).toBe("json_schema");
     // The schema shipped is the real artifact, not a copy that can drift from
     // the one the drift test guards.
-    expect(body.output_config.format.schema).toMatchObject({
-      title: "GeneratedRunDraft",
-      additionalProperties: false,
-    });
+    // The WIRE schema is description- and title-free: those strings are
+    // compiled into the decoding grammar and pushed it over the provider's size
+    // ceiling, so they travel in the system prompt instead. Structure only here.
+    const schema = body.output_config.format.schema as Record<string, unknown>;
+    expect(schema).toMatchObject({ type: "object", additionalProperties: false });
+    expect(JSON.stringify(schema)).not.toContain("description");
+    expect(schema).not.toHaveProperty("title");
+    // …and the guidance is not lost, only relocated.
+    expect(body.system).toContain("Field guidance");
+    expect(body.system).toContain("searchQubits");
   });
 
   it("never puts a credential in the request body", () => {
