@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
+import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/agentTypes";
+import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
+import { AgentInterface } from "./agent/AgentInterface";
+import { demoAgentService } from "./agent/demoAgentService";
+import type { DraftHandoff } from "./agent/draftToFormState";
+import { NetworkStatus } from "./agent/NetworkStatus";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import type { RerunRequest } from "./history/rerun";
@@ -10,8 +16,19 @@ import { RunConfiguration } from "./RunConfiguration";
 import { ThemeToggle, type Theme } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
+const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
 
-type Page = "config" | "results" | "history" | "comparison";
+type Page = "config" | "agent" | "results" | "history" | "comparison";
+
+const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
+  available: false,
+  networkEnabled: false,
+  providers: (Object.entries(PROVIDER_MODELS) as [ProviderId, (typeof PROVIDER_MODELS)[ProviderId]][]).map(
+    ([provider, details]) => ({ provider, configured: false, ...details }),
+  ),
+  mode: "unavailable",
+  message: "No model provider is configured. The rest of the app remains available offline.",
+};
 
 function getInitialTheme(): Theme {
   const domTheme = document.documentElement.dataset.theme;
@@ -27,6 +44,32 @@ function getInitialTheme(): Theme {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function getInitialAgentSelection(): { provider: ProviderId; model: string } {
+  const fallback = {
+    provider: "anthropic" as const,
+    model: PROVIDER_MODELS.anthropic.defaultModel,
+  };
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(AGENT_SELECTION_STORAGE_KEY) ?? "null",
+    ) as unknown;
+    // `isProviderId` rather than `provider in PROVIDER_MODELS`: `in` walks the
+    // prototype chain, so a stored value of "constructor" or "toString" would
+    // pass and then blow up on the `.models` lookup below.
+    if (
+      typeof stored === "object" && stored !== null &&
+      "provider" in stored && "model" in stored &&
+      isProviderId(stored.provider) &&
+      isModelForProvider(stored.provider, stored.model)
+    ) {
+      return { provider: stored.provider, model: stored.model };
+    }
+  } catch {
+    // A malformed non-secret preference must not block the page.
+  }
+  return fallback;
+}
+
 interface NavItem {
   page: Page;
   label: string;
@@ -38,12 +81,15 @@ const NAV_ITEMS: readonly NavItem[] = [
   { page: "results", label: "Results", icon: <ActivityIcon /> },
   { page: "history", label: "Run History", icon: <ClockIcon /> },
   { page: "comparison", label: "Comparison", icon: <BarsIcon /> },
+  { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
 ];
 
-export function App() {
+export function App({ agentService }: { agentService?: AgentService } = {}) {
+  const resolvedAgentService = agentService ?? window.agent ?? demoAgentService;
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState<Page>("config");
+  const [agentSelection, setAgentSelection] = useState(getInitialAgentSelection);
 
   // The most recent finished run, surfaced on the Results page. The Run flow
   // (useRunFlow) already persists every finished run to the real SQLite store
@@ -54,13 +100,48 @@ export function App() {
   const [selectedRowByRunId, setSelectedRowByRunId] = useState<SelectedRowByRunId>({});
   // A reconstructed config queued by a Rerun, pre-filled into the form.
   const [rerunConfig, setRerunConfig] = useState<RunConfig | null>(null);
+  const [agentStatus, setAgentStatus] = useState<AgentProviderStatus>(
+    UNAVAILABLE_AGENT_STATUS,
+  );
+  const [draftHandoff, setDraftHandoff] = useState<DraftHandoff | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      AGENT_SELECTION_STORAGE_KEY,
+      JSON.stringify(agentSelection),
+    );
+  }, [agentSelection]);
+
+  // Provider status drives the permanent header indicator, so it is re-read
+  // on mount and again whenever a key is stored — the indicator would
+  // otherwise keep claiming "off" until the next launch.
+  const [agentStatusToken, setAgentStatusToken] = useState(0);
+  const refreshAgentStatus = useCallback(() => {
+    setAgentStatusToken((token) => token + 1);
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    void resolvedAgentService.getStatus().then(
+      (status) => {
+        if (current) setAgentStatus(status);
+      },
+      () => {
+        if (current) setAgentStatus(UNAVAILABLE_AGENT_STATUS);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [resolvedAgentService, agentStatusToken]);
+
   const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
+    setDraftHandoff(null);
     setLatestRun({ config, result });
     // Surface the finished run on the Results page (and move the sidebar there).
     setActivePage("results");
@@ -87,6 +168,7 @@ export function App() {
         ...config,
         name: `${sourceRecord.config.name} · rerun`,
       });
+      setDraftHandoff(null);
       setActivePage("config");
     },
     [],
@@ -122,7 +204,14 @@ export function App() {
             {QRE_VERSION}
           </span>
         </div>
-        <ThemeToggle theme={theme} onToggle={() => setTheme((current) => (current === "dark" ? "light" : "dark"))} />
+        <div className="top-header__right">
+          <NetworkStatus
+            status={agentStatus}
+            provider={agentSelection.provider}
+            model={agentSelection.model}
+          />
+          <ThemeToggle theme={theme} onToggle={() => setTheme((current) => (current === "dark" ? "light" : "dark"))} />
+        </div>
       </header>
 
       <main className={`app-shell${navCollapsed ? " app-shell--collapsed" : ""}`}>
@@ -151,7 +240,27 @@ export function App() {
 
         <section className="workspace">
           {activePage === "config" ? (
-            <RunConfiguration onRunComplete={handleRunComplete} initialConfig={rerunConfig} />
+            <RunConfiguration
+              onRunComplete={handleRunComplete}
+              initialConfig={rerunConfig}
+              initialDraft={draftHandoff?.state}
+              provenance={draftHandoff?.provenance}
+            />
+          ) : null}
+          {activePage === "agent" ? (
+            <AgentInterface
+              service={resolvedAgentService}
+              status={agentStatus}
+              provider={agentSelection.provider}
+              model={agentSelection.model}
+              onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
+              onCredentialConfigured={refreshAgentStatus}
+              onReviewDraft={(handoff) => {
+                setRerunConfig(null);
+                setDraftHandoff(handoff);
+                setActivePage("config");
+              }}
+            />
           ) : null}
           {activePage === "results" ? (
             <ResultsPage
@@ -230,6 +339,15 @@ function ActivityIcon(): React.JSX.Element {
   return (
     <Icon>
       <path d="M3 12h3.5l2.5-7 4 14 2.5-7H21" />
+    </Icon>
+  );
+}
+
+function SparkIcon(): React.JSX.Element {
+  return (
+    <Icon>
+      <path d="m12 3 1.3 4.2L17.5 9l-4.2 1.7L12 15l-1.3-4.3L6.5 9l4.2-1.8L12 3Z" />
+      <path d="m18.5 14 .7 2.3 2.3.7-2.3.8-.7 2.2-.8-2.2-2.2-.8 2.2-.7.8-2.3Z" />
     </Icon>
   );
 }

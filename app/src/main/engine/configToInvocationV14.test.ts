@@ -129,3 +129,47 @@ describe("Neutral Atom dataQubitSpacing is re-validated in the main process", ()
     }
   });
 });
+
+/**
+ * `memoryOptimization` is week-5 work rather than v1.4.0, but it belongs in this
+ * file because it is the same defect class the file exists for: a contract enum
+ * that only the renderer's Ajv pass was checking. It reaches the engine over
+ * IPC, and `resolve_yoked_code` in `estimate.py` raises a plain `ValueError` for
+ * an id it does not know — which `failure_code_for` reports as
+ * ESTIMATION_FAILED. That tells the analyst their model was infeasible when in
+ * fact one field is wrong, so the refusal belongs here instead.
+ *
+ * The casts are the point: these configs are exactly the ones TypeScript cannot
+ * produce, which is why only a runtime check catches them.
+ */
+describe("memoryOptimization is re-validated in the main process", () => {
+  const withMemoryOptimization = (value: unknown): RunConfig =>
+    ({ ...majorana({}), memoryOptimization: value }) as RunConfig;
+
+  it("accepts an absent value and every contract id", () => {
+    expect(configToInvocation(majorana({}), 30_000).ok).toBe(true);
+    for (const id of ["none", "yoked_1d", "yoked_2d"]) {
+      expect(configToInvocation(withMemoryOptimization(id), 30_000).ok).toBe(true);
+    }
+  });
+
+  it("rejects an id outside the contract enum", () => {
+    rejects(withMemoryOptimization("yoked_3d"), "memoryOptimization");
+  });
+
+  it("names the value it refused, not just the field", () => {
+    const result = configToInvocation(withMemoryOptimization("YOKED_2D"), 30_000);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('"YOKED_2D"');
+  });
+
+  it('still omits the key for "none" rather than forwarding it', () => {
+    const result = configToInvocation(withMemoryOptimization("none"), 30_000);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.keys(result.invocation)).not.toContain("memoryOptimization");
+    }
+  });
+});

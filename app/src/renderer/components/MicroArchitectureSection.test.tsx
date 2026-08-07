@@ -29,7 +29,12 @@ function renderSection(memoryOptimization: MemoryOptimizationId = "none"): void 
 }
 
 function memoryOptControl(): HTMLSelectElement {
-  return screen.getByLabelText(/Memory Optimization/i) as HTMLSelectElement;
+  // By ROLE, not by label text: the field now carries a definition tooltip whose
+  // trigger is named "Memory Optimization definition", which a loose label match
+  // also finds. The select is the only combobox here.
+  return screen.getByRole("combobox", {
+    name: /Memory Optimization/i,
+  }) as HTMLSelectElement;
 }
 
 describe("Memory Optimization is marked unavailable, not optional", () => {

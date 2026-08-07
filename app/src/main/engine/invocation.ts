@@ -76,6 +76,17 @@ export interface QreInvocation {
   /** Secondary factories layered on the primary factories; empty/omitted by default. */
   secondaryFactories?: ("magic_up_to_clifford" | "gsj24_ccx")[];
   /**
+   * Memory optimization (yoked surface codes), layered onto the ISA query after
+   * the factories. OMITTED when the analyst selected "none" — an absent key is
+   * how "no optimization" reaches Python, exactly as the optional trace stages
+   * do.
+   *
+   * New in week 5. Before it, `memoryOptimization` appeared in NO engine file,
+   * so the "identical estimates" result on record was not evidence the yoked
+   * codes are inert — it was evidence they were never sent.
+   */
+  memoryOptimization?: "yoked_1d" | "yoked_2d";
+  /**
    * The trace pipeline's stages. estimate.py composes them in this order —
    * `DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory` — which is the
    * only order qdk accepts. PSSPC and Lattice Surgery always run; the two v1.4.0

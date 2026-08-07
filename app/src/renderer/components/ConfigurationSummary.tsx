@@ -5,7 +5,7 @@ import {
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
 import { describeTraceTransform } from "../../shared/traceTransform";
-import { deriveQecCode, type FormState } from "../state/formState";
+import { buildTraceTransform, deriveQecCode, type FormState } from "../state/formState";
 
 interface ConfigurationSummaryProps {
   state: FormState;
@@ -33,6 +33,25 @@ function errorRateSummary(arch: FormState["architecture"]): string {
 }
 
 /**
+ * The pipeline the draft would run, described from what the serializer would
+ * actually emit — so this row and the engine can never disagree.
+ *
+ * `buildTraceTransform` returns null in exactly one case: stage 0 enabled with
+ * no capacity entered. This row used to fall back to a hand-copied
+ * three-field object in that case, which rendered "PSSPC → Lattice Surgery" —
+ * byte-identical to what it shows with the stage OFF. So the one place the
+ * analyst reads back what will run silently dropped a stage they could see
+ * switched on. Say the run is not ready instead; ValidationSummary names the
+ * field to fix.
+ */
+function traceTransformSummary(transform: FormState["traceTransform"]): string {
+  const built = buildTraceTransform(transform);
+  return built === null
+    ? "Dynamic Memory Compute is on but incomplete — enter a compute capacity"
+    : describeTraceTransform(built);
+}
+
+/**
  * Read-only configuration summary — a horizontal grid of the draft's key facts,
  * rendered at the bottom of the form. The run name lives in its own control
  * beneath this (see RunNameSection), so it is not repeated here.
@@ -52,12 +71,15 @@ export function ConfigurationSummary({
         .join(" + "),
     },
     {
-      // Both stages, not a single name: the old row read as a selection.
+      // Every stage present, not a single name: the old row read as a selection.
       label: "Trace Transform",
-      value: describeTraceTransform(state.traceTransform),
+      value: traceTransformSummary(state.traceTransform),
     },
     { label: "Error Rate", value: errorRateSummary(state.architecture) },
-    { label: "Max Error", value: state.maxError === null ? "—" : String(state.maxError) },
+    {
+      label: "Total Fault Tolerant Execution Error",
+      value: state.maxError === null ? "—" : String(state.maxError),
+    },
     { label: "QRE Version", value: qreVersion },
   ];
 

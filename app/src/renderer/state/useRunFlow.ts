@@ -14,6 +14,7 @@ import { useCallback, useState } from "react";
 import type {
   EstimatorService,
   RunConfig,
+  RunProvenance,
   RunResult,
   RunStore,
 } from "../../shared/types";
@@ -30,7 +31,7 @@ export type RunState =
 export interface RunFlow {
   runState: RunState;
   /** Serialize the draft, stamp it, and run. No-op if the draft can't serialize. */
-  start: (state: FormState) => void;
+  start: (state: FormState, provenance?: RunProvenance) => void;
   /** Re-run the last config under a fresh stamp (same configuration, new run). */
   retry: () => void;
   /** Return to the form to change the configuration. */
@@ -82,9 +83,10 @@ export function useRunFlow(
   );
 
   const start = useCallback(
-    (state: FormState): void => {
+    (state: FormState, provenance?: RunProvenance): void => {
       const config = toRunConfig(state, stamp());
       if (config === null) return; // Run is gated on validity; unreachable in practice.
+      if (provenance !== undefined) config.provenance = provenance;
       void execute(config);
     },
     [execute],

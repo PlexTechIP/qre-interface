@@ -31,6 +31,31 @@ function filledForm(): FormState {
 }
 
 describe("useRunFlow save-after-run", () => {
+  it("adds model provenance only when the normal Run action stamps the config", async () => {
+    const store = new InMemoryRunStore();
+    const { result } = renderHook(() =>
+      useRunFlow(fakeEstimator(buildSuccessResult()), store),
+    );
+    const draft = filledForm();
+    expect(draft).not.toHaveProperty("provenance");
+
+    act(() =>
+      result.current.start(draft, {
+        authoredBy: "model_assisted",
+        model: "provider/model",
+      }),
+    );
+
+    await waitFor(async () => expect(await store.list()).toHaveLength(1));
+    const [saved] = await store.list();
+    expect(saved?.config.provenance).toEqual({
+      authoredBy: "model_assisted",
+      model: "provider/model",
+    });
+    expect(saved?.config.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(saved?.config.createdAt).toBeTruthy();
+  });
+
   it("persists a completed run to the store, keyed by the run's config id", async () => {
     const store = new InMemoryRunStore();
     const { result } = renderHook(() =>

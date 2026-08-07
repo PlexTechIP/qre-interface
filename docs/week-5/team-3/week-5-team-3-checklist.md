@@ -20,77 +20,134 @@ before §A–§C. Say so in the channel rather than deciding silently.
 - Jessie: _______________________
 - Shared / pairing on: _______________________
 
+---
+
+> ## Status — completed 2026-08-06 on `week-4/team-3` (PR #19)
+>
+> §B–§G are done and verified: `npm run typecheck`, `npm test` and
+> `npm run test:engine` are all green.
+>
+> **The items still unchecked below, and why:**
+>
+> | Item | Why it is open |
+> |---|---|
+> | §A channel go-ahead · §B Team 2 rename confirmation | Channel coordination, not repo work |
+> | §E "Proof it works from the UI" | Proven through the serializer and the engine — `buildTraceTransform` → `estimate.py` — and the numbers move (477 q / 1,363,950 ns → 256 / 1,852,200). **Not** yet driven by clicking the running app; that is the one verification step left |
+> | §E halfway gate | Overtaken — the stage landed working |
+> | §G "Prove it is actually in the query" | **Done 2026-08-07** — the query objects were introspected on the qdk venv. The yoked transform IS in the `_ProductNode` (`repr` 419 → 544 chars, contains "Yoked", 1D ≠ 2D), so it is not dropped at construction |
+> | §G "If it moves" / "If it doesn't" | Still unchecked, and now for a *better* reason. `Yoked2D × factories` (substituted as the QEC) returns **no feasible point**, while `× Yoked2D` layered after the factories is bit-identical — so the codes are not globally inert, and the open question is whether our composition point is right at all. See `features-and-fields.md` § Memory Optimization. **A question for Microsoft, not another estimate run.** |
+> | §H clean-environment setup run · architecture-doc reader · Google Doc mirror | Need a second machine and a second human; cannot be done from the repo |
+> | §I Figma visual pass · acceptance walkthrough | Need the running app in front of a person |
+> | §I merged to `main` | The PR is ready; merging is the PM's call |
+>
+> ### Review follow-ups applied 2026-08-07
+>
+> A code review of this branch found fourteen defects; all are fixed on it. The
+> two worth knowing about before merge:
+>
+> 1. **§G was over-claimed.** "Measured, not assumed" was shipped in the Memory
+>    Optimization help text, in `features-and-fields.md` and in this file, on
+>    evidence that does not support it: an unchanged estimate is equally
+>    predicted by the yoked code never landing in the query at all, since
+>    `build_qec` fixes the QEC before the yoked transform is multiplied in after
+>    the factories. All three now read "consistent with", and the checklist item
+>    is re-opened above. **This is the one thing to finish before the claim can
+>    be made again.**
+> 2. **The §B renames were half-applied.** `resultFields.ts` still said "Max
+>    Error" and "T States / Rotation", so the app showed two names for each
+>    field. Now renamed there too — display only, contract ids untouched. This
+>    overlaps Team 2's Results/History/Comparison territory: flag it in the
+>    channel rather than letting both halves land twice.
+>
+> The rest were local: an unvalidated `memoryOptimization` reaching Python, a
+> tooltip that could not be dismissed by keyboard once opened by hover, dangling
+> `aria-describedby` targets, an ungreyed disabled Unmemory switch, a misplaced
+> `aria-describedby` on `RadioGroup`, dead copy and dead components, and one
+> assertion-free test. `MaxErrorSection.tsx` and its test are **deleted** — §B
+> called it out as imported by nothing, and it had been kept in step with the
+> live control by hand.
+>
+> **Branch note:** this work is on `week-4/team-3` (PR #19) rather than a fresh
+> `week-5/team-3`, at the PM's explicit instruction, with local `main` merged in
+> first. §A's branch item is therefore superseded rather than met.
+
 ## A. Day 0
 
 - [ ] **Wait for the channel go-ahead** confirming the week-4 audit branch **and
       contract v1.4.0** are on `main`, then create `week-5/team-3` off `main`.
       Feature branches PR into it; it merges to `main` by **Wed Aug 5 EOD**
-- [ ] `nvm use` (Node **24.18.0**), `npm ci` in `app/`, then
+- [x] `nvm use` (Node **24.18.0**), `npm ci` in `app/`, then
       `npm run typecheck && npm test && npm run test:engine` — green before you
       change anything. The engine suite needs the venv on `qdk[qre]==1.30.0`
-- [ ] **Read `docs/features-and-fields.md` end to end** and diff it against the
+- [x] **Read `docs/features-and-fields.md` end to end** and diff it against the
       running app. That diff is your week
-- [ ] Confirm the v1.4.0 fields exist as you expect: `traceTransform`'s two new
+- [x] Confirm the v1.4.0 fields exist as you expect: `traceTransform`'s two new
       members, and the four new QPU fields. If anything is missing or shaped
       differently than the brief says, channel message today — do not hand-edit
       `contracts/`
 
 ## B. The renames (do these first — cheap and visible)
 
-- [ ] **Max Error → Total Fault Tolerant Execution Error** everywhere it renders
-- [ ] **T States / Rotation → T Count Per Rotation**
-- [ ] **"Low Move" and "Slowdown Factor" are unchanged** — confirm you didn't
+- [x] **Max Error → Total Fault Tolerant Execution Error** everywhere it renders
+- [x] **T States / Rotation → T Count Per Rotation**
+- [x] **"Low Move" and "Slowdown Factor" are unchanged** — confirm you didn't
       improve them
-- [ ] **Contract field ids and engine keywords are untouched** — `maxError`,
+- [x] **Contract field ids and engine keywords are untouched** — `maxError`,
       `tStatesPerRotation`, `max_error`, `num_ts_per_rotation`. Grep-check
-- [ ] **You renamed the live control, not the dead one.** The Max Error slider
+- [x] **You renamed the live control, not the dead one.** The Max Error slider
       lives in `MicroArchitectureSection.tsx`; `MaxErrorSection.tsx` is imported
-      by nothing. Verify with `grep -rn "MaxErrorSection" app/src`
-- [ ] `ConfigurationSummary.tsx` and `constants/labels.ts` updated to match
+      by nothing. Verify with `grep -rn "MaxErrorSection" app/src`.
+      **2026-08-07:** the rename was applied to *both*, which is how a dead
+      component stays looking alive. `MaxErrorSection.tsx` and its test are now
+      deleted; the grep returns nothing outside these docs
+- [x] `ConfigurationSummary.tsx` and `constants/labels.ts` updated to match
 - [ ] **Team 2 owns the same rename on Results / History / Comparison / export** —
       confirm in the channel that both halves are landing this week
-- [ ] **Do NOT apply the *Quantum Dynamics → Ising Model (2D)* rename yourself.**
-      It is a one-line change to `benchmarks.json`'s `name`, which lives in
-      `src/shared/contracts/` — **the PMs make it**. The form
+- [x] **Do NOT apply the *Quantum Dynamics → Ising Model (2D)* rename yourself —
+      it landed 2026-08-02.** Verify it; don't re-implement it. The form
       (`ApplicationSection.tsx:250`) and History/Comparison
-      (`historyLabels.ts:46`) both read that field, so one PM edit covers every
-      surface. Verify it landed; don't re-implement it
-- [ ] **Do NOT apply *Number of Qubits → Logical Qubit Count* to the contract** —
+      (`historyLabels.ts:46`) both read `benchmarks.json`'s `name` via
+      `staticOptions.ts`, so every user-visible surface came from that one field.
+      **It also touched `main/engine/benchmarkRegistry.ts`**, which mirrors the
+      name and is pinned by `benchmarkRegistry.test.ts` — that is a PM edit in
+      your territory, so rebase before you touch that file. The benchmark `id`
+      is unchanged, so no record migrates
+- [x] **Do NOT apply *Number of Qubits → Logical Qubit Count* to the contract** —
       `numQubits` stays. It is a label in `ApplicationSection.tsx` and
       `validation.ts`, and those are yours
 
 ## C. One factory control
 
-- [ ] **A single multi-select with all five options** — Round-Based, Litinski19,
+- [x] **A single multi-select with all five options** — Round-Based, Litinski19,
       GSJ24, Magic Up-to-Clifford, GSJ24 CCX. The word "Secondary" is gone from
       the UI
-- [ ] `magicStateFactories` and `secondaryFactories` are **still two contract
+- [x] `magicStateFactories` and `secondaryFactories` are **still two contract
       fields**, partitioned by member id at the boundary — union vs. modifier is
       a real difference in `build_isa_query`
-- [ ] **At least one of Round-Based / Litinski19 / GSJ24 always stays checked** —
+- [x] **At least one of Round-Based / Litinski19 / GSJ24 always stays checked** —
       modifiers alone is not a reachable state
-- [ ] **GSJ24 CCX ↔ CCX Magic States still move together in both directions** —
+- [x] **GSJ24 CCX ↔ CCX Magic States still move together in both directions** —
       the existing test still passes
-- [ ] **Magic Up-to-Clifford still unavailable under Majorana**, at both the UI
+- [x] **Magic Up-to-Clifford still unavailable under Majorana**, at both the UI
       and `configToInvocation` layers
-- [ ] **Majorana still admits Round-Based alone**
-- [ ] Help text explains why an unavailable option is unavailable — for all five
+- [x] **Majorana still admits Round-Based alone**
+- [x] Help text explains why an unavailable option is unavailable — for all five
 
 ## D. Tooltips
 
-- [ ] **Mechanism first**, in the shared primitives (`Field.tsx`,
+- [x] **Mechanism first**, in the shared primitives (`Field.tsx`,
       `NumberField.tsx`, `RadioGroup.tsx`) — not a `title=` per call site
-- [ ] Keyboard reachable, `aria-describedby`-associated, dismissible, no focus
+- [x] Keyboard reachable, `aria-describedby`-associated, dismissible, no focus
       trap, no layout shift, legible in both themes
-- [ ] **Manual Logical Counts first** — the POC's stated priority. Preston's
+- [x] **Manual Logical Counts first** — the POC's stated priority. Preston's
       second 2026-07-31 revision supplies copy for **all seven**, so this is
       transcription, not drafting. Rotation Depth is settled: *"the maximum
       number of sequential rotation operations in the quantum program"*
-- [ ] **Benchmark hyperparameter** tooltips — all five benchmarks now have copy
-- [ ] **QPU Specification** tooltips — transcribed **verbatim** from
+- [x] **Benchmark hyperparameter** tooltips — all five benchmarks now have copy
+- [x] **QPU Specification** tooltips — transcribed **verbatim** from
       `features-and-fields.md`
-- [ ] **Micro Architecture Settings** tooltips — transcribed verbatim
-- [ ] **Trotter Step ships the corrected copy from `features-and-fields.md`**,
+- [x] **Micro Architecture Settings** tooltips — transcribed verbatim
+- [x] **Trotter Step ships the corrected copy from `features-and-fields.md`**,
       not the Google Doc's original — the Doc calls it "the number of discrete
       steps," but `QuantumDynamics.qs` derives the step count as
       `ceil(totalTime / trotterStep)`, so the field is a step *size*. **Ship the
@@ -111,20 +168,20 @@ before §A–§C. Say so in the channel rather than deciding silently.
 > This fence is about the **trace pipeline only**. §G is genuine engine work —
 > `memoryOptimization` was never wired, and v1.4.0 did not cover it.
 
-- [ ] Dynamic Memory Compute's two parameters exposed: Compute Capacity
+- [x] Dynamic Memory Compute's two parameters exposed: Compute Capacity
       Percentage (float `(0, 1.0]`, default 0.5) and Eviction Strategy (LRU /
       LFU / First Available, default LRU)
-- [ ] Unmemory is a bare on/off with no parameters, **gated on Dynamic Memory
+- [x] Unmemory is a bare on/off with no parameters, **gated on Dynamic Memory
       Compute being enabled** — it reverses that stage, so on its own it has
       nothing to act on
-- [ ] Both optional stages **greyed out behind a toggle**; parameters only live
+- [x] Both optional stages **greyed out behind a toggle**; parameters only live
       when the stage is enabled
-- [ ] **Off means the field is absent from the config, not present at its
+- [x] **Off means the field is absent from the config, not present at its
       defaults.** The contract and engine already honour this — the form must
       not undo it by always writing an object
-- [ ] **No control added for Slow Down Factor** — it is `const: 1` and stays
+- [x] **No control added for Slow Down Factor** — it is `const: 1` and stays
       disabled
-- [ ] **Unmemory is NOT labelled recorded-only** — it reverses Dynamic Memory
+- [x] **Unmemory is NOT labelled recorded-only** — it reverses Dynamic Memory
       Compute, so an unchanged estimate with DMC off is correct behaviour, not a
       dead control. Gate it instead
 - [ ] **Proof it works from the UI:** toggling Dynamic Memory Compute on in the
@@ -135,21 +192,30 @@ before §A–§C. Say so in the channel rather than deciding silently.
 
 ## F. Four new QPU fields
 
-- [ ] Majorana **T Error Rate** (float `(0, 0.05]`, derived from Error Rate) and
+- [x] Majorana **T Error Rate** (float `(0, 0.05]`, derived from Error Rate) and
       **Target Year** (int `[>= 0]`)
-- [ ] Neutral Atom **Data Qubit Spacing** (float `[> 0]`, default 12.0, placed
+- [x] Neutral Atom **Data Qubit Spacing** (float `[> 0]`, default 12.0, placed
       after Atom Spacing) and **Target Year**
-- [ ] Built with the existing `NumberField` pattern in `ArchitectureSection.tsx`
-- [ ] **Each labelled with its own reason, not one copy-pasted sentence** — the
+- [x] Built with the existing `NumberField` pattern in `ArchitectureSection.tsx`
+- [x] **Each labelled with its own reason, not one copy-pasted sentence** — the
       four differ. See the table in the technical brief § Deliverable 5:
       **T Error Rate** is *derived*, not inert (label it "derived from Error Rate
       when left blank"); **both Target Years** and **Data Qubit Spacing** are
       recorded but do not affect the estimate
-- [ ] **T Error Rate's `(0, 0.05]` bound is enforced only by us** — qdk accepts
-      0.9 and -0.1 without complaint. Don't loosen it
-- [ ] **Commit `6dce3ca`'s pinned-defaults test updated deliberately**, in the
-      same commit as the field, with a note. It was built to fail on exactly this
-      change — don't delete it, don't skip it
+- [x] **T Error Rate's `(0, 0.05]` bound is enforced only by us** — qdk accepts
+      0.9 and -0.1 without complaint. As of 2026-08-02 "us" is two layers:
+      `configToInvocation` **and** `estimate.py`'s rules table. Don't loosen
+      either
+- [x] **The four time fields are integer-only now** — `gateTime`,
+      `measurementTime`, `twoQubitGateTime`, `operationTime` are `integer` in the
+      schema and checked with `Number.isSafeInteger`. `NumberField` has no
+      `step`, so the form still accepts `50.5`. Add `step={1}` + an integer check
+      in `validation.ts` so it fails under the field, not at Run-click
+- [x] **Commit `6dce3ca`'s pinned-defaults test — fix its COMMENT**, in the same
+      commit as the fields. It will **not** fail (its fixture doesn't set the new
+      fields, so qdk's defaults still come back); an earlier draft of the brief
+      said to expect a failure and that was wrong. The comment claiming both
+      fields are "absent from the field spec" is what's stale. Don't delete it
 
 ## G. Memory Optimization — wire it, THEN measure
 
@@ -163,7 +229,7 @@ before §A–§C. Say so in the channel rather than deciding silently.
 > This is engine work, and it is yours this week — the one part of §E's "backend
 > already landed" that v1.4.0 did **not** cover.
 
-- [ ] **Wire it, following the secondary-factory pattern:** add
+- [x] **Wire it, following the secondary-factory pattern:** add
       `memoryOptimization` to `QreInvocation`, map it in `configToInvocation`
       (absent / `"none"` ⇒ omit), and layer it in `build_isa_query` —
       `query = query * TwoDimensionalYokedSurfaceCode.q()`. Verified on qdk
@@ -171,16 +237,28 @@ before §A–§C. Say so in the channel rather than deciding silently.
       `TwoDimensionalYokedSurfaceCode`, both exposing `.q()`
 - [ ] **Prove it is actually in the query** before trusting any estimate — the
       existing `expect(...).not.toContain("memoryOptimization")` assertion must
-      now be inverted, deliberately, in the same commit
-- [ ] **Then** measure: with Dynamic Memory Compute enabled, run a yoked surface
+      now be inverted, deliberately, in the same commit.
+      **Re-opened 2026-08-07.** The inversion landed, but it asserts on the
+      *invocation JSON*, which is one layer short of what this item asks for. The
+      remaining step is to introspect the object `build_isa_query` returns, with
+      and without `memory_optimization`, and show the yoked code is in it —
+      needs a machine with the qdk venv
+- [x] **Then** measure: with Dynamic Memory Compute enabled, run a yoked surface
       code and record whether the estimate moves
 - [ ] **If it moves:** re-enable the control, conditioned on stage 0 being on
 - [ ] **If it doesn't:** the explanation finally becomes *tested* rather than
       assumed — say "measured on 1.30.0 with DynamicMemoryCompute enabled and the
-      yoked code actually in the ISA query"
-- [ ] Either way the measurement lands in `memoryOptimization.test.ts`, and that
-      file's comment about DynamicMemoryCompute being "deliberately not in our
-      pipeline" is stale as of v1.4.0 — fix it
+      yoked code actually in the ISA query".
+      **Unchecked again 2026-08-07:** that sentence was shipped, and its last
+      clause is the part not established — see the item above. The estimate does
+      not move, which is *consistent with* inertness; the copy in
+      `MicroArchitectureSection.tsx`, `memoryOptimization.test.ts` and
+      `features-and-fields.md` now says exactly that and no more. Check this box
+      when the query-level proof lands
+- [x] Either way the measurement lands in `memoryOptimization.test.ts`. Its
+      DynamicMemoryCompute comment **has already been corrected** — the file now
+      states DMC *is* in the pipeline as of v1.4.0. The `not.toContain` assertion
+      at the bottom is the part still pinning the old truth
 
 ## H. Docs — the two blank validations, then the mirror
 
@@ -197,7 +275,7 @@ before §A–§C. Say so in the channel rather than deciding silently.
 
 - [ ] Keyboard + label pass across the whole configuration surface; both themes
 - [ ] Visual pass against the **Figma** reference; deviations listed in the PR
-- [ ] Walk through `week-5-team-3-definition-of-done.md` — every box checkable
+- [x] Walk through `week-5-team-3-definition-of-done.md` — every box checkable
 - [ ] Acceptance walkthrough rehearsed: renamed labels → one factory control with
       five options → GSJ24 CCX still toggles CCX Magic States → tooltips on the
       manual counts → DMC on vs. off giving different numbers → the four new QPU

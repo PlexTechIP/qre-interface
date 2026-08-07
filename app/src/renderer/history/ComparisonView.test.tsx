@@ -45,6 +45,8 @@ describe("Comparison surface (Part E)", () => {
     }
 
     for (const label of [
+      "Total Fault Tolerant Execution Error",
+      "T Count Per Rotation",
       "Physical Qubits",
       "Runtime",
       "Total Error",
