@@ -367,6 +367,26 @@ export function formStateFromRunConfig(config: RunConfig): FormState {
       ...initial.application,
       type: "benchmark",
       benchmarkId: app.benchmarkId,
+      /**
+       * Restore the SAVED hyperparameters, not the benchmark's defaults.
+       *
+       * `parameters` become the arguments of the benchmark's Q# entry
+       * operation, so losing them does not reset a label — it estimates a
+       * DIFFERENT CIRCUIT. Rerunning a 3x3 / T=9 Ising Model record silently
+       * re-ran it at the 10x10 / T=30 defaults, reporting 52,801 physical
+       * qubits where the original said 256, with nothing on screen to say the
+       * workload had changed.
+       *
+       * Seeded from the benchmark's defaults first so a record saved before a
+       * parameter was added still gets a value for it rather than a hole.
+       */
+      hyperparams: {
+        ...initial.application.hyperparams,
+        [app.benchmarkId]: {
+          ...(initial.application.hyperparams[app.benchmarkId] ?? {}),
+          ...(config.parameters ?? {}),
+        },
+      },
     };
   } else if (app.type === "uploaded") {
     application = {

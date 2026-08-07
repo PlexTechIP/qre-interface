@@ -148,6 +148,47 @@ describe("Rerun preserves the v1.4.0 architecture fields", () => {
   });
 });
 
+describe("Rerun preserves the workload itself", () => {
+  /**
+   * The defect this covers was found by running the app: rerunning a 3x3 /
+   * T=9 Ising Model record re-ran it at the 10x10 / T=30 defaults and reported
+   * 52,801 physical qubits where the original said 256.
+   *
+   * `parameters` are the arguments of the benchmark's Q# entry operation, so
+   * dropping them changes the circuit, not a label — and nothing on screen said
+   * so. A rerun that silently estimates something else is the worst shape of
+   * bug this surface can have.
+   */
+  it("keeps the saved benchmark parameters instead of reverting to defaults", () => {
+    const config = baseConfig();
+    config.parameters = {
+      latticeN1: 3,
+      latticeN2: 3,
+      totalTime: 9.0,
+      trotterStep: 0.9,
+      couplingJ: 1.0,
+      fieldG: 1.0,
+    };
+
+    expect(roundTrip(config).parameters).toMatchObject({
+      latticeN1: 3,
+      latticeN2: 3,
+      totalTime: 9.0,
+    });
+  });
+
+  it("fills a parameter the saved record predates from the benchmark defaults", () => {
+    const config = baseConfig();
+    // An older record that never carried fieldG still has to produce a complete
+    // argument list — a hole would change the entry expression's arity.
+    config.parameters = { latticeN1: 3, latticeN2: 3, totalTime: 9.0 };
+
+    const out = roundTrip(config).parameters;
+    expect(out).toMatchObject({ latticeN1: 3, totalTime: 9.0 });
+    expect(out).toHaveProperty("fieldG");
+  });
+});
+
 describe("Everything the form can produce is schema-valid", () => {
   it("validates a config with stage 0 enabled", () => {
     const state = createInitialFormState();
