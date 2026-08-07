@@ -1,4 +1,5 @@
 import type { AgentDraftFailureCode } from "../shared/agentTypes.js";
+import { readProviderErrorReason } from "./providerErrorBody.js";
 
 export type CredentialValidationResult =
   | { ok: true }
@@ -52,10 +53,16 @@ export class AnthropicCredentialValidator implements CredentialValidator {
           message: "The provider rate-limited the validation request. Wait a moment and try again.",
         };
       }
+      // Same reasoning as the draft generators: a bare status code collapses
+      // every distinct failure into the same unactionable sentence.
+      const reason = await readProviderErrorReason(response);
       return {
         ok: false,
         code: "INVALID_RESPONSE",
-        message: `The provider returned an unexpected status (${response.status}) while validating the key.`,
+        message:
+          reason === null
+            ? `The provider returned an unexpected status (${response.status}) while validating the key.`
+            : `The provider rejected the validation request (${response.status}): ${reason}`,
       };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
@@ -109,10 +116,16 @@ export class OpenAiCredentialValidator implements CredentialValidator {
           message: "The provider rate-limited the validation request. Wait a moment and try again.",
         };
       }
+      // Same reasoning as the draft generators: a bare status code collapses
+      // every distinct failure into the same unactionable sentence.
+      const reason = await readProviderErrorReason(response);
       return {
         ok: false,
         code: "INVALID_RESPONSE",
-        message: `The provider returned an unexpected status (${response.status}) while validating the key.`,
+        message:
+          reason === null
+            ? `The provider returned an unexpected status (${response.status}) while validating the key.`
+            : `The provider rejected the validation request (${response.status}): ${reason}`,
       };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {

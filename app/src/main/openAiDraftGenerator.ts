@@ -5,6 +5,7 @@ import type {
 } from "../shared/agentTypes.js";
 import generationSchema from "../shared/contracts/runconfig-generation.schema.json" with { type: "json" };
 import type { DraftGenerator } from "./agentHandler.js";
+import { readProviderErrorReason } from "./providerErrorBody.js";
 
 const MAX_TOKENS = 16_000;
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -75,7 +76,7 @@ export class OpenAiDraftGenerator implements DraftGenerator {
         body: JSON.stringify(this.buildRequestBody(prompt)),
         signal: controller.signal,
       });
-      if (!response.ok) return this.describeHttpFailure(response.status);
+      if (!response.ok) return await this.describeHttpFailure(response);
       return this.readDraft(await response.json());
     } catch (error) {
       return this.describeTransportFailure(error);
@@ -84,14 +85,22 @@ export class OpenAiDraftGenerator implements DraftGenerator {
     }
   }
 
-  private describeHttpFailure(status: number): AgentDraftResult {
-    if (status === 401 || status === 403) {
+  /** Carries the provider's own reason through — see the Anthropic twin. */
+  private async describeHttpFailure(response: Response): Promise<AgentDraftResult> {
+    const reason = await readProviderErrorReason(response);
+
+    if (response.status === 401 || response.status === 403) {
       return fail("AUTHENTICATION", "The provider rejected the stored key. It may have been revoked — re-enter it to continue.");
     }
-    if (status === 429) {
+    if (response.status === 429) {
       return fail("RATE_LIMITED", "The provider rate-limited this request. Wait a moment and try again.");
     }
-    return fail("INVALID_RESPONSE", `The provider returned an unexpected status (${status}). Nothing was applied to the form.`);
+    return fail(
+      "INVALID_RESPONSE",
+      reason === null
+        ? `The provider returned an unexpected status (${response.status}) and no explanation. Nothing was applied to the form.`
+        : `The provider rejected the request (${response.status}): ${reason}. Nothing was applied to the form.`,
+    );
   }
 
   private describeTransportFailure(error: unknown): AgentDraftResult {

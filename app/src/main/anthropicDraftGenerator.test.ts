@@ -20,8 +20,13 @@ function messageResponse(json: unknown, overrides: Record<string, unknown> = {})
   } as unknown as Response;
 }
 
-function errorResponse(status: number): Response {
-  return { ok: false, status, json: async () => ({}) } as unknown as Response;
+function errorResponse(status: number, body = ""): Response {
+  return {
+    ok: false,
+    status,
+    text: async () => body,
+    json: async () => ({}),
+  } as unknown as Response;
 }
 
 describe("AnthropicDraftGenerator request body", () => {
@@ -131,6 +136,41 @@ describe("AnthropicDraftGenerator outcomes", () => {
     });
 
     expect(result).toMatchObject({ ok: false, code: "NETWORK" });
+  });
+
+  /**
+   * A live 400 taught this: the app reported only "unexpected status (400)"
+   * while the provider's body named the exact offending schema keyword. Every
+   * distinct rejection looked identical and none was actionable.
+   */
+  it("carries the provider's own reason out of a rejected request", async () => {
+    const result = await draftWith(
+      errorResponse(
+        400,
+        JSON.stringify({
+          type: "error",
+          error: {
+            type: "invalid_request_error",
+            message: "output_config.format.schema: 'title' is not supported",
+          },
+        }),
+      ),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
+    if (result.ok) return;
+    expect(result.message).toContain("'title' is not supported");
+    expect(result.message).toContain("400");
+    expect(result.message).not.toContain(API_KEY);
+  });
+
+  it("still reports a status when the provider explains nothing", async () => {
+    const result = await draftWith(errorResponse(502, ""));
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
+    if (result.ok) return;
+    expect(result.message).toContain("502");
+    expect(result.message).toMatch(/no explanation/);
   });
 
   it("resolves an aborted request as TIMEOUT", async () => {

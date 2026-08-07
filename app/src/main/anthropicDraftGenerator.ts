@@ -5,6 +5,7 @@ import type {
 } from "../shared/agentTypes.js";
 import generationSchema from "../shared/contracts/runconfig-generation.schema.json" with { type: "json" };
 import type { DraftGenerator } from "./agentHandler.js";
+import { readProviderErrorReason } from "./providerErrorBody.js";
 
 /**
  * The first — and, per the week-5 brief, only — provider adapter. Anthropic's
@@ -100,7 +101,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
         signal: controller.signal,
       });
 
-      if (!response.ok) return this.describeHttpFailure(response.status);
+      if (!response.ok) return await this.describeHttpFailure(response);
 
       const payload: unknown = await response.json();
       return this.readDraft(payload);
@@ -114,15 +115,22 @@ export class AnthropicDraftGenerator implements DraftGenerator {
   /**
    * Provider failures are domain outcomes, not exceptions — the estimator
    * convention this surface is required to follow. Every branch resolves.
+   *
+   * The provider's own reason is carried through. A 400 in particular is the
+   * API telling us which field it disliked (an unsupported schema keyword, a
+   * bad parameter); reporting only the status code discards the single thing
+   * that makes it fixable.
    */
-  private describeHttpFailure(status: number): AgentDraftResult {
-    if (status === 401 || status === 403) {
+  private async describeHttpFailure(response: Response): Promise<AgentDraftResult> {
+    const reason = await readProviderErrorReason(response);
+
+    if (response.status === 401 || response.status === 403) {
       return fail(
         "AUTHENTICATION",
         "The provider rejected the stored key. It may have been revoked — re-enter it to continue.",
       );
     }
-    if (status === 429) {
+    if (response.status === 429) {
       return fail(
         "RATE_LIMITED",
         "The provider rate-limited this request. Wait a moment and try again.",
@@ -130,7 +138,9 @@ export class AnthropicDraftGenerator implements DraftGenerator {
     }
     return fail(
       "INVALID_RESPONSE",
-      `The provider returned an unexpected status (${status}). Nothing was applied to the form.`,
+      reason === null
+        ? `The provider returned an unexpected status (${response.status}) and no explanation. Nothing was applied to the form.`
+        : `The provider rejected the request (${response.status}): ${reason}. Nothing was applied to the form.`,
     );
   }
 
