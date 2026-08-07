@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 
-import type {
-  AgentDraftRequest,
-  AgentProviderStatus,
-  AgentService,
+import {
+  GENERATION_SCHEMA_ID,
+  type AgentDraftRequest,
+  type AgentProviderStatus,
+  type AgentService,
 } from "../../shared/agentTypes";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
 import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
@@ -31,7 +32,7 @@ export function AgentInterface({
   // defeat the point of showing it at all.
   const [outboundPreview, setOutboundPreview] = useState<unknown>(null);
   const request = useMemo<AgentDraftRequest>(
-    () => ({ prompt, generationSchema: "runconfig-generation-v1.4.0" }),
+    () => ({ prompt, generationSchema: GENERATION_SCHEMA_ID }),
     [prompt],
   );
 

@@ -594,15 +594,24 @@ export function normalizeFormState(state: FormState): FormState {
   // error rate or switching to Majorana can invalidate part of the set. The set
   // must never end up empty, so an emptied one falls back to round_based, which
   // every architecture accepts.
+  //
+  // The fallback is compared against the CONTENT of the current set, not its
+  // length. Length alone read `0 !== 0` as "nothing to fix" for a set that was
+  // ALREADY empty, so the one input that most needs the fallback was the one
+  // input that skipped it — invisible while the checkbox group was the only
+  // writer (it can never empty the set), reachable the moment a model draft
+  // became a second writer. It also mis-read `["litinski19"] -> ["round_based"]`
+  // as unchanged, since both have length 1.
   const allowedPrimaries = state.magicStateFactories.filter((factory) =>
     isPrimaryFactoryAllowed(factory, state.architecture),
   );
-  if (allowedPrimaries.length !== state.magicStateFactories.length) {
-    next = {
-      ...next,
-      magicStateFactories:
-        allowedPrimaries.length > 0 ? allowedPrimaries : ["round_based"],
-    };
+  const primaries: MagicStateFactoryId[] =
+    allowedPrimaries.length > 0 ? allowedPrimaries : ["round_based"];
+  const primariesUnchanged =
+    primaries.length === state.magicStateFactories.length &&
+    primaries.every((factory, index) => factory === state.magicStateFactories[index]);
+  if (!primariesUnchanged) {
+    next = { ...next, magicStateFactories: primaries };
   }
  
   if (

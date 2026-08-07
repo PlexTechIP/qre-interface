@@ -8,6 +8,7 @@ import {
 import type { FrontierRow, RunRecord } from "../../shared/types";
 import {
   COMPARE_MIN_SELECTION,
+  additionalFieldDefinitions,
   buildComparisonRows,
   buildFrontierSeries,
   compareSelectionWarning,
@@ -122,6 +123,69 @@ describe("comparison representative row", () => {
     const rows = buildComparisonRows([toComparisonColumn(record)], new Set());
 
     expect(rows.filter((row) => row.label === "T Count Per Rotation")).toHaveLength(1);
+  });
+
+  /**
+   * A record whose traceTransform does not parse — a v1.1.0 record, or one
+   * mixing contract shapes. The lenient `normalizeTraceTransform` repairs it to
+   * the pipeline defaults for DISPLAY, and reading the configuration row off
+   * that repair printed a confident "20" for a run that never recorded one,
+   * beside runs whose 20 is real. Worse, the row that would have exposed the
+   * disagreement — qdk's own reported metric — was filtered out as a duplicate
+   * of the fabricated value, so neither number was visible.
+   */
+  describe("a record whose traceTransform cannot be read", () => {
+    function unreadableRecord(): RunRecord {
+      const record = buildRunRecord({
+        result: {
+          frontier: [
+            buildFrontierRow({
+              additional: {
+                numTsPerRotation: { value: 13, unit: "T states", display: "13" },
+              },
+            }),
+          ],
+        },
+      });
+      // A legacy discriminant AND a v1.4.0 stage key: `parseTraceTransform`
+      // rejects the contradiction outright rather than picking a repair.
+      (record.config as { traceTransform: unknown }).traceTransform = {
+        type: "psspc",
+        tStatesPerRotation: 13,
+        ccxMagicStates: false,
+        unmemory: false,
+      };
+      return record;
+    }
+
+    it("reports no configured T count rather than the pipeline default", () => {
+      expect(toComparisonColumn(unreadableRecord()).tCountPerRotation).toBeNull();
+    });
+
+    it("keeps qdk's reported T count visible instead of a fabricated 20", () => {
+      const rows = buildComparisonRows([toComparisonColumn(unreadableRecord())], new Set());
+
+      expect(rows.find((row) => row.key === "config.tStatesPerRotation")).toBeUndefined();
+      expect(rows.find((row) => row.key === "numTsPerRotation")?.metrics[0]?.value).toBe(13);
+    });
+
+    /**
+     * The field filter enumerates `additionalFieldDefinitions`, so the dedup
+     * has to live THERE. Filtering inside `buildComparisonRows` instead left
+     * the filter offering a "T Count Per Rotation" checkbox that toggled a row
+     * nobody rendered, and counting it in "n/m extra shown".
+     */
+    it("renders exactly the additional fields the filter lists", () => {
+      for (const record of [unreadableRecord(), buildRunRecord()]) {
+        const columns = [toComparisonColumn(record)];
+        const listed = additionalFieldDefinitions(columns).map((def) => def.key);
+        const rendered = buildComparisonRows(columns, new Set())
+          .filter((row) => !row.key.startsWith("config."))
+          .map((row) => row.key);
+
+        for (const key of listed) expect(rendered).toContain(key);
+      }
+    });
   });
 });
 

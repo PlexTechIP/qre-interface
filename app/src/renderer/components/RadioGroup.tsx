@@ -1,9 +1,3 @@
-import {
-  DefinitionTip,
-  definitionDescribedBy,
-  definitionId,
-} from "./DefinitionTip";
-
 export interface RadioOption<T extends string> {
   value: T;
   label: string;
@@ -19,8 +13,6 @@ interface RadioGroupProps<T extends string> {
   value: T;
   options: readonly RadioOption<T>[];
   onChange: (value: T) => void;
-  /** Tooltip copy for the group as a whole, from `constants/configDefinitions`. */
-  definition?: string | undefined;
 }
 
 /**
@@ -29,11 +21,19 @@ interface RadioGroupProps<T extends string> {
  *
  * ⚠️ **Nothing renders this today.** The doc comment used to say "used for every
  * type toggle in the form"; that stopped being true before week 5, and `grep -rn
- * RadioGroup app/src` now finds only this file. The `definition` support below
- * was added for the Application Type and Architecture selectors, which carry no
- * tooltip because the Config Descriptions tab has no copy for them yet — see the
- * comments at those two call sites. Wire it up when the copy lands, or delete
- * this file; do not let it drift as untested, unrendered code.
+ * RadioGroup app/src` now finds only this file.
+ *
+ * Week 5 briefly grew tooltip support here — a `definition` prop, a
+ * `DefinitionTip` in the legend, and reworked `aria-labelledby` /
+ * `aria-describedby` wiring — for the Application Type and Architecture
+ * selectors. Those selectors do not use this component, and carry no tooltip
+ * anyway because the Config Descriptions tab has no copy for them yet, so all
+ * of it was unreachable and untested from the moment it was written. It has
+ * been taken back out rather than left to drift.
+ *
+ * Wire this component up when the copy lands, or delete it — `MaxErrorSection`
+ * went the second way on this branch for the same reason. What it must not do
+ * is accumulate more untested, unrendered detail.
  */
 export function RadioGroup<T extends string>({
   legend,
@@ -41,32 +41,10 @@ export function RadioGroup<T extends string>({
   value,
   options,
   onChange,
-  definition,
 }: RadioGroupProps<T>): React.JSX.Element {
-  const legendTextId = `${name}-legend`;
   return (
-    // aria-labelledby points at the legend's TEXT span rather than letting the
-    // legend name the fieldset implicitly. Without that, the tooltip trigger
-    // sitting inside the legend is walked by accessible-name computation and the
-    // group announces as "Architecture Architecture definition".
-    //
-    // aria-describedby belongs on the FIELDSET, next to the name it qualifies.
-    // It sat on the options <div> until 2026-08-07, which is a generic element
-    // with no role: assistive technology does not expose it, so the description
-    // reached nobody — neither the group nor the individual radios.
-    <fieldset
-      className="radio-group"
-      aria-labelledby={legendTextId}
-      aria-describedby={definitionDescribedBy(name, definition)}
-    >
-      <legend className="radio-group__legend">
-        <span id={legendTextId}>{legend}</span>
-        {definition ? (
-          <DefinitionTip id={definitionId(name)} label={legend}>
-            {definition}
-          </DefinitionTip>
-        ) : null}
-      </legend>
+    <fieldset className="radio-group">
+      <legend className="radio-group__legend">{legend}</legend>
       <div className="radio-group__options">
         {options.map((option) => {
           const disabled = option.disabled ?? false;

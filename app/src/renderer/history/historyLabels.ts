@@ -25,10 +25,12 @@ export const FACTORY_LABELS: Record<string, string> = {
   gsj24: "GSJ24",
 };
 
-/** Jul 31 POC display renames. Contract ids remain unchanged. */
-export const TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL =
-  "Total Fault Tolerant Execution Error";
-export const T_COUNT_PER_ROTATION_LABEL = "T Count Per Rotation";
+/**
+ * The Jul 31 POC display renames used to live here. They now sit in
+ * `constants/labels.ts` with the rest of the label-only mappings, because
+ * `results/` needs them too and `history/ -> results/` is the direction those
+ * two layers already depend in.
+ */
 
 /**
  * A run's primary magic-state factories as one label. The field is a SET as of

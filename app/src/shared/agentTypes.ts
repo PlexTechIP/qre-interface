@@ -74,12 +74,23 @@ export type GeneratedRunDraft = Pick<
   traceTransform: GeneratedTraceTransform;
 };
 
+/**
+ * The lowered generation contract this build speaks.
+ *
+ * A CONSTANT, not a literal repeated at each site: the renderer stamps it onto
+ * every request and the main process checks it, so the two halves have to be
+ * reading the same value or the check is decorative. A mismatch means the
+ * renderer bundle and the main bundle came from different builds — see
+ * `agentHandler.readDraftRequest`.
+ */
+export const GENERATION_SCHEMA_ID = "runconfig-generation-v1.4.0";
+
 /** The exact, renderer-visible envelope sent to a configured provider. */
 export interface AgentDraftRequest {
   /** Natural-language configuration request entered by the analyst. */
   prompt: string;
   /** Identifies the lowered structured-output contract used for generation. */
-  generationSchema: "runconfig-generation-v1.4.0";
+  generationSchema: typeof GENERATION_SCHEMA_ID;
 }
 
 export type AgentProviderStatus =
@@ -106,7 +117,16 @@ export type AgentDraftFailureCode =
   | "NETWORK"
   | "TIMEOUT"
   | "REFUSED"
-  | "INVALID_RESPONSE";
+  | "INVALID_RESPONSE"
+  /**
+   * The stored blob exists but could not be decrypted — a locked or reset
+   * keychain, a denied access prompt, a file truncated by a crash.
+   *
+   * Distinct from AUTHENTICATION, which is the provider rejecting a key we read
+   * successfully. The analyst's fix differs: re-enter the key (which overwrites
+   * the unreadable blob) rather than check it for typos.
+   */
+  | "CREDENTIAL_UNREADABLE";
 
 /** Provider failures are expected outcomes and therefore resolve as data. */
 export type AgentDraftResult =

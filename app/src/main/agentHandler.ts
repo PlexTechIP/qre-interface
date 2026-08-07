@@ -1,9 +1,10 @@
 import type { IpcMain } from "electron";
 
-import type {
-  AgentDraftRequest,
-  AgentDraftResult,
-  AgentProviderStatus,
+import {
+  GENERATION_SCHEMA_ID,
+  type AgentDraftRequest,
+  type AgentDraftResult,
+  type AgentProviderStatus,
 } from "../shared/agentTypes.js";
 import type { CredentialStore } from "./credentialStore.js";
 import {
@@ -73,14 +74,32 @@ export function registerAgentHandlers(
   // this feature would transmit before deciding to enable it at all.
   ipcMain.handle(
     AGENT_PREVIEW_CHANNEL,
-    (_event, request: AgentDraftRequest): unknown =>
-      generator.buildRequestBody(request.prompt),
+    (_event, request: unknown): unknown =>
+      generator.buildRequestBody(readDraftRequest(AGENT_PREVIEW_CHANNEL, request).prompt),
   );
 
   ipcMain.handle(
     AGENT_DRAFT_CHANNEL,
-    async (_event, request: AgentDraftRequest): Promise<AgentDraftResult> => {
-      const apiKey = credentialStore.readForRequest();
+    async (_event, payload: unknown): Promise<AgentDraftResult> => {
+      const request = readDraftRequest(AGENT_DRAFT_CHANNEL, payload);
+
+      // Reading the key can fail on a locked keychain, a denied access prompt,
+      // or a blob truncated by a crash. None of those is a programmer error, so
+      // none of them may reject — `hasCredential()` is only an existence check,
+      // so this is the first point at which the stored blob is known to be
+      // usable at all.
+      let apiKey: string | null;
+      try {
+        apiKey = credentialStore.readForRequest();
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          code: "CREDENTIAL_UNREADABLE",
+          message: `The stored provider key could not be read back from the OS key store (${detail}). Enter the key again to replace it.`,
+        };
+      }
+
       if (apiKey === null) {
         throw new Error(
           "agent:draft requires a configured credential. Check window.agent.getStatus().available before requesting a draft.",
@@ -89,4 +108,34 @@ export function registerAgentHandlers(
       return generator.requestDraft(apiKey, request.prompt);
     },
   );
+}
+
+/**
+ * Narrow an IPC payload to an `AgentDraftRequest`.
+ *
+ * The parameter is typed on the renderer side, but it arrives here as whatever
+ * the renderer actually sent — `ipcMain.handle` does no checking, and a typed
+ * signature on the listener is a claim, not a guard. Both agent channels
+ * dereference `.prompt`, and an unchecked one turns a missing argument into a
+ * bare TypeError and a non-string prompt into JSON in an outbound provider
+ * request body.
+ *
+ * Throws, deliberately: every failure here means the renderer half of this app
+ * is not the half that was built against this main process, which is the
+ * programmer-error category the estimator convention reserves rejection for.
+ */
+function readDraftRequest(channel: string, value: unknown): AgentDraftRequest {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${channel} requires an AgentDraftRequest object.`);
+  }
+  const { prompt, generationSchema } = value as Record<string, unknown>;
+  if (typeof prompt !== "string") {
+    throw new Error(`${channel} requires a string prompt.`);
+  }
+  if (generationSchema !== GENERATION_SCHEMA_ID) {
+    throw new Error(
+      `${channel} expects generationSchema ${JSON.stringify(GENERATION_SCHEMA_ID)}, got ${JSON.stringify(generationSchema)}. The renderer and main bundles disagree about the generation contract.`,
+    );
+  }
+  return { prompt, generationSchema };
 }

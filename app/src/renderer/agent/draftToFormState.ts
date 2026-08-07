@@ -56,6 +56,16 @@ function unsupportedFields(draft: GeneratedRunDraft): string[] {
   if (draft.traceTransform.slowDownFactor !== 1) {
     unsupported.push("Slow Down Factor");
   }
+  // Memory Optimization is in the lowered schema's enum but its control is
+  // DISABLED in Run Configuration ("unavailable in this build"). A proposed
+  // yoked code would therefore be applied to a field the analyst can see and
+  // cannot change — the review step is present but powerless, which is worse
+  // than either refusing or offering a working control. Week 5 also wired the
+  // field through to `build_isa_query`, so the value is no longer inert on the
+  // way to the engine. Refuse until the control is enabled.
+  if (draft.memoryOptimization !== "none") {
+    unsupported.push("Memory Optimization");
+  }
   return unsupported;
 }
 

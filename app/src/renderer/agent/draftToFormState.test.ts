@@ -124,4 +124,95 @@ describe("draftToFormState", () => {
       initial.architecture.neutralAtom,
     );
   });
+
+  /**
+   * The refusal list is only half the guarantee. These cover the other half —
+   * the fields that reach the form UNGUARDED — because every defect this
+   * mapping has shipped so far has been in something copied straight through
+   * rather than in something explicitly refused.
+   */
+  describe("fields carried straight into the form", () => {
+    /**
+     * Memory Optimization is in the lowered schema's enum, but its control is
+     * DISABLED. Applying a proposed yoked code would leave the analyst looking
+     * at a field they cannot change — a review step that is present but
+     * powerless — and week 5 wired the value through to `build_isa_query`, so
+     * it is no longer inert on the way to the engine either.
+     */
+    for (const optimization of ["yoked_1d", "yoked_2d"] as const) {
+      it(`refuses ${optimization}, which the form cannot unset`, () => {
+        const proposal = gateBasedDraft();
+        proposal.memoryOptimization = optimization;
+        expect(draftToFormState(proposal, "provider/model")).toEqual({
+          ok: false,
+          message: expect.stringContaining("Memory Optimization"),
+        });
+      });
+    }
+
+    it('accepts the "none" every well-behaved draft sends', () => {
+      const result = draftToFormState(gateBasedDraft(), "provider/model");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.handoff.state.memoryOptimization).toBe("none");
+    });
+
+    /**
+     * The generation schema declares no `minItems` (bounds are prose in the
+     * strict-output subset), so an empty set is schema-valid model output. It
+     * must not survive into the form: the checkbox group would render with
+     * nothing checked while `toRunConfig` silently substituted round_based,
+     * saving a factory the analyst was never shown.
+     */
+    it("normalizes an empty factory set rather than showing none selected", () => {
+      const proposal = gateBasedDraft();
+      proposal.magicStateFactories = [];
+      const result = draftToFormState(proposal, "provider/model");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.handoff.state.magicStateFactories).toEqual(["round_based"]);
+    });
+
+    it("normalizes a factory set this architecture disallows", () => {
+      const proposal = gateBasedDraft();
+      // Litinski19 needs Error Rate <= 1e-3; this draft raises it past that.
+      proposal.architecture = {
+        type: "gateBased",
+        errorRate: 0.005,
+        gateTime: 50,
+        measurementTime: 100,
+        twoQubitGateTime: null,
+      };
+      proposal.magicStateFactories = ["litinski19"];
+      const result = draftToFormState(proposal, "provider/model");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.handoff.state.magicStateFactories).toEqual(["round_based"]);
+    });
+
+    it("carries a proposed secondary factory through to the form", () => {
+      const proposal = gateBasedDraft();
+      proposal.secondaryFactories = ["gsj24_ccx"];
+      const result = draftToFormState(proposal, "provider/model");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.handoff.state.secondaryFactories).toEqual(["gsj24_ccx"]);
+    });
+
+    it("drops a secondary factory Majorana forbids instead of proposing it", () => {
+      const proposal = gateBasedDraft();
+      proposal.architecture = {
+        type: "majorana",
+        errorRate: 0.00001,
+        operationTime: 1000,
+        tErrorRate: null,
+        targetYear: null,
+      };
+      proposal.secondaryFactories = ["magic_up_to_clifford"];
+      const result = draftToFormState(proposal, "provider/model");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.handoff.state.secondaryFactories).toEqual([]);
+    });
+  });
 });

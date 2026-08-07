@@ -3,16 +3,14 @@ import {
   ARCHITECTURE_LABELS,
   MAGIC_STATE_FACTORY_LABELS,
   QEC_LABELS,
+  T_COUNT_PER_ROTATION_LABEL,
+  TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
 import {
   describeTraceTransform,
   normalizeTraceTransform,
 } from "../../shared/traceTransform";
-import {
-  T_COUNT_PER_ROTATION_LABEL,
-  TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
-} from "../history/historyLabels";
 
 export interface ResultFieldDefinition {
   key: string;
@@ -213,11 +211,11 @@ export function getFieldDefinition(key: string, unit: string): ResultFieldDefini
  * configuration form call the same number by the same name — the form had been
  * renamed on its own, leaving the app showing two names for one field.
  *
- * The label is a single exported constant in history/historyLabels.ts rather
- * than a literal per call site: it appears in both arms of summarizeConfig
- * below and on History, Comparison and the Markdown export, and renaming one
- * surface and not the others is exactly how they drifted. The contract field is
- * still `maxError`.
+ * The label is a single exported constant in constants/labels.ts rather than a
+ * literal per call site: it appears in both arms of summarizeConfig below and
+ * on History, Comparison and the Markdown export, and renaming one surface and
+ * not the others is exactly how they drifted. The contract field is still
+ * `maxError`.
  */
 
 export function summarizeConfig(config: RunConfig | null | undefined, qreVersion: string) {

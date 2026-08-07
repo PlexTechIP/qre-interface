@@ -5,12 +5,14 @@
  * interactions rather than poking state, so the wiring is covered too.
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildFailedResult, buildSuccessResult, fakeEstimator } from "../shared/testing";
+import type { RunConfig } from "../shared/types";
 import { RunConfiguration } from "./RunConfiguration";
+import { createInitialFormState, type FormState } from "./state/formState";
 
 const runButton = () => screen.getByRole("button", { name: /run estimate/i });
 
@@ -257,6 +259,116 @@ describe("Failure path (Retry / Edit configuration)", () => {
 
     // Back on the form: the Run button (absent in the flow panel) is present again.
     expect(runButton()).toBeInTheDocument();
+  });
+});
+
+describe("Model-assisted provenance", () => {
+  /** A structurally complete draft — the two required GateBased times are set. */
+  function filledDraft(): FormState {
+    const base = createInitialFormState();
+    return {
+      ...base,
+      architecture: {
+        ...base.architecture,
+        gateBased: {
+          errorRate: 0.0001,
+          gateTime: 50,
+          measurementTime: 100,
+          twoQubitGateTime: null,
+        },
+      },
+    };
+  }
+
+  const MODEL_PROVENANCE = {
+    authoredBy: "model_assisted",
+    model: "provider/model",
+  } as const;
+
+  /**
+   * The shell drops its draft handoff the moment the FIRST run completes, but
+   * this component stays mounted through the run panel and "Edit configuration"
+   * returns to the very same form state. Reading the `provenance` PROP at
+   * Run-click therefore stamped run #1 `model_assisted` and run #2 — the same
+   * model-authored configuration with one number changed — with nothing at all,
+   * silently losing the audit trail on the most common iterate-then-rerun path.
+   *
+   * The rerender below is the shell's clearing step, reproduced exactly.
+   */
+  it("survives Edit configuration after the shell has dropped its draft handoff", async () => {
+    const user = userEvent.setup();
+    const completed: RunConfig[] = [];
+    const onRunComplete = (config: RunConfig): void => {
+      completed.push(config);
+    };
+
+    const { rerender } = render(
+      <RunConfiguration
+        onRunComplete={onRunComplete}
+        initialDraft={filledDraft()}
+        provenance={MODEL_PROVENANCE}
+      />,
+    );
+
+    await user.click(runButton());
+    // The Edit button is rendered (disabled) while the run is still going, so
+    // the completion callback is the signal to wait on, not the button.
+    await waitFor(() => expect(completed).toHaveLength(1), { timeout: 3000 });
+    expect(completed[0]?.provenance).toEqual(MODEL_PROVENANCE);
+
+    // App.handleRunComplete clears draftHandoff, so both props go away while
+    // this component is still mounted showing the result.
+    rerender(<RunConfiguration onRunComplete={onRunComplete} />);
+
+    await user.click(screen.getByRole("button", { name: /edit configuration/i }));
+    await user.click(runButton());
+    await waitFor(() => expect(completed).toHaveLength(2), { timeout: 3000 });
+
+    expect(completed[1]?.provenance).toEqual(MODEL_PROVENANCE);
+  });
+
+  it("does not attribute a hand-authored configuration to a model", async () => {
+    const user = userEvent.setup();
+    const completed: RunConfig[] = [];
+    render(<RunConfiguration onRunComplete={(config) => completed.push(config)} />);
+
+    await fillRequiredTimes(user);
+    await user.click(runButton());
+    await waitFor(() => expect(completed).toHaveLength(1), { timeout: 3000 });
+
+    expect(completed[0]).not.toHaveProperty("provenance");
+  });
+
+  /** A Rerun replaces the draft, so the model no longer authored what is shown. */
+  it("drops model provenance when a saved config is loaded over the draft", async () => {
+    const user = userEvent.setup();
+    const completed: RunConfig[] = [];
+    const onRunComplete = (config: RunConfig): void => {
+      completed.push(config);
+    };
+
+    const { rerender } = render(
+      <RunConfiguration
+        onRunComplete={onRunComplete}
+        initialDraft={filledDraft()}
+        provenance={MODEL_PROVENANCE}
+      />,
+    );
+
+    await user.click(runButton());
+    await waitFor(() => expect(completed).toHaveLength(1), { timeout: 3000 });
+    const firstConfig = completed[0];
+    if (!firstConfig) throw new Error("expected a completed run");
+
+    // A Rerun hands down a saved config and no draft.
+    rerender(
+      <RunConfiguration onRunComplete={onRunComplete} initialConfig={firstConfig} />,
+    );
+    await user.click(screen.getByRole("button", { name: /edit configuration/i }));
+    await user.click(runButton());
+    await waitFor(() => expect(completed).toHaveLength(2), { timeout: 3000 });
+
+    expect(completed[1]).not.toHaveProperty("provenance");
   });
 });
 

@@ -340,6 +340,73 @@ describe("Tooltips are reachable and associated with the control", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 
+  /**
+   * The dismiss listener sits on `document` in the CAPTURE phase, and React
+   * delegates from the root container — a descendant of `document`. So an
+   * unconditional `stopPropagation()` there stopped Escape before it ever
+   * reached the React tree, and a bubble opens on plain `onMouseEnter`: merely
+   * resting the pointer on a "?" glyph made Escape dead for every other
+   * dismissible surface in the app.
+   *
+   * A hover is not a claim on the key. A focused trigger is — the analyst
+   * deliberately opened that bubble, and it really is the topmost thing they
+   * are interacting with.
+   */
+  describe("Escape ownership", () => {
+    function listenForEscape(): { seen: () => number; stop: () => void } {
+      let count = 0;
+      const listener = (event: KeyboardEvent): void => {
+        if (event.key === "Escape") count += 1;
+      };
+      // Bubble phase on the container React delegates from, which is what an
+      // enclosing dialog's own handler would see.
+      document.body.addEventListener("keydown", listener);
+      return {
+        seen: () => count,
+        stop: () => document.body.removeEventListener("keydown", listener),
+      };
+    }
+
+    it("leaves Escape available to the rest of the app when opened by hover", async () => {
+      const user = userEvent.setup();
+      renderSection();
+      const trigger = screen.getByRole("button", { name: /QEC Code definition/i });
+      const escapes = listenForEscape();
+
+      try {
+        await user.hover(trigger);
+        expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+        await user.keyboard("{Escape}");
+
+        // The bubble closes AND the key still reaches everything else.
+        expect(trigger).toHaveAttribute("aria-expanded", "false");
+        expect(escapes.seen()).toBe(1);
+      } finally {
+        escapes.stop();
+      }
+    });
+
+    it("claims Escape only while its own trigger holds focus", async () => {
+      const user = userEvent.setup();
+      renderSection();
+      const trigger = screen.getByRole("button", { name: /QEC Code definition/i });
+      const escapes = listenForEscape();
+
+      try {
+        await user.click(trigger);
+        expect(trigger).toHaveFocus();
+
+        await user.keyboard("{Escape}");
+
+        expect(trigger).toHaveAttribute("aria-expanded", "false");
+        expect(escapes.seen()).toBe(0);
+      } finally {
+        escapes.stop();
+      }
+    });
+  });
+
   it("does not fold the trigger into a checkbox's accessible name", () => {
     renderSection();
     // A tooltip trigger nested inside a <label> would make this announce as

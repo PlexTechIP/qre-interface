@@ -1,13 +1,15 @@
 import { useState } from "react";
 
 import { applicationKey, type RunRecord } from "../../shared/types";
-import { normalizeTraceTransform } from "../../shared/traceTransform";
+import { parseTraceTransform } from "../../shared/traceTransform";
 import { formatMetric } from "../results/formatMetric";
 import { getAdditionalFieldDefinitions } from "../results/resultFields";
 import {
-  ARCHITECTURE_LABELS,
   T_COUNT_PER_ROTATION_LABEL,
   TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+} from "../constants/labels";
+import {
+  ARCHITECTURE_LABELS,
   factorySetLabel,
   QEC_LABELS,
   applicationLabel,
@@ -50,6 +52,12 @@ function markdownCell(value: string): string {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
+/** The recorded T count, or an honest blank when the record does not carry one. */
+function configuredTCount(transform: unknown): string {
+  const parsed = parseTraceTransform(transform);
+  return parsed.ok ? String(parsed.transform.tStatesPerRotation) : "Not recorded";
+}
+
 export function buildRunExportMarkdown(record: RunRecord): string {
   const { config, result } = record;
   const lines = [
@@ -61,7 +69,11 @@ export function buildRunExportMarkdown(record: RunRecord): string {
     `- **QEC code:** ${QEC_LABELS[config.qecCode] ?? config.qecCode}`,
     `- **Magic-state ${config.magicStateFactories.length > 1 ? "factories" : "factory"}:** ${factorySetLabel(config)}`,
     `- **${TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL}:** ${config.maxError}`,
-    `- **${T_COUNT_PER_ROTATION_LABEL}:** ${normalizeTraceTransform(config.traceTransform).tStatesPerRotation}`,
+    // Strict parse, not the lenient one: `normalizeTraceTransform` repairs an
+    // unreadable transform to the pipeline defaults, and an export is exactly
+    // where a repaired 20 would be read as a recorded fact about the run. Same
+    // rule the comparison table's configuration row follows.
+    `- **${T_COUNT_PER_ROTATION_LABEL}:** ${configuredTCount(config.traceTransform)}`,
     `- **QRE version:** ${result.qreVersion}`,
     `- **Created:** ${config.createdAt}`,
     `- **Completed:** ${result.completedAt}`,

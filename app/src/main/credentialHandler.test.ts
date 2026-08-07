@@ -16,7 +16,9 @@ type StorePick = Pick<CredentialStore, "hasCredential" | "checkBackend" | "write
 function setup(options: {
   hasCredential?: boolean;
   backend?: CredentialBackendCheck;
+  backendError?: Error;
   validation?: Awaited<ReturnType<CredentialValidator["validate"]>>;
+  validationError?: Error;
   writeImpl?: () => void;
 } = {}) {
   const handlers = new Map<string, Listener>();
@@ -32,13 +34,18 @@ function setup(options: {
   // unions these fakes stand in for.
   const store: StorePick = {
     hasCredential: vi.fn(() => options.hasCredential ?? false),
-    checkBackend: vi.fn((): CredentialBackendCheck => options.backend ?? { ok: true }),
+    checkBackend: vi.fn((): CredentialBackendCheck => {
+      if (options.backendError) throw options.backendError;
+      return options.backend ?? { ok: true };
+    }),
     write,
   };
   const validator: CredentialValidator = {
     validate: vi.fn(
-      async (): Promise<Awaited<ReturnType<CredentialValidator["validate"]>>> =>
-        options.validation ?? { ok: true },
+      async (): Promise<Awaited<ReturnType<CredentialValidator["validate"]>>> => {
+        if (options.validationError) throw options.validationError;
+        return options.validation ?? { ok: true };
+      },
     ),
   };
 
@@ -129,6 +136,48 @@ describe("registerCredentialHandlers", () => {
       code: "WRITE_FAILED",
       message: expect.stringContaining("disk full"),
     });
+  });
+
+  /**
+   * The regression that made this whole surface unusable off Linux:
+   * `checkBackend` calls `safeStorage.getSelectedStorageBackend()`, which
+   * Electron implements on Linux only, so on macOS and Windows it threw a
+   * TypeError straight out of the handler. The store no longer makes that call
+   * blind, and the handler no longer lets a throw from it reject the channel —
+   * two independent guards, because either alone leaves the analyst with a raw
+   * stack instead of a message.
+   */
+  it("configure resolves a throwing backend check as data rather than rejecting", async () => {
+    const { invoke, validator, write } = setup({
+      backendError: new Error("safeStorage.getSelectedStorageBackend is not a function"),
+    });
+    const result = await invoke<CredentialConfigureResult>(
+      CREDENTIAL_CONFIGURE_CHANNEL,
+      "sk-ant-key",
+    );
+    expect(result).toEqual({
+      ok: false,
+      code: "BACKEND_UNAVAILABLE",
+      message: expect.stringContaining("is not a function"),
+    });
+    expect(validator.validate).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("configure resolves a throwing validator as data rather than rejecting", async () => {
+    const { invoke, write } = setup({
+      validationError: new Error("getaddrinfo ENOTFOUND api.anthropic.com"),
+    });
+    const result = await invoke<CredentialConfigureResult>(
+      CREDENTIAL_CONFIGURE_CHANNEL,
+      "sk-ant-key",
+    );
+    expect(result).toEqual({
+      ok: false,
+      code: "NETWORK",
+      message: expect.stringContaining("ENOTFOUND"),
+    });
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("configure validates then writes and resolves ok on the happy path", async () => {

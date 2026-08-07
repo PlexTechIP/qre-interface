@@ -7,13 +7,12 @@ import {
 } from "../results/resultFields";
 import { formatMetric } from "../results/formatMetric";
 import { resolveSelectedFrontierRow } from "../results/selectedRows";
-import { normalizeTraceTransform } from "../../shared/traceTransform";
+import { parseTraceTransform } from "../../shared/traceTransform";
 import {
-  ARCHITECTURE_LABELS,
   T_COUNT_PER_ROTATION_LABEL,
   TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
-  applicationLabel,
-} from "./historyLabels";
+} from "../constants/labels";
+import { ARCHITECTURE_LABELS, applicationLabel } from "./historyLabels";
 
 /**
  * Pure derivation layer for the Comparison surface. It turns a selected set of
@@ -41,7 +40,15 @@ export interface ComparisonColumn {
   architecture: string;
   qreVersion: string;
   maxError: number;
-  tCountPerRotation: number;
+  /**
+   * The T count this run was CONFIGURED with, or null when the record's
+   * traceTransform does not parse (a v1.1.0 record, or one mixing contract
+   * shapes). Null rather than the pipeline default: `normalizeTraceTransform`
+   * repairs an unreadable transform to `DEFAULT_TRACE_TRANSFORM` for display,
+   * and printing that 20 in a comparison cell would assert a configured value
+   * the record does not actually carry — against runs whose 20 is real.
+   */
+  tCountPerRotation: number | null;
   failed: boolean;
   /** Zero-based representative row index after safe fallback. */
   selectedIndex: number;
@@ -68,7 +75,7 @@ export function toComparisonColumn(
     // Authoritative engine version is result.qreVersion, NOT config.qreVersion.
     qreVersion: result.qreVersion,
     maxError: config.maxError,
-    tCountPerRotation: normalizeTraceTransform(config.traceTransform).tStatesPerRotation,
+    tCountPerRotation: configuredTCountPerRotation(config.traceTransform),
     failed: result.status === "failed",
     selectedIndex: selected.index,
     frontierCount: selected.count,
@@ -77,10 +84,48 @@ export function toComparisonColumn(
   };
 }
 
-/** The union of additional (non-default) result fields reported across the selected runs. */
+/**
+ * The T count a record was configured with, or null when its traceTransform is
+ * not readable. Uses the STRICT parse, not `normalizeTraceTransform`: the
+ * lenient read repairs an unparseable transform to the pipeline defaults, which
+ * is right for "render something coherent" and wrong for "state what this run
+ * was configured with".
+ */
+function configuredTCountPerRotation(transform: unknown): number | null {
+  const parsed = parseTraceTransform(transform);
+  return parsed.ok ? parsed.transform.tStatesPerRotation : null;
+}
+
+/**
+ * Whether the configuration row for T count can speak for every column.
+ *
+ * This is the single predicate deciding both whether that row is emitted and
+ * whether qdk's own `numTsPerRotation` row is suppressed as a duplicate — the
+ * two decisions have to agree or the table shows the field twice or not at all.
+ * `additionalFieldDefinitions` is what the field filter enumerates, so keeping
+ * the dedup THERE rather than in `buildComparisonRows` is also what stops the
+ * filter offering a checkbox that toggles a row nobody renders.
+ */
+function tCountIsConfiguredForEveryColumn(
+  columns: readonly ComparisonColumn[],
+): boolean {
+  return columns.length > 0 && columns.every((c) => c.tCountPerRotation !== null);
+}
+
+/**
+ * The union of additional (non-default) result fields reported across the
+ * selected runs, minus any the configuration rows already cover.
+ *
+ * `numTsPerRotation` is dropped ONLY when the configuration row can state the
+ * value for every column. Where a record's transform does not parse, the
+ * engine-reported metric is the only honest source for that field, so it stays
+ * — otherwise a legacy record would show neither number.
+ */
 export function additionalFieldDefinitions(columns: readonly ComparisonColumn[]): ResultFieldDefinition[] {
   const rows = columns.map((c) => c.row).filter((r): r is FrontierRow => r != null);
-  return getAdditionalFieldDefinitions(rows);
+  const definitions = getAdditionalFieldDefinitions(rows);
+  if (!tCountIsConfiguredForEveryColumn(columns)) return definitions;
+  return definitions.filter((def) => def.key !== "numTsPerRotation");
 }
 
 /** One table row: a result field, with the aligned metric for each column (null = not reported). */
@@ -114,7 +159,13 @@ export function buildComparisonRows(
       })),
       availableOnFailedRun: true,
     },
-    {
+  ];
+
+  // Emitted only when every column can state a configured value — otherwise
+  // `additionalFieldDefinitions` keeps qdk's reported metric and that row does
+  // the job instead. The two are never both present, and never both absent.
+  if (tCountIsConfiguredForEveryColumn(columns)) {
+    configuration.push({
       key: "config.tStatesPerRotation",
       label: T_COUNT_PER_ROTATION_LABEL,
       unitLabel: "T states",
@@ -124,8 +175,8 @@ export function buildComparisonRows(
         display: String(column.tCountPerRotation),
       })),
       availableOnFailedRun: true,
-    },
-  ];
+    });
+  }
 
   const defaults: ComparisonRow[] = DEFAULT_FIELD_DEFINITIONS.map((def) => ({
     key: def.key,
@@ -136,9 +187,6 @@ export function buildComparisonRows(
   }));
 
   const additional: ComparisonRow[] = additionalFieldDefinitions(columns)
-    // The configuration row above already carries the exact submitted value;
-    // avoid a duplicate label when qdk also reports NUM_TS_PER_ROTATION.
-    .filter((def) => def.key !== "numTsPerRotation")
     .filter((def) => !hiddenKeys.has(def.key))
     .map((def) => ({
       key: def.key,

@@ -1,8 +1,11 @@
 import type { IpcMain } from "electron";
 
 import type { CredentialConfigureResult } from "../shared/agentTypes.js";
-import type { CredentialStore } from "./credentialStore.js";
-import type { CredentialValidator } from "./credentialValidator.js";
+import type { CredentialBackendCheck, CredentialStore } from "./credentialStore.js";
+import type {
+  CredentialValidationResult,
+  CredentialValidator,
+} from "./credentialValidator.js";
 import { CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL } from "./ipcChannels.js";
 
 /**
@@ -31,10 +34,38 @@ export function registerCredentialHandlers(
         );
       }
 
-      const backend = store.checkBackend();
+      // `checkBackend` and `validate` both reach outside this process — the OS
+      // key store and the provider's API — and either can throw for reasons
+      // that are not programmer errors: a platform that exposes no backend
+      // probe, a keychain prompt the analyst dismissed, an injected validator
+      // that rejects rather than resolving. A throw here would reject the
+      // channel and strand them with a raw stack instead of a message they can
+      // act on, so both are contained into the same typed failure shape as the
+      // write below.
+      let backend: CredentialBackendCheck;
+      try {
+        backend = store.checkBackend();
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          code: "BACKEND_UNAVAILABLE",
+          message: `The OS key store could not be inspected, so the app will not store a key it cannot promise to encrypt: ${detail}`,
+        };
+      }
       if (!backend.ok) return backend;
 
-      const validation = await validator.validate(apiKey);
+      let validation: CredentialValidationResult;
+      try {
+        validation = await validator.validate(apiKey);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          code: "NETWORK",
+          message: `Could not reach the provider to validate the key: ${detail}`,
+        };
+      }
       if (!validation.ok) return validation;
 
       try {
