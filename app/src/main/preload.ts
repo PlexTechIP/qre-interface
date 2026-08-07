@@ -4,6 +4,7 @@ import type {
   AgentDraftResult,
   AgentProviderStatus,
   AgentService,
+  CredentialConfigureResult,
 } from "../shared/agentTypes.js";
 import type {
   EstimatorService,
@@ -17,7 +18,9 @@ import type {
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
   AGENT_DRAFT_CHANNEL,
+  AGENT_PREVIEW_CHANNEL,
   AGENT_STATUS_CHANNEL,
+  CREDENTIAL_CONFIGURE_CHANNEL,
   ESTIMATOR_RUN_CHANNEL,
   UPLOAD_PREFLIGHT_CHANNEL,
   STORE_DELETE_CHANNEL,
@@ -68,15 +71,26 @@ const uploads = {
   },
 };
 
-// window.agent — the fifth surface. No credential getter: the renderer can
-// only ask getStatus() (a boolean-shaped "is a provider configured") and
-// requestDraft() (which rejects only if that check was skipped).
+// window.agent — the fifth surface. No credential getter: the renderer can ask
+// getStatus() (a boolean-shaped "is a provider configured"), previewRequest()
+// and requestDraft() (which rejects only if the status check was skipped), and
+// hand a key one-way to configureCredential(). Nothing here returns a key, and
+// there is no channel on the other side that could.
 const agent: AgentService = {
   getStatus(): Promise<AgentProviderStatus> {
     return ipcRenderer.invoke(AGENT_STATUS_CHANNEL) as Promise<AgentProviderStatus>;
   },
+  previewRequest(request: AgentDraftRequest): Promise<unknown> {
+    return ipcRenderer.invoke(AGENT_PREVIEW_CHANNEL, request);
+  },
   requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult> {
     return ipcRenderer.invoke(AGENT_DRAFT_CHANNEL, request) as Promise<AgentDraftResult>;
+  },
+  configureCredential(apiKey: string): Promise<CredentialConfigureResult> {
+    return ipcRenderer.invoke(
+      CREDENTIAL_CONFIGURE_CHANNEL,
+      apiKey,
+    ) as Promise<CredentialConfigureResult>;
   },
 };
 

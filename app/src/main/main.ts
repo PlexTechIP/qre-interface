@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerAgentHandlers } from "./agentHandler.js";
+import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
 import { CredentialStore } from "./credentialStore.js";
 import { AnthropicCredentialValidator } from "./credentialValidator.js";
@@ -65,6 +67,11 @@ app.whenReady().then(() => {
   const credentialPath = path.join(app.getPath("userData"), "provider-credential.enc");
   const credentialStore = new CredentialStore(credentialPath, safeStorage);
   registerCredentialHandlers(ipcMain, credentialStore, new AnthropicCredentialValidator());
+
+  // The agent surface reads the key only here, in main, to attach it to an
+  // outbound request. The store is passed whole; the renderer's window.agent
+  // can reach neither `readForRequest` nor the value it returns.
+  registerAgentHandlers(ipcMain, credentialStore, new AnthropicDraftGenerator());
 
   createWindow();
   app.on("activate", () => {

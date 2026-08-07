@@ -56,7 +56,14 @@ model proposes, and presses Run — with the key never leaving the main process.
 - [x] Key stored via **`safeStorage`**, encrypted blob under
       `app.getPath("userData")`
 - [x] **Never** in `run-history.sqlite`, a config JSON, `localStorage`, or
-      renderer memory — grep-checkable
+      renderer memory — grep-checkable, and grepped: `readForRequest` has one
+      non-test call site (`agentHandler.ts`, main process) and is never an IPC
+      return; `apiKey` appears in the renderer only as a local in
+      `ProviderCredentialPanel`'s submit path. **Residual, stated plainly:** the
+      entry field is uncontrolled, so the key is in the DOM node while being
+      typed and is cleared on every submit path — nothing retains it, but
+      "never in renderer memory" is met in spirit, not absolutely. Closing that
+      needs a main-process-owned entry window
 - [x] **`getSelectedStorageBackend()` checked**; on `basic_text` the app refuses
       to store a key and says why
 - [x] **No getter.** The renderer can ask "is a provider configured?" and get a
@@ -77,10 +84,21 @@ model proposes, and presses Run — with the key never leaving the main process.
 ## E. The feature
 
 - [x] Prose in → a **draft `FormState`**, never a stamped `RunConfig`
-- [ ] Every proposed field is visible and editable before anything runs
+- [ ] Every proposed field is visible and editable before anything runs —
+      every field the mapping *carries* is editable in the form, and nothing is
+      silently dropped any more (`slowDownFactor` now refuses like the rest).
+      Still unchecked because six fields Team 3 shipped controls for on
+      2026-08-07 — the two Majorana and two Neutral Atom v1.4.0 fields, Dynamic
+      Memory Compute, Unmemory — are refused rather than mapped. A proposal
+      touching them is rejected whole with a message naming them, so the
+      analyst is never misled; carrying them is follow-up work
 - [x] Nothing runs until the analyst presses the existing Run button — `id` and
       `createdAt` are still stamped only there
-- [x] **The analyst sees exactly what will be sent, before it is sent**
+- [x] **The analyst sees exactly what will be sent, before it is sent** — the
+      review panel renders the literal request body read back from the process
+      that sends it (`agent:preview`), not a renderer-side reconstruction, so
+      it cannot drift from the real payload. The key travels as a header and is
+      absent from that body by construction
 - [x] A **permanent, visible indicator** of whether networked features are on and
       which provider they point at
 - [x] Model-assisted runs carry the v1.4.0 **provenance** value
@@ -90,19 +108,21 @@ model proposes, and presses Run — with the key never leaving the main process.
 - [ ] **With no provider configured and no network**, configuration, execution,
       history, comparison, and export all still work — demonstrated, not asserted.
       Static audit passes (no agent/credential import anywhere in the core
-      config→run→history→export path); still needs a live click-through before
-      Section H, not just this read
+      config→run→history→export path) and the full suite is green with no
+      credential present. Still unchecked because "demonstrated" means a live
+      click-through of the packaged app, which has not been done
 - [x] No key, prompt, or provider response is ever written to
       `run-history.sqlite` — `RunProvenance` is `{authoredBy, model?}` only
       (`shared/types.ts:413-417`), the key lives in a separate encrypted file
       never touching the sqlite path, and `SqliteRunStore.save()` serializes
       only `RunRecord`
 - [x] The feature is removable — nothing in the core path depends on it
-      existing. `window.agent` is optional-typed and unimported by
-      `useRunFlow.ts` / `toRunConfig.ts` / `RunConfiguration.tsx`. Note:
-      `main.ts` doesn't call `registerAgentHandlers` yet (no `DraftGenerator`
-      chosen), so this is currently true by omission — revisit once the
-      provider adapter lands
+      existing. `window.agent` is optional-typed, and no file under
+      `renderer/state`, `renderer/history`, `renderer/results` or
+      `renderer/components` imports agent code (grep-verified). This is no
+      longer true merely by omission: `main.ts` now calls
+      `registerAgentHandlers` with a real `AnthropicDraftGenerator`, and the
+      core path is still agent-free with the feature fully wired
 
 ## G. The renames on your surfaces
 

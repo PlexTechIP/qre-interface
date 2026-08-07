@@ -134,8 +134,19 @@ export type CredentialConfigureResult =
   | { ok: true }
   | { ok: false; code: AgentDraftFailureCode | CredentialStorageFailureCode; message: string };
 
-/** Renderer-facing seam. It intentionally has no credential getter. */
+/**
+ * Renderer-facing seam. It intentionally has no credential getter.
+ *
+ * `configureCredential` is one-way by design: a key can be handed to the main
+ * process and never asked for again. That asymmetry — a setter with no
+ * matching getter — is the point of putting the key in main at all, and it is
+ * why credential entry stayed on this surface instead of becoming a sixth one:
+ * a `window.credentials` object invites someone to add `get()` to it later.
+ */
 export interface AgentService {
   getStatus(): Promise<AgentProviderStatus>;
+  /** The exact request body `requestDraft` would send. Carries no credential. */
+  previewRequest(request: AgentDraftRequest): Promise<unknown>;
   requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult>;
+  configureCredential(apiKey: string): Promise<CredentialConfigureResult>;
 }

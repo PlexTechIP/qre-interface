@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentDraftResult, AgentProviderStatus } from "../shared/agentTypes.js";
 import { registerAgentHandlers, type DraftGenerator } from "./agentHandler.js";
 import type { CredentialStore } from "./credentialStore.js";
-import { AGENT_DRAFT_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
+import {
+  AGENT_DRAFT_CHANNEL,
+  AGENT_PREVIEW_CHANNEL,
+  AGENT_STATUS_CHANNEL,
+} from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
@@ -31,6 +35,7 @@ function setup(options: {
   const generator: DraftGenerator = {
     provider: "Test Provider",
     model: "test-model",
+    buildRequestBody: vi.fn((prompt: string) => ({ model: "test-model", prompt })),
     // The return annotation is load-bearing: without it `ok: true` widens to
     // `ok: boolean` and no longer narrows against AgentDraftResult.
     requestDraft: vi.fn(
@@ -58,10 +63,10 @@ function setup(options: {
 }
 
 describe("registerAgentHandlers", () => {
-  it("registers exactly the status and draft channels", () => {
+  it("registers exactly the status, preview and draft channels", () => {
     const { handlers } = setup();
     expect([...handlers.keys()].sort()).toEqual(
-      [AGENT_DRAFT_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
+      [AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
     );
   });
 
@@ -88,6 +93,35 @@ describe("registerAgentHandlers", () => {
       model: "test-model",
       mode: "provider",
     });
+  });
+
+  it("preview returns the outbound body without touching the credential", async () => {
+    const { invoke, generator, credentialStore } = setup({
+      hasCredential: true,
+      storedKey: "sk-ant-key",
+    });
+
+    const body = await invoke(AGENT_PREVIEW_CHANNEL, {
+      prompt: "estimate Grover search",
+      generationSchema: "runconfig-generation-v1.4.0",
+    });
+
+    expect(generator.buildRequestBody).toHaveBeenCalledWith("estimate Grover search");
+    expect(body).toEqual({ model: "test-model", prompt: "estimate Grover search" });
+    // The preview is rendered to the analyst, so it must never be built from
+    // anything that required decrypting the key.
+    expect(credentialStore.readForRequest).not.toHaveBeenCalled();
+  });
+
+  it("preview works before a credential exists, so the feature can be inspected first", async () => {
+    const { invoke } = setup({ hasCredential: false });
+
+    await expect(
+      invoke(AGENT_PREVIEW_CHANNEL, {
+        prompt: "estimate something",
+        generationSchema: "runconfig-generation-v1.4.0",
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("draft rejects when no credential is configured — the one programmer error", async () => {

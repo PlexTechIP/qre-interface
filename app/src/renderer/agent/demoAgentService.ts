@@ -3,6 +3,7 @@ import type {
   AgentDraftResult,
   AgentProviderStatus,
   AgentService,
+  CredentialConfigureResult,
   GeneratedRunDraft,
 } from "../../shared/agentTypes";
 
@@ -58,12 +59,27 @@ export const demoAgentService: AgentService = {
     };
   },
 
+  /** Nothing is sent, so the honest preview is the prompt and nothing else. */
+  async previewRequest(request: AgentDraftRequest): Promise<unknown> {
+    return { mode: "local_demo", note: "No request leaves this machine.", ...request };
+  },
+
   async requestDraft(_request: AgentDraftRequest): Promise<AgentDraftResult> {
     return {
       ok: true,
       draft: structuredClone(DEMO_DRAFT),
       provider: "Local demo",
       model: "deterministic fixture",
+    };
+  },
+
+  /** There is no store behind the demo, so accepting a key would be a lie. */
+  async configureCredential(): Promise<CredentialConfigureResult> {
+    return {
+      ok: false,
+      code: "BACKEND_UNAVAILABLE",
+      message:
+        "The offline demo has no credential store. Run the packaged app to configure a provider.",
     };
   },
 };

@@ -23,3 +23,7 @@ export const CREDENTIAL_CONFIGURE_CHANNEL = "credential:configure";
 // programmer error rejects). See agentHandler.ts.
 export const AGENT_STATUS_CHANNEL = "agent:status";
 export const AGENT_DRAFT_CHANNEL = "agent:draft";
+// The exact outbound request body, credential-free, so the analyst can read
+// what will leave the machine before it does (brief constraint 8). Returning a
+// summary here instead would make the UI's "exact outbound request" a lie.
+export const AGENT_PREVIEW_CHANNEL = "agent:preview";

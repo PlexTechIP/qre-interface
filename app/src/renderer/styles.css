@@ -1277,9 +1277,35 @@ select {
 }
 
 .agent-prompt:focus-visible,
+.agent-credential-input:focus-visible,
 .agent-secondary:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
+}
+
+.agent-credential-form {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-credential-input {
+  width: 100%;
+  max-width: 460px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 9px;
+  padding: 10px 14px;
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  font: inherit;
+  /* The key is a long opaque token — a monospace field makes a truncated or
+     doubled paste visible before it is submitted. */
+  font-family: var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.02em;
+}
+
+.agent-success {
+  color: var(--color-success-text, var(--color-body));
+  font-size: 13px;
 }
 
 .agent-note {

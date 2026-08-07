@@ -80,6 +80,14 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  // Provider status drives the permanent header indicator, so it is re-read
+  // on mount and again whenever a key is stored — the indicator would
+  // otherwise keep claiming "off" until the next launch.
+  const [agentStatusToken, setAgentStatusToken] = useState(0);
+  const refreshAgentStatus = useCallback(() => {
+    setAgentStatusToken((token) => token + 1);
+  }, []);
+
   useEffect(() => {
     let current = true;
     void resolvedAgentService.getStatus().then(
@@ -93,7 +101,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     return () => {
       current = false;
     };
-  }, [resolvedAgentService]);
+  }, [resolvedAgentService, agentStatusToken]);
 
   const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
     setDraftHandoff(null);
@@ -202,6 +210,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             <AgentInterface
               service={resolvedAgentService}
               status={agentStatus}
+              onCredentialConfigured={refreshAgentStatus}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);
                 setDraftHandoff(handoff);

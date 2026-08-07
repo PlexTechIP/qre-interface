@@ -6,16 +6,26 @@ import type {
   AgentProviderStatus,
 } from "../shared/agentTypes.js";
 import type { CredentialStore } from "./credentialStore.js";
-import { AGENT_DRAFT_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
+import {
+  AGENT_DRAFT_CHANNEL,
+  AGENT_PREVIEW_CHANNEL,
+  AGENT_STATUS_CHANNEL,
+} from "./ipcChannels.js";
 
 /**
  * What actually calls the provider. Injected so this handler owns only the
  * IPC surface and the resolve/reject convention — which provider, which
  * model, and how the request is made is a separate decision.
+ *
+ * `buildRequestBody` exists so the renderer can render the outbound envelope
+ * before it is sent. It takes no credential and must not return one: the
+ * preview is shown to the analyst, and the analyst is exactly who must never
+ * be able to read the key back.
  */
 export interface DraftGenerator {
   readonly provider: string;
   readonly model: string;
+  buildRequestBody(prompt: string): unknown;
   requestDraft(apiKey: string, prompt: string): Promise<AgentDraftResult>;
 }
 
@@ -57,6 +67,15 @@ export function registerAgentHandlers(
       mode: "provider",
     };
   });
+
+  // Read-only and credential-free: what the request WOULD be. Deliberately
+  // not gated on a configured credential — the analyst is entitled to see what
+  // this feature would transmit before deciding to enable it at all.
+  ipcMain.handle(
+    AGENT_PREVIEW_CHANNEL,
+    (_event, request: AgentDraftRequest): unknown =>
+      generator.buildRequestBody(request.prompt),
+  );
 
   ipcMain.handle(
     AGENT_DRAFT_CHANNEL,

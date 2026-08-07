@@ -51,9 +51,18 @@ describe("AgentInterface", () => {
       provider: status.provider,
       model: status.model,
     }));
+    // The preview is whatever the main process says it will send — the UI
+    // renders it verbatim rather than reconstructing the payload itself.
+    const previewRequest = vi.fn(async (request: AgentDraftRequest) => ({
+      model: "claude-opus-5",
+      messages: [{ role: "user", content: request.prompt }],
+      generationSchema: request.generationSchema,
+    }));
     const service: AgentService = {
       getStatus: async () => status,
+      previewRequest,
       requestDraft,
+      configureCredential: async () => ({ ok: true as const }),
     };
     const onReviewDraft = vi.fn();
     render(
@@ -61,6 +70,7 @@ describe("AgentInterface", () => {
         service={service}
         status={status}
         onReviewDraft={onReviewDraft}
+        onCredentialConfigured={vi.fn()}
       />,
     );
 
@@ -73,6 +83,12 @@ describe("AgentInterface", () => {
     );
 
     expect(requestDraft).not.toHaveBeenCalled();
+    // Reviewing reads the real body back; it does not send anything.
+    expect(previewRequest).toHaveBeenCalledWith({
+      prompt: "Estimate a 24-qubit Grover search",
+      generationSchema: "runconfig-generation-v1.4.0",
+    });
+
     const review = screen
       .getByRole("heading", { name: "Exact outbound request" })
       .closest<HTMLElement>(".agent-review");
@@ -84,6 +100,9 @@ describe("AgentInterface", () => {
     expect(
       within(review).getByText(/runconfig-generation-v1.4.0/),
     ).toBeVisible();
+    // What's on screen is the payload the sender produced, so the panel's
+    // claim survives a change to how the request is built.
+    expect(within(review).getByText(/claude-opus-5/)).toBeVisible();
 
     await userEvent.click(
       screen.getByRole("button", { name: "Send and create draft" }),

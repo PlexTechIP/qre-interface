@@ -6,30 +6,48 @@ import type {
   AgentService,
 } from "../../shared/agentTypes";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
+import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
 
 interface AgentInterfaceProps {
   service: AgentService;
   status: AgentProviderStatus;
   onReviewDraft: (handoff: DraftHandoff) => void;
+  /** Re-read provider status once a key is stored. */
+  onCredentialConfigured: () => void;
 }
 
 export function AgentInterface({
   service,
   status,
   onReviewDraft,
+  onCredentialConfigured,
 }: AgentInterfaceProps): React.JSX.Element {
   const [prompt, setPrompt] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // The literal body the main process would send, fetched when review begins.
+  // Null until then: rendering a hand-assembled guess of the payload would
+  // defeat the point of showing it at all.
+  const [outboundPreview, setOutboundPreview] = useState<unknown>(null);
   const request = useMemo<AgentDraftRequest>(
     () => ({ prompt, generationSchema: "runconfig-generation-v1.4.0" }),
     [prompt],
   );
 
-  const beginReview = (): void => {
+  const beginReview = async (): Promise<void> => {
     setMessage(null);
-    setReviewing(true);
+    try {
+      setOutboundPreview(await service.previewRequest(request));
+      setReviewing(true);
+    } catch (error) {
+      // Refuse to advance rather than send something we couldn't show first.
+      setMessage(
+        `Could not read the outbound request, so nothing was sent: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   };
 
   const send = async (): Promise<void> => {
@@ -67,6 +85,12 @@ export function AgentInterface({
         </p>
       </header>
 
+      <ProviderCredentialPanel
+        service={service}
+        status={status}
+        onConfigured={onCredentialConfigured}
+      />
+
       <section className="agent-card" aria-labelledby="agent-prompt-heading">
         <div className="agent-card__heading">
           <div>
@@ -99,8 +123,7 @@ export function AgentInterface({
 
         {status.mode === "local_demo" ? (
           <p className="agent-note">
-            This branch is using a deterministic local fixture while the real
-            provider/preload work is developed independently. No network request
+            Running against a deterministic local fixture. No network request
             will occur.
           </p>
         ) : null}
@@ -110,7 +133,7 @@ export function AgentInterface({
             type="button"
             className="run-button agent-primary"
             disabled={!status.available || prompt.trim().length === 0}
-            onClick={beginReview}
+            onClick={() => void beginReview()}
           >
             Review request
           </button>
@@ -118,9 +141,13 @@ export function AgentInterface({
           <div className="agent-review" aria-labelledby="agent-review-heading">
             <div>
               <h3 id="agent-review-heading">Exact outbound request</h3>
-              <p>This complete payload will be sent only after you confirm.</p>
+              <p>
+                This is the complete request body, read back from the process
+                that would send it. Your key travels as a header and is not part
+                of it. Nothing is sent until you confirm.
+              </p>
             </div>
-            <pre>{JSON.stringify(request, null, 2)}</pre>
+            <pre>{JSON.stringify(outboundPreview, null, 2)}</pre>
             <div className="agent-actions">
               <button
                 type="button"
