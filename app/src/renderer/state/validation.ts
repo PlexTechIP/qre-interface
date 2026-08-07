@@ -41,9 +41,10 @@ export interface FieldErrors {
   maxAcceleration?: string;
   surfaceCodeOneQubitTimeFactor?: string;
   surfaceCodeTwoQubitTimeFactor?: string;
-  /** v1.4.0 Majorana optional; also covers Neutral Atom's, since only one
-   *  architecture is active at a time. */
+  /** v1.4.0, Majorana only — Neutral Atom has no T error rate. */
   tErrorRate?: string;
+  /** v1.4.0. ONE key for both architectures' Target Year: only one architecture
+   *  is active at a time, so the two can never need distinct errors at once. */
   targetYear?: string;
   /** v1.4.0 Neutral Atom. */
   dataQubitSpacing?: string;

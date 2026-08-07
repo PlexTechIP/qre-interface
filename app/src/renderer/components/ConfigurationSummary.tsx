@@ -33,6 +33,25 @@ function errorRateSummary(arch: FormState["architecture"]): string {
 }
 
 /**
+ * The pipeline the draft would run, described from what the serializer would
+ * actually emit — so this row and the engine can never disagree.
+ *
+ * `buildTraceTransform` returns null in exactly one case: stage 0 enabled with
+ * no capacity entered. This row used to fall back to a hand-copied
+ * three-field object in that case, which rendered "PSSPC → Lattice Surgery" —
+ * byte-identical to what it shows with the stage OFF. So the one place the
+ * analyst reads back what will run silently dropped a stage they could see
+ * switched on. Say the run is not ready instead; ValidationSummary names the
+ * field to fix.
+ */
+function traceTransformSummary(transform: FormState["traceTransform"]): string {
+  const built = buildTraceTransform(transform);
+  return built === null
+    ? "Dynamic Memory Compute is on but incomplete — enter a compute capacity"
+    : describeTraceTransform(built);
+}
+
+/**
  * Read-only configuration summary — a horizontal grid of the draft's key facts,
  * rendered at the bottom of the form. The run name lives in its own control
  * beneath this (see RunNameSection), so it is not repeated here.
@@ -53,16 +72,8 @@ export function ConfigurationSummary({
     },
     {
       // Every stage present, not a single name: the old row read as a selection.
-      // A half-entered stage 0 serializes to null, and the summary then shows
-      // the two always-on stages rather than claiming a stage that won't run.
       label: "Trace Transform",
-      value: describeTraceTransform(
-        buildTraceTransform(state.traceTransform) ?? {
-          tStatesPerRotation: state.traceTransform.tStatesPerRotation,
-          ccxMagicStates: state.traceTransform.ccxMagicStates,
-          slowDownFactor: state.traceTransform.slowDownFactor,
-        },
-      ),
+      value: traceTransformSummary(state.traceTransform),
     },
     { label: "Error Rate", value: errorRateSummary(state.architecture) },
     {

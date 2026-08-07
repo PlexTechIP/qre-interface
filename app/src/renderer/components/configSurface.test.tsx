@@ -20,6 +20,7 @@ import {
   type FormState,
   type TraceTransformForm,
 } from "../state/formState";
+import { ConfigurationSummary } from "./ConfigurationSummary";
 import { MicroArchitectureSection } from "./MicroArchitectureSection";
 
 afterEach(cleanup);
@@ -104,15 +105,34 @@ describe("One factory control with five options", () => {
     ).toBeInTheDocument();
   });
 
-  it("gives every unavailable option a visible reason", async () => {
-    const user = userEvent.setup();
+  it("gives every unavailable option a visible reason", () => {
     const state = createInitialFormState();
     state.architecture.type = "majorana";
     renderSection({ architecture: state.architecture });
 
-    expect(factoryBox(/magic up-to-clifford/i)).toBeDisabled();
+    const boxes = within(factoryGroup()).getAllByRole("checkbox");
+    const disabled = boxes.filter((box) => (box as HTMLInputElement).disabled);
+    // Majorana rules out Litinski19, GSJ24 and Magic Up-to-Clifford outright and
+    // holds Round-Based as the last primary standing, so the sweep below is not
+    // running over an empty list.
+    expect(disabled.map((box) => box.id)).toHaveLength(4);
+
+    // The invariant stated once, for all of them: a greyed-out box with no
+    // explanation is its own bug, and these rules are not guessable from the
+    // screen. Asserting only Magic Up-to-Clifford's reason let the other three
+    // lose theirs silently.
+    const missingReason = disabled
+      .filter(
+        (box) =>
+          !box.closest(".checkbox-field")?.querySelector(".checkbox-field__reason"),
+      )
+      .map((box) => box.id);
+    expect(missingReason).toEqual([]);
+
+    // And the wording is per-rule, not one copy-pasted sentence.
     expect(screen.getByText(/not compatible with majorana/i)).toBeInTheDocument();
-    await user.click(factoryBox(/^gsj24$/i)).catch(() => undefined);
+    expect(screen.getByText(/at least one of round-based/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/needs superconducting/i)).toHaveLength(2);
   });
 
   it("keeps GSJ24 CCX bound to CCX Magic States in both directions", async () => {
@@ -300,10 +320,71 @@ describe("Tooltips are reachable and associated with the control", () => {
     expect(trigger).toHaveFocus();
   });
 
+  /**
+   * The case the click test above cannot see. WCAG 2.1 SC 1.4.13 requires
+   * dismissal without moving pointer hover OR focus, and a hover-opened bubble
+   * has focus nowhere near the trigger — so a keydown handler ON the trigger
+   * never fires and the pointer user's only exit was to move the mouse. The
+   * listener sits on the document while open instead.
+   */
+  it("dismisses on Escape when the bubble was opened by hover, not focus", async () => {
+    const user = userEvent.setup();
+    renderSection();
+    const trigger = screen.getByRole("button", { name: /QEC Code definition/i });
+
+    await user.hover(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(trigger).not.toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("does not fold the trigger into a checkbox's accessible name", () => {
     renderSection();
     // A tooltip trigger nested inside a <label> would make this announce as
     // "Litinski19 Litinski19 definition".
     expect(factoryBox(/^Litinski19$/)).toBeInTheDocument();
+  });
+});
+
+describe("The summary reads back the pipeline the run would actually use", () => {
+  const renderSummary = (traceTransform: TraceTransformForm): void => {
+    render(
+      <ConfigurationSummary
+        state={{ ...createInitialFormState(), traceTransform }}
+        generatedName="draft"
+        qreVersion="qdk-qre-v1-fixture"
+      />,
+    );
+  };
+
+  const withStage0 = (
+    computeCapacityPercentage: number | null,
+  ): TraceTransformForm => ({
+    ...createInitialFormState().traceTransform,
+    dynamicMemoryCompute: {
+      computeCapacityPercentage,
+      evictionStrategy: "least_recently_used",
+    },
+  });
+
+  it("names stage 0 in the pipeline when it is on and complete", () => {
+    renderSummary(withStage0(0.5));
+
+    expect(
+      screen.getByText(/Dynamic Memory Compute → PSSPC → Lattice Surgery/),
+    ).toBeInTheDocument();
+  });
+
+  it("says stage 0 is incomplete rather than describing a two-stage run", () => {
+    renderSummary(withStage0(null));
+
+    // This row is the one place the analyst reads back what will run. It used
+    // to fall back to "PSSPC → Lattice Surgery" here — byte-identical to what
+    // it shows with the stage OFF — so a stage they could see switched on
+    // vanished silently.
+    expect(screen.getByText(/enter a compute capacity/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^PSSPC → Lattice Surgery/)).not.toBeInTheDocument();
   });
 });

@@ -540,15 +540,16 @@ resource requirements.*
 
 The control is present but disabled, and the field is recorded on `RunConfig`.
 
-> ✅ **CLOSED 2026-08-06 — wired first, then measured.** This block used to warn
-> that `memoryOptimization` reached **no** engine file, so the "identical
+> 🟡 **PARTLY CLOSED 2026-08-06; wording corrected 2026-08-07.** This block used
+> to warn that `memoryOptimization` reached **no** engine file, so the "identical
 > estimates" result was evidence the yoked codes were never *sent* rather than
-> evidence they do nothing. That has been acted on rather than restated.
+> evidence they do nothing. That half has been acted on.
 >
 > The field now flows `QreInvocation` → `configToInvocation` → `build_isa_query`,
 > layered as `query * TwoDimensionalYokedSurfaceCode.q()` after the factories,
 > with `resolve_yoked_code` raising a named `ValueError` rather than a bare
-> `KeyError`. The old `not.toContain("memoryOptimization")` assertion was
+> `KeyError`, and `configToInvocation` refusing an out-of-contract id with
+> INVALID_CONFIG. The old `not.toContain("memoryOptimization")` assertion was
 > **inverted in the same change**.
 >
 > **Measured on qdk 1.30.0, Ising Model (2D) 3×3:**
@@ -561,14 +562,26 @@ The control is present but disabled, and the field is recorded on `RunConfig`.
 > | + `yoked_2d` | 256 | 1,852,200 |
 >
 > Dynamic Memory Compute moves the estimate; the yoked codes do not move it,
-> **with or without** the memory demand DMC supplies. The reasoning below is now
-> *tested* rather than assumed — measured on 1.30.0 with DynamicMemoryCompute
-> enabled and the yoked code actually in the ISA query. The control stays
-> disabled and labelled unavailable, now for a demonstrated reason.
+> **with or without** the memory demand DMC supplies.
+>
+> ⚠️ **That is *consistent with* the yoked codes being inert; it does not prove
+> it** — and this block claimed otherwise for a day. An unchanged estimate has a
+> second explanation: `query * YokedSurfaceCode.q()` may not put the code
+> anywhere qdk applies, since `build_qec` has already fixed the QEC by the time
+> the yoked transform is multiplied in after the factories. A null result gives
+> the same numbers under either explanation, and the source graph cannot
+> arbitrate it either — an applied-but-unused ISATransform contributes no node.
+>
+> **§G's "prove it is actually in the query" is therefore still open.** What
+> landed proves the id reaches the invocation JSON, not the ISA qdk executes;
+> settling it needs someone to introspect the query object on a machine with the
+> qdk venv. Until then the control stays disabled and labelled unavailable — the
+> right outcome under either explanation — and the copy reads "consistent with"
+> everywhere it appears.
 >
 > Pinned by `memoryOptimization.test.ts`, which also guards the premise: if DMC
 > ever stops moving the estimate the comparison becomes vacuous, and that test
-> fails rather than continuing to report "inert".
+> fails rather than continuing to report no change.
 
 **The reasoning for why they were expected to be inert still stands**, and is
 worth keeping: the yoked codes *provide* a `MEMORY` instruction, and nothing in

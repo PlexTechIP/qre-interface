@@ -53,8 +53,7 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
 
 /**
  * Memory Optimization is recorded on the config, REACHES the estimator as of
- * week 5, and still does not move an estimate. That last clause is now a
- * measurement rather than an assumption, which is the whole point of this file.
+ * week 5, and still does not move an estimate.
  *
  * The yoked codes are ISATransforms that PROVIDE a MEMORY instruction. MEMORY
  * demand comes only from READ_FROM_MEMORY / WRITE_TO_MEMORY trace gates, which
@@ -86,12 +85,28 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
  * | + yoked_2d                     | 256             | 1,852,200    |
  *
  * Dynamic Memory Compute moves the estimate; the yoked code does not move it,
- * with or without DMC. So the reasoning this file has always carried is now
- * TESTED: measured on 1.30.0 with DynamicMemoryCompute enabled and the yoked
- * code actually in the ISA query.
+ * with or without DMC.
  *
- * The control therefore stays disabled and labelled unavailable — but for a
- * reason that has been demonstrated rather than inferred.
+ * ## ⚠️ What this file does NOT establish — §G's remaining step
+ *
+ * An unchanged estimate has TWO explanations, and nothing here separates them:
+ *
+ *   1. The yoked codes are inert on this workload — the conclusion we want.
+ *   2. `query * YokedSurfaceCode.q()` does not put them anywhere qdk applies.
+ *      `build_qec` has already fixed the code by the time the yoked transform is
+ *      multiplied in after the factories, so (2) is not a remote possibility.
+ *
+ * The assertions below prove the id reaches the invocation JSON. They do NOT
+ * prove it reaches the ISA qdk executes, which is what §G's "prove it is
+ * actually in the query" asks for — and a null result cannot substitute, because
+ * (2) predicts the same null. Nor can the source graph settle it: an applied-
+ * but-unused ISATransform legitimately contributes no node.
+ *
+ * So the claim this file supports is "consistent with inert", not "measured, not
+ * assumed". The control stays disabled either way — a control that changes
+ * nothing is worse than one that says why — but the wording in the UI, in
+ * features-and-fields.md and in the checklist says "consistent with" until
+ * someone introspects the query object on a machine with the qdk venv.
  */
 /**
  * The frontier with `evaluationTime` dropped. That field is how long the
@@ -156,7 +171,10 @@ describe("Memory Optimization reaches the estimator", () => {
   });
 });
 
-describe("Memory Optimization is inert — measured, not assumed", () => {
+// NOT "is inert — measured, not assumed". These tests establish that the
+// estimate does not move; see the header for why that is consistent with
+// inertness rather than proof of it.
+describe("Memory Optimization leaves the estimate unchanged", () => {
   it("produces an identical estimate whether set or not", async () => {
     const engine = new QreEngine(PYTHON_BIN);
     const plain = await engine.run(config());
@@ -178,13 +196,15 @@ describe("Memory Optimization is inert — measured, not assumed", () => {
   /**
    * THE test this file exists for. Dynamic Memory Compute is what emits the
    * READ_FROM_MEMORY / WRITE_TO_MEMORY demand the yoked codes supply, so this
-   * is the only configuration in which "no change" means anything at all.
+   * is the only configuration in which "no change" carries any information at
+   * all — and even here it only narrows the answer, it does not settle it
+   * (header, "What this file does NOT establish").
    *
    * Measured on qdk 1.30.0: DMC alone moves Ising Model (2D) 3x3 from
    * 477 qubits / 1,363,950 ns to 256 / 1,852,200; adding the yoked code on top
    * leaves it at 256 / 1,852,200.
    */
-  it("stays inert even with Dynamic Memory Compute supplying MEMORY demand", async () => {
+  it("does not move the estimate even with Dynamic Memory Compute supplying MEMORY demand", async () => {
     const engine = new QreEngine(PYTHON_BIN);
     const dmcOnly = await engine.run(withDynamicMemoryCompute(config()));
     const dmcYoked = await engine.run(withDynamicMemoryCompute(config("yoked_2d")));

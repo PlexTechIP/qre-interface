@@ -24,20 +24,48 @@ before §A–§C. Say so in the channel rather than deciding silently.
 
 > ## Status — completed 2026-08-06 on `week-4/team-3` (PR #19)
 >
-> §B–§G are done and verified: `npm run typecheck`, `npm test` (41 files / 477
-> tests) and `npm run test:engine` (19 files / 187 tests) are all green.
+> §B–§G are done and verified: `npm run typecheck`, `npm test` and
+> `npm run test:engine` are all green.
 >
-> **The twelve items still unchecked below, and why:**
+> **The items still unchecked below, and why:**
 >
 > | Item | Why it is open |
 > |---|---|
 > | §A channel go-ahead · §B Team 2 rename confirmation | Channel coordination, not repo work |
 > | §E "Proof it works from the UI" | Proven through the serializer and the engine — `buildTraceTransform` → `estimate.py` — and the numbers move (477 q / 1,363,950 ns → 256 / 1,852,200). **Not** yet driven by clicking the running app; that is the one verification step left |
 > | §E halfway gate | Overtaken — the stage landed working |
-> | §G "If it moves" | It does **not** move. See §G's "if it doesn't" branch, which is checked, and the measurement table in `features-and-fields.md` |
+> | §G "Prove it is actually in the query" | **Re-opened 2026-08-07.** What landed proves the id reaches the invocation JSON, not the ISA qdk executes. Needs a machine with the qdk venv to introspect the query object — see below |
+> | §G "If it moves" / "If it doesn't" | The estimate does **not** move, but that is *consistent with* inert rather than proof of it while the item above is open. Both branches stay unchecked |
 > | §H clean-environment setup run · architecture-doc reader · Google Doc mirror | Need a second machine and a second human; cannot be done from the repo |
 > | §I Figma visual pass · acceptance walkthrough | Need the running app in front of a person |
 > | §I merged to `main` | The PR is ready; merging is the PM's call |
+>
+> ### Review follow-ups applied 2026-08-07
+>
+> A code review of this branch found fourteen defects; all are fixed on it. The
+> two worth knowing about before merge:
+>
+> 1. **§G was over-claimed.** "Measured, not assumed" was shipped in the Memory
+>    Optimization help text, in `features-and-fields.md` and in this file, on
+>    evidence that does not support it: an unchanged estimate is equally
+>    predicted by the yoked code never landing in the query at all, since
+>    `build_qec` fixes the QEC before the yoked transform is multiplied in after
+>    the factories. All three now read "consistent with", and the checklist item
+>    is re-opened above. **This is the one thing to finish before the claim can
+>    be made again.**
+> 2. **The §B renames were half-applied.** `resultFields.ts` still said "Max
+>    Error" and "T States / Rotation", so the app showed two names for each
+>    field. Now renamed there too — display only, contract ids untouched. This
+>    overlaps Team 2's Results/History/Comparison territory: flag it in the
+>    channel rather than letting both halves land twice.
+>
+> The rest were local: an unvalidated `memoryOptimization` reaching Python, a
+> tooltip that could not be dismissed by keyboard once opened by hover, dangling
+> `aria-describedby` targets, an ungreyed disabled Unmemory switch, a misplaced
+> `aria-describedby` on `RadioGroup`, dead copy and dead components, and one
+> assertion-free test. `MaxErrorSection.tsx` and its test are **deleted** — §B
+> called it out as imported by nothing, and it had been kept in step with the
+> live control by hand.
 >
 > **Branch note:** this work is on `week-4/team-3` (PR #19) rather than a fresh
 > `week-5/team-3`, at the PM's explicit instruction, with local `main` merged in
@@ -68,7 +96,10 @@ before §A–§C. Say so in the channel rather than deciding silently.
       `tStatesPerRotation`, `max_error`, `num_ts_per_rotation`. Grep-check
 - [x] **You renamed the live control, not the dead one.** The Max Error slider
       lives in `MicroArchitectureSection.tsx`; `MaxErrorSection.tsx` is imported
-      by nothing. Verify with `grep -rn "MaxErrorSection" app/src`
+      by nothing. Verify with `grep -rn "MaxErrorSection" app/src`.
+      **2026-08-07:** the rename was applied to *both*, which is how a dead
+      component stays looking alive. `MaxErrorSection.tsx` and its test are now
+      deleted; the grep returns nothing outside these docs
 - [x] `ConfigurationSummary.tsx` and `constants/labels.ts` updated to match
 - [ ] **Team 2 owns the same rename on Results / History / Comparison / export** —
       confirm in the channel that both halves are landing this week
@@ -204,15 +235,26 @@ before §A–§C. Say so in the channel rather than deciding silently.
       `query = query * TwoDimensionalYokedSurfaceCode.q()`. Verified on qdk
       1.30.0: `OneDimensionalYokedSurfaceCode` and
       `TwoDimensionalYokedSurfaceCode`, both exposing `.q()`
-- [x] **Prove it is actually in the query** before trusting any estimate — the
+- [ ] **Prove it is actually in the query** before trusting any estimate — the
       existing `expect(...).not.toContain("memoryOptimization")` assertion must
-      now be inverted, deliberately, in the same commit
+      now be inverted, deliberately, in the same commit.
+      **Re-opened 2026-08-07.** The inversion landed, but it asserts on the
+      *invocation JSON*, which is one layer short of what this item asks for. The
+      remaining step is to introspect the object `build_isa_query` returns, with
+      and without `memory_optimization`, and show the yoked code is in it —
+      needs a machine with the qdk venv
 - [x] **Then** measure: with Dynamic Memory Compute enabled, run a yoked surface
       code and record whether the estimate moves
 - [ ] **If it moves:** re-enable the control, conditioned on stage 0 being on
-- [x] **If it doesn't:** the explanation finally becomes *tested* rather than
+- [ ] **If it doesn't:** the explanation finally becomes *tested* rather than
       assumed — say "measured on 1.30.0 with DynamicMemoryCompute enabled and the
-      yoked code actually in the ISA query"
+      yoked code actually in the ISA query".
+      **Unchecked again 2026-08-07:** that sentence was shipped, and its last
+      clause is the part not established — see the item above. The estimate does
+      not move, which is *consistent with* inertness; the copy in
+      `MicroArchitectureSection.tsx`, `memoryOptimization.test.ts` and
+      `features-and-fields.md` now says exactly that and no more. Check this box
+      when the query-level proof lands
 - [x] Either way the measurement lands in `memoryOptimization.test.ts`. Its
       DynamicMemoryCompute comment **has already been corrected** — the file now
       states DMC *is* in the pipeline as of v1.4.0. The `not.toContain` assertion
