@@ -34,8 +34,8 @@ before §A–§C. Say so in the channel rather than deciding silently.
 > | §A channel go-ahead · §B Team 2 rename confirmation | Channel coordination, not repo work |
 > | §E "Proof it works from the UI" | Proven through the serializer and the engine — `buildTraceTransform` → `estimate.py` — and the numbers move (477 q / 1,363,950 ns → 256 / 1,852,200). **Not** yet driven by clicking the running app; that is the one verification step left |
 > | §E halfway gate | Overtaken — the stage landed working |
-> | §G "Prove it is actually in the query" | **Re-opened 2026-08-07.** What landed proves the id reaches the invocation JSON, not the ISA qdk executes. Needs a machine with the qdk venv to introspect the query object — see below |
-> | §G "If it moves" / "If it doesn't" | The estimate does **not** move, but that is *consistent with* inert rather than proof of it while the item above is open. Both branches stay unchecked |
+> | §G "Prove it is actually in the query" | **Done 2026-08-07** — the query objects were introspected on the qdk venv. The yoked transform IS in the `_ProductNode` (`repr` 419 → 544 chars, contains "Yoked", 1D ≠ 2D), so it is not dropped at construction |
+> | §G "If it moves" / "If it doesn't" | Still unchecked, and now for a *better* reason. `Yoked2D × factories` (substituted as the QEC) returns **no feasible point**, while `× Yoked2D` layered after the factories is bit-identical — so the codes are not globally inert, and the open question is whether our composition point is right at all. See `features-and-fields.md` § Memory Optimization. **A question for Microsoft, not another estimate run.** |
 > | §H clean-environment setup run · architecture-doc reader · Google Doc mirror | Need a second machine and a second human; cannot be done from the repo |
 > | §I Figma visual pass · acceptance walkthrough | Need the running app in front of a person |
 > | §I merged to `main` | The PR is ready; merging is the PM's call |

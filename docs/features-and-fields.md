@@ -572,12 +572,36 @@ The control is present but disabled, and the field is recorded on `RunConfig`.
 > the same numbers under either explanation, and the source graph cannot
 > arbitrate it either — an applied-but-unused ISATransform contributes no node.
 >
-> **§G's "prove it is actually in the query" is therefore still open.** What
-> landed proves the id reaches the invocation JSON, not the ISA qdk executes;
-> settling it needs someone to introspect the query object on a machine with the
-> qdk venv. Until then the control stays disabled and labelled unavailable — the
-> right outcome under either explanation — and the copy reads "consistent with"
-> everywhere it appears.
+> ✅ **Query introspection done — 2026-08-07, qdk 1.30.0.** The second
+> explanation is ruled out **at construction**: comparing the composed query
+> objects (not the estimates), `SurfaceCode * factories` reprs at 419 chars with
+> no "Yoked", while adding `* Yoked1D` or `* Yoked2D` gives 544 chars containing
+> "Yoked", and the 1D and 2D forms differ from each other. The transform really
+> is in the `_ProductNode` handed to `qre.estimate`.
+>
+> ⚠️ **But holding the workload fixed turned up something sharper:**
+>
+> | ISA query | Result |
+> |---|---|
+> | `SurfaceCode × factories` | 477 q / 1,363,950 ns (256 with DMC) |
+> | `SurfaceCode × factories × Yoked2D` | **identical**, with and without DMC |
+> | `Yoked2D × factories` | **no feasible frontier point**, either way |
+>
+> The yoked codes are QEC transforms — `qdk.qre.models.qec._yoked`, subclassing
+> `ISATransform` exactly as `SurfaceCode` does. **Substituting** one changes the
+> outcome drastically; **layering** one onto an already-fixed QEC changes nothing.
+> So they are not globally inert, and "the yoked codes do nothing" would be as
+> wrong as the claim this block already walked back.
+>
+> **What is open is now narrower and better posed:** is `query * Yoked.q()` after
+> the factories the right composition point at all, when `build_qec` has already
+> fixed the QEC? The week-5 brief said these "compose exactly like the secondary
+> factories do" — but those are factory *modifiers*, while these are QEC codes,
+> and the surrounding code uses `+` for alternatives of one kind and `*` across
+> kinds. **That premise is the question for Microsoft**, not another estimate
+> comparison. Until it is answered the control stays disabled and labelled
+> unavailable — the right outcome under every explanation — and the copy reads
+> "consistent with" everywhere it appears.
 >
 > Pinned by `memoryOptimization.test.ts`, which also guards the premise: if DMC
 > ever stops moving the estimate the comparison becomes vacuous, and that test

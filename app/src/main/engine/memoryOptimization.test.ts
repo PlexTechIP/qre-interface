@@ -104,9 +104,46 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
  *
  * So the claim this file supports is "consistent with inert", not "measured, not
  * assumed". The control stays disabled either way — a control that changes
- * nothing is worse than one that says why — but the wording in the UI, in
- * features-and-fields.md and in the checklist says "consistent with" until
- * someone introspects the query object on a machine with the qdk venv.
+ * nothing is worse than one that says why.
+ *
+ * ## Query introspection — 2026-08-07, qdk 1.30.0
+ *
+ * The step above was taken. Composing the three ISA queries and comparing the
+ * objects (not the estimates):
+ *
+ *   SurfaceCode * factories             -> repr 419 chars, no "Yoked"
+ *   SurfaceCode * factories * Yoked1D   -> repr 544 chars, contains "Yoked"
+ *   SurfaceCode * factories * Yoked2D   -> repr 544 chars, contains "Yoked",
+ *                                          and differs from the 1D form
+ *
+ * So explanation (2) is ruled out AT CONSTRUCTION: the yoked transform really is
+ * in the `_ProductNode` handed to `qre.estimate`. It is not silently dropped.
+ *
+ * Then, holding the workload fixed (Ising Model (2D) 3x3):
+ *
+ *   A  SurfaceCode * factories            477 q / 1,363,950 ns  (256 with DMC)
+ *   B  SurfaceCode * factories * Yoked2D  IDENTICAL to A, both with and without DMC
+ *   C  Yoked2D     * factories            NO FEASIBLE FRONTIER POINT, either way
+ *
+ * C is the finding that matters. The yoked codes are QEC transforms — they live
+ * in `qdk.qre.models.qec._yoked` and subclass `ISATransform` exactly as
+ * `SurfaceCode` does. Substituting one changes the outcome drastically; layering
+ * one onto an already-fixed QEC changes nothing at all. They are therefore NOT
+ * globally inert, and "the yoked codes do nothing" would be as wrong as the
+ * claim this block already walked back.
+ *
+ * What is still open is narrower and better posed than §G's original question:
+ * **is `query * Yoked.q()` after the factories the right composition point at
+ * all, when the QEC is already fixed by `build_qec`?** The week-5 brief said the
+ * yoked codes "compose exactly like the secondary factories do" — but the
+ * secondary factories are factory MODIFIERS, whereas these are QEC codes, and
+ * the surrounding code uses `+` for alternatives of one kind and `*` for
+ * composition across kinds. That premise is what needs confirming with
+ * Microsoft, not another estimate comparison.
+ *
+ * Nothing user-facing rides on it today: the control is disabled, the form
+ * always serializes "none", and `configToInvocation` omits the key, so this
+ * wiring is dormant.
  */
 /**
  * The frontier with `evaluationTime` dropped. That field is how long the
