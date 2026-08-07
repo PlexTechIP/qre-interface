@@ -9,12 +9,16 @@ import { PROVIDER_IDS, type ProviderId } from "./agentTypes.js";
 export const PROVIDER_MODELS = {
   anthropic: {
     displayName: "Anthropic",
-    models: ["claude-sonnet-5", "claude-opus-5"],
+    models: [
+      "claude-haiku-4-5",
+      "claude-sonnet-5",
+      "claude-opus-5",
+    ],
     defaultModel: "claude-sonnet-5",
   },
   openai: {
     displayName: "OpenAI",
-    models: ["gpt-5.6-terra"],
+    models: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
     defaultModel: "gpt-5.6-terra",
   },
 } as const satisfies Record<
