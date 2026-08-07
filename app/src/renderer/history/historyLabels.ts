@@ -26,6 +26,13 @@ export const FACTORY_LABELS: Record<string, string> = {
 };
 
 /**
+ * The Jul 31 POC display renames used to live here. They now sit in
+ * `constants/labels.ts` with the rest of the label-only mappings, because
+ * `results/` needs them too and `history/ -> results/` is the direction those
+ * two layers already depend in.
+ */
+
+/**
  * A run's primary magic-state factories as one label. The field is a SET as of
  * contract v1.2.0, so every surface that used to print one id now prints the
  * joined set through here rather than each re-deriving it.

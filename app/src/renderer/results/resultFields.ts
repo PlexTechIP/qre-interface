@@ -3,6 +3,8 @@ import {
   ARCHITECTURE_LABELS,
   MAGIC_STATE_FACTORY_LABELS,
   QEC_LABELS,
+  T_COUNT_PER_ROTATION_LABEL,
+  TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
 import {
@@ -114,7 +116,7 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
       // metric key, the contract's `tStatesPerRotation` and qdk's
       // `num_ts_per_rotation` are unchanged. The unit stays "T states" — that is
       // what the number counts.
-      label: "T Count Per Rotation",
+      label: T_COUNT_PER_ROTATION_LABEL,
       unitLabel: "T states",
       description: "T states used to synthesize each arbitrary rotation.",
     },
@@ -204,16 +206,17 @@ export function getFieldDefinition(key: string, unit: string): ResultFieldDefini
   );
 }
  
-/**
+/*
  * Renamed from "Max Error" 2026-08-07, so the results recap and the
  * configuration form call the same number by the same name — the form had been
  * renamed on its own, leaving the app showing two names for one field.
  *
- * A constant rather than a literal in each branch: the label appears in both the
- * known- and unknown-config arms below, and renaming one arm is exactly how they
- * drifted. The contract field is still `maxError`.
+ * The label is a single exported constant in constants/labels.ts rather than a
+ * literal per call site: it appears in both arms of summarizeConfig below and
+ * on History, Comparison and the Markdown export, and renaming one surface and
+ * not the others is exactly how they drifted. The contract field is still
+ * `maxError`.
  */
-const MAX_ERROR_LABEL = "Total Fault Tolerant Execution Error";
 
 export function summarizeConfig(config: RunConfig | null | undefined, qreVersion: string) {
   if (!config) {
@@ -223,7 +226,7 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       { label: "QEC Code", value: "Unknown" },
       { label: "Factory", value: "Unknown" },
       { label: "Trace Transform", value: "Unknown" },
-      { label: MAX_ERROR_LABEL, value: "Unknown" },
+      { label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL, value: "Unknown" },
       { label: "QRE Version", value: qreVersion },
     ];
   }
@@ -249,7 +252,10 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       label: "Trace Transform",
       value: describeTraceTransform(normalizeTraceTransform(config.traceTransform)),
     },
-    { label: MAX_ERROR_LABEL, value: String(config.maxError) },
+    {
+      label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+      value: String(config.maxError),
+    },
     { label: "QRE Version", value: qreVersion },
   ];
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 interface DefinitionTipProps {
   /** The field's own label, used to name the trigger for screen readers. */
@@ -31,6 +31,7 @@ export function DefinitionTip({
   children,
 }: DefinitionTipProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Escape dismisses the bubble whether it was opened by hover, focus or click.
   //
@@ -44,10 +45,20 @@ export function DefinitionTip({
     if (!open) return;
     const dismiss = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
-      // Capture phase, and stopped here: Escape belongs to the topmost
-      // dismissible thing on screen, which while a bubble is open is the
-      // bubble — not whatever dialog encloses the form.
-      event.stopPropagation();
+      // Swallow Escape ONLY when this trigger holds focus — i.e. the analyst
+      // deliberately opened this bubble and it really is the topmost thing they
+      // are interacting with.
+      //
+      // Swallowing unconditionally was wrong, and quietly so: this listener is
+      // on `document` in the CAPTURE phase, while React delegates from the root
+      // container (a descendant of `document`). An unconditional
+      // stopPropagation therefore stopped the event before it ever reached the
+      // React tree — so merely resting the pointer on a "?" glyph, which is all
+      // it takes to open a bubble, made Escape dead for every other dismissible
+      // surface in the app. A hover is not a claim on the key.
+      if (document.activeElement === triggerRef.current) {
+        event.stopPropagation();
+      }
       setOpen(false);
     };
     document.addEventListener("keydown", dismiss, true);
@@ -61,6 +72,7 @@ export function DefinitionTip({
       onMouseLeave={() => setOpen(false)}
     >
       <button
+        ref={triggerRef}
         type="button"
         className="definition-tip__trigger"
         aria-label={`${label} definition`}

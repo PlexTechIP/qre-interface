@@ -3,6 +3,7 @@ import type {
   RunStore,
   UploadedProgramFormat,
 } from "../shared/types";
+import type { AgentService } from "../shared/agentTypes";
 
 /** Mirrors main/engine/uploadValidation.ts's result, which the renderer cannot import. */
 export type UploadPreflightResult =
@@ -24,6 +25,8 @@ declare global {
         format: UploadedProgramFormat,
       ): Promise<UploadPreflightResult>;
     };
+    /** Team 2's optional fifth preload surface. No credential getter exists. */
+    agent?: AgentService;
   }
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
  
-import type { RunConfig, RunResult } from "../shared/types";
+import type { RunConfig, RunProvenance, RunResult } from "../shared/types";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
 import { ConfigurationSummary } from "./components/ConfigurationSummary";
@@ -35,25 +35,60 @@ interface RunConfigurationProps {
   onRunComplete?: (config: RunConfig, result: RunResult) => void;
   /** Saved configuration to load into the editable form for a Rerun. */
   initialConfig?: RunConfig | null;
+  /** Model proposal already mapped into Team 3's existing editable form shape. */
+  initialDraft?: FormState | undefined;
+  /**
+   * Provenance of `initialDraft`. Kept outside FormState and attached only when
+   * Run is pressed. Read once, when the draft is loaded — see `draftProvenance`.
+   */
+  provenance?: RunProvenance | undefined;
 }
- 
+
 /** The Run Configuration surface — the seven inputs + summary + validation. */
 export function RunConfiguration({
   onRunComplete,
   initialConfig = null,
+  initialDraft,
+  provenance,
 }: RunConfigurationProps = {}): React.JSX.Element {
   const [state, setState] = useState<FormState>(() =>
-    initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState(),
+    initialDraft ??
+    (initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState()),
+  );
+  /**
+   * Who authored the configuration NOW IN THE FORM — held here rather than read
+   * off the `provenance` prop at Run-click.
+   *
+   * The shell drops its draft handoff as soon as the first run finishes, but
+   * this component stays mounted through the run panel: "Edit configuration"
+   * returns to the very same `state`. Reading the prop at click time therefore
+   * stamped run #1 `model_assisted` and run #2 — the same model-authored
+   * configuration with one number changed — with nothing at all. Provenance
+   * belongs to the configuration, so it lives exactly as long as the
+   * configuration does, and is replaced only when a different source loads one.
+   */
+  const [draftProvenance, setDraftProvenance] = useState<RunProvenance | undefined>(
+    () => (initialDraft ? provenance : undefined),
   );
   const { runState, start, retry, edit } = useRunFlow();
- 
+
   // A Rerun hands a reconstructed config down as `initialConfig`; load it into
   // the editable form when it changes.
   useEffect(() => {
-    if (initialConfig) {
+    if (initialDraft) {
+      setState(initialDraft);
+      setDraftProvenance(provenance);
+    } else if (initialConfig) {
       setState(formStateFromRunConfig(initialConfig));
+      // A Rerun replaces the model's draft with a saved config, so whatever
+      // authored that draft no longer describes what is on screen.
+      setDraftProvenance(undefined);
     }
-  }, [initialConfig]);
+    // `provenance` is deliberately not a dependency: it travels WITH a draft,
+    // and re-running this effect when only it changed would re-apply a stale
+    // `initialDraft` over the analyst's edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConfig, initialDraft]);
  
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).
@@ -182,7 +217,7 @@ export function RunConfiguration({
             type="button"
             className="run-button run-button--full"
             disabled={!valid}
-            onClick={() => start(state)}
+            onClick={() => start(state, draftProvenance)}
           >
             Run estimate
           </button>
