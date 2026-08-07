@@ -1,5 +1,9 @@
 export const ESTIMATOR_RUN_CHANNEL = "estimator:run";
 
+// Pre-flight for an uploaded program file, so the FORM can reject a missing,
+// unreadable, wrong-extension or implausible file before Run is ever clicked.
+export const UPLOAD_PREFLIGHT_CHANNEL = "uploads:preflight";
+
 // RunStore over IPC — one flat channel per operation, mirroring the estimator's
 // "domain:verb" convention. Backed by the main-process SqliteRunStore.
 export const STORE_SAVE_CHANNEL = "store:save";

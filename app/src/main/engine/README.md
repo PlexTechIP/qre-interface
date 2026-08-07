@@ -132,8 +132,57 @@ Canonical codes only, per `docs/data-contracts.md`: `INVALID_CONFIG`,
 - `execute.ts` — `TIMEOUT` on a killed subprocess, `ENGINE_CRASH` on a
   nonzero exit / non-JSON stdout / unrecognized `status`.
 - `estimate.py` — `COMPILE_ERROR` only for QDK's structured `QSharpError`
-  exception type, `ESTIMATION_FAILED` otherwise (including an empty Pareto
-  frontier). Message substrings are not used for classification.
+  exception type, `INVALID_CONFIG` for its own `InvalidInvocation`, and
+  `ESTIMATION_FAILED` otherwise (including an empty Pareto frontier). Message
+  substrings are not used for classification.
+
+  `InvalidInvocation` covers **every architecture parameter, on all three
+  models** — because qdk validates none of them. `GateBased`, `Majorana` and
+  `NeutralAtom` are plain dataclasses whose only `__post_init__` logic is
+  Majorana's `t_error_rate` derivation, so a negative, zero, or absurd value
+  constructs happily. Measured on 1.30.0, that lands three ways:
+
+  - **A wrong number, reported as success.** `gateBased errorRate=-1e-4`
+    estimates and returns `error: -9.99e-05` — a negative probability, on the
+    *default* architecture. `mapRow` accepts it (it checks only
+    `isFiniteNumber`) and the Results surface renders it. Same shape for
+    `majorana errorRate=-1e-5` (-0.0032) and `neutralAtom rydbergError=-1.0`,
+    which returns 0.0109 where the true answer is 0.991.
+  - **A soft failure blaming the wrong thing.** `gateTime=-50` →
+    "can't convert negative int to unsigned"; `atomSpacing=-3` → "math domain
+    error". Both ESTIMATION_FAILED, which reads as "your model was infeasible".
+  - **A hard crash.** `majorana operationTime=0` panics inside pyo3.
+    `PanicException` derives from `BaseException`, so `main()`'s
+    `except Exception` never sees it: stdout is empty and the run comes back
+    ENGINE_CRASH, "verify the Python environment", for a bad config.
+
+  The bounds live in one table per architecture (`GATE_BASED_RULES`,
+  `MAJORANA_RULES`, `NEUTRAL_ATOM_RULES`), transcribed from
+  `runconfig.schema.json` in the schema's own vocabulary. That is not a
+  convention held by hand: `architectureBounds.test.ts` **diffs the tables
+  against the committed schema**, in both directions, so a bound that moves in
+  one place fails the suite until it moves in the other. `configToInvocation`
+  remains the first line of defence — it rejects in-process without spawning
+  Python — and this is the second, for a config that arrives another way.
+  Also pinned by `majoranaErrorRate.test.ts` and `majoranaTErrorRate.test.ts`,
+  which bypass the TypeScript guard on purpose.
+
+  Messages follow `configToInvocation`'s shape and vocabulary — same label,
+  same bracket notation, same trailing `got <value>.` — but are **not**
+  identical strings, and nothing should assert that they are. The wrapper names
+  the full range where the TypeScript names the edge that failed
+  (`an integer in (0, 9007199254740991]` against `an integer > 0`), and
+  Python's `%.0e` pads exponents, so Majorana's enum reads `1e-04, 1e-05, 1e-06`
+  against the TypeScript's `1e-4, 1e-5, 1e-6`.
+
+  **Integral fields are checked on the VALUE, not the JSON type.** `1000.0` is
+  accepted and coerced, since JavaScript cannot distinguish it from `1000` and a
+  producer emitting the float describes the same configuration. The ceiling on
+  every integral rule is `2**53 - 1` (`Number.MAX_SAFE_INTEGER`), which the
+  schema and `configToInvocation` carry too: above it a JSON number no longer
+  holds an integer exactly, `float()` in the wrapper either rounds
+  (`9007199254740993` → `…992`) or raises `OverflowError`, and qdk fails on the
+  pyo3 conversion with a field-less "int too big to convert".
 - `outputToResult.ts` — `ESTIMATION_FAILED` if a frontier row is missing one
   of the six required default fields.
 

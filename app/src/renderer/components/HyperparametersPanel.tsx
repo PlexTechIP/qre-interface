@@ -4,10 +4,25 @@ import {
   type HyperparamField,
   type HyperparamValue,
 } from "../constants/hyperparameters";
-import { HYPERPARAMETER_DEFINITIONS } from "../constants/configDefinitions";
+import {
+  EKERA_HASTAD_GENERATOR_DEFINITION,
+  HYPERPARAMETER_DEFINITIONS,
+} from "../constants/configDefinitions";
 import type { BenchmarkId } from "../../shared/types";
 import { findBenchmark } from "../constants/staticOptions";
-import { DefinitionTip } from "./DefinitionTip";
+import { DefinitionTip, definitionId } from "./DefinitionTip";
+
+/**
+ * Tooltip copy for one hyperparameter, or undefined when the source doc has
+ * none. `generator` is shared by Shor's and Ekerå-Håstad and the doc gives each
+ * its own wording, so the benchmark disambiguates it.
+ */
+function definitionFor(benchmarkId: string, key: string): string | undefined {
+  if (key === "generator" && benchmarkId === "ekera-hastad-factoring") {
+    return EKERA_HASTAD_GENERATOR_DEFINITION;
+  }
+  return HYPERPARAMETER_DEFINITIONS[key];
+}
 
 interface HyperparametersPanelProps {
   benchmarkId: string;
@@ -18,10 +33,11 @@ interface HyperparametersPanelProps {
 
 /**
  * The collapsible per-benchmark hyperparameter panel. Fields, bounds, and
- * defaults come from the benchmark's schema (constants/hyperparameters.ts);
- * this component only renders + raises changes. Values live in FormState and
- * are validated there — they are not yet serialized into the contract RunConfig
- * (the frozen BenchmarkApplication has no field for them).
+ * defaults come from the shared benchmark spec (shared/benchmarkParams.ts) by
+ * way of constants/hyperparameters.ts; this component only renders + raises
+ * changes. The values are serialized onto `RunConfig.parameters` and become the
+ * arguments of the benchmark's Q# entry operation, so they size the circuit the
+ * estimator traces.
  */
 export function HyperparametersPanel({
   benchmarkId,
@@ -48,16 +64,25 @@ export function HyperparametersPanel({
       <div className="hparams__grid">
         {fields.map((field) => {
           const message = field.kind === "computed" ? undefined : errorFor(field.key);
+          const definition = definitionFor(benchmarkId, field.key);
           return (
             <div key={field.key} className={`hparam${message ? " hparam--error" : ""}`}>
               <div className="field__label-row">
                 <label className="hparam__label" htmlFor={`hparam-${field.key}`}>
                   {field.label}
                 </label>
-                <DefinitionTip label={field.label}>
-                  {HYPERPARAMETER_DEFINITIONS[field.key] ??
-                    (field.kind === "computed" ? field.note : field.help ?? field.label)}
-                </DefinitionTip>
+                {/* Only render a tip where the Config Descriptions tab actually
+                    has copy. Falling back to `help` or the label would put a "?"
+                    on every field that says nothing the user cannot already
+                    read. */}
+                {definition ? (
+                  <DefinitionTip
+                    id={definitionId(`hparam-${field.key}`)}
+                    label={field.label}
+                  >
+                    {definition}
+                  </DefinitionTip>
+                ) : null}
               </div>
               <HyperparamControl
                 field={field}
@@ -102,7 +127,7 @@ function HyperparamControl({ field, value, onChange }: HyperparamControlProps): 
     );
   }
 
-  if (field.kind === "select") {
+  if (field.kind === "choice") {
     return (
       <select
         id={id}
@@ -126,8 +151,8 @@ function HyperparamControl({ field, value, onChange }: HyperparamControlProps): 
       type="number"
       inputMode={field.kind === "int" ? "numeric" : "decimal"}
       step={field.kind === "int" ? 1 : "any"}
-      {...(field.min !== undefined ? { min: field.min } : {})}
-      {...(field.max !== undefined ? { max: field.max } : {})}
+      {...(field.min === undefined ? {} : { min: field.min })}
+      {...(field.max === undefined ? {} : { max: field.max })}
       value={value === null || value === undefined ? "" : String(value)}
       onChange={(event) =>
         onChange(event.target.value === "" ? null : Number(event.target.value))

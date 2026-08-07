@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { QreEngine } from "./qreEngine.js";
 import type { RunConfig, RunResult } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 
 const PYTHON_BIN = resolvePythonBin();
 
 function config(id: string, overrides: Partial<RunConfig>): RunConfig {
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: SCHEMA_VERSION,
     id,
     name: "cross-config quantum dynamics",
     createdAt: "2026-07-09T18:22:00Z",
@@ -20,12 +21,8 @@ function config(id: string, overrides: Partial<RunConfig>): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    magicStateFactories: ["round_based"],
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-v1-fixture",
     ...overrides,
@@ -47,6 +44,19 @@ describe("cross-config sanity", () => {
           operationTime: 1000,
         },
         qecCode: "three_aux",
+        // A smaller lattice than the spec default, because Majorana/Three-Aux
+        // genuinely has no feasible frontier point for the default 10x10 / 34-step
+        // circuit even at maxError = 1 — the accumulated error exceeds 1 at every
+        // distance the estimator considers. This case is about the architecture
+        // producing a DIFFERENT answer, so it needs one that exists.
+        parameters: {
+          latticeN1: 3,
+          latticeN2: 3,
+          totalTime: 9.0,
+          trotterStep: 0.9,
+          couplingJ: 1.0,
+          fieldG: 1.0,
+        },
       }),
     ];
     const inputTuples = new Set(
@@ -80,13 +90,15 @@ describe("cross-config sanity", () => {
     );
     expect(signatures.size).toBe(3);
 
-    // Pinned qdk[qre] 1.29.1 regression anchors derived from real local runs
+    // Pinned qdk[qre] 1.30.0 regression anchors derived from real local runs
     // for GateBased/Surface/maxError=1, GateBased/Surface/maxError=.01, and
-    // Majorana/ThreeAux/maxError=1 respectively.
+    // Majorana/ThreeAux/maxError=1 respectively. The first two run Quantum
+    // Dynamics at its spec defaults (10x10 lattice, 34 Trotter steps); the third
+    // runs the 3x3 lattice configured above.
     // If Microsoft publishes canonical tutorial numbers for this exact trio,
     // replace these package-derived anchors with those external references.
-    expect(firstRows[0]!.runtime.value).toBe(585900);
-    expect(firstRows[1]!.runtime.value).toBe(2538900);
-    expect(firstRows[2]!.runtime.value).toBe(10602000);
+    expect(firstRows[0]!.runtime.value).toBe(43029000);
+    expect(firstRows[1]!.runtime.value).toBe(62153000);
+    expect(firstRows[2]!.runtime.value).toBe(24681000);
   }, 120000);
 });

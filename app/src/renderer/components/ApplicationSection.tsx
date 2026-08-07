@@ -1,28 +1,56 @@
 import { useMemo, useState } from "react";
 
 import type { UploadedProgramFormat } from "../../shared/types";
-import { CONFIG_DEFINITIONS } from "../constants/configDefinitions";
+import {
+  MANUAL_COUNTS_SECTION,
+  MANUAL_COUNT_DEFINITIONS,
+} from "../constants/configDefinitions";
 import { BENCHMARKS } from "../constants/staticOptions";
 import type { HyperparamValue } from "../constants/hyperparameters";
 import type {
   ApplicationForm,
   ApplicationFormType,
+  ManualCountsForm,
   SavedProgram,
 } from "../state/formState";
+import { resolveUploadPath } from "../state/uploadPath";
 import type { FieldErrors } from "../state/validation";
-import { DefinitionTip } from "./DefinitionTip";
 import { HyperparametersPanel } from "./HyperparametersPanel";
+import { NumberField } from "./NumberField";
 
 interface ApplicationSectionProps {
   value: ApplicationForm;
   errors: FieldErrors;
   onChange: (value: ApplicationForm) => void;
+  /** True while the chosen program file is being pre-flighted. Run is gated on
+   *  it, so the wait needs to be visible rather than looking like a dead button. */
+  isCheckingFile?: boolean;
 }
 
 const TYPE_OPTIONS: readonly { value: ApplicationFormType; label: string }[] = [
   { value: "benchmark", label: "Benchmark" },
   { value: "saved", label: "Saved Programs" },
   { value: "uploaded", label: "Upload Program File" },
+  { value: "manualCounts", label: "Manual Logical Counts" },
+];
+
+/** The seven Manual Logical Counts fields, in spec order. */
+const MANUAL_COUNT_FIELDS: readonly {
+  key: keyof ManualCountsForm;
+  label: string;
+  help: string;
+}[] = [
+  // Renamed from "Number of Qubits" in the 2026-07-31 update. Display only —
+  // `numQubits` stays as the contract id, schema description and validation key.
+  // The new name earns its place: this counts LOGICAL qubits, and the results
+  // surface reports physical qubit counts on the same screen.
+  { key: "numQubits", label: "Logical Qubit Count", help: "Required · integer ≥ 1" },
+  { key: "tCount", label: "T Count", help: "Required · integer ≥ 0" },
+  { key: "rotationCount", label: "Rotation Count", help: "Required · integer ≥ 0" },
+  { key: "rotationDepth", label: "Rotation Depth", help: "Required · 0 ≤ depth ≤ Rotation Count" },
+  { key: "cczCount", label: "CCZ Count", help: "Required · integer ≥ 0" },
+  { key: "ccixCount", label: "CCiX Count", help: "Required · integer ≥ 0" },
+  { key: "measurementCount", label: "Measurement Count", help: "Required · integer ≥ 0" },
 ];
 
 /** The file's basename, used as a saved program's default display name. */
@@ -50,10 +78,13 @@ export function ApplicationSection({
   value,
   errors,
   onChange,
+  isCheckingFile = false,
 }: ApplicationSectionProps): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [savedQuery, setSavedQuery] = useState("");
   const [dragging, setDragging] = useState(false);
+  /** Why the last pick/drop could not be turned into a real path, if it couldn't. */
+  const [pathError, setPathError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -68,6 +99,17 @@ export function ApplicationSection({
 
   const patch = (next: Partial<ApplicationForm>): void => onChange({ ...value, ...next });
 
+  /**
+   * Change application type. Clears any upload path error on the way out: this
+   * component stays mounted across type changes, so the error would otherwise
+   * still be on screen when the user came back to the Upload tab having picked
+   * nothing this visit.
+   */
+  const setType = (next: ApplicationFormType): void => {
+    if (next !== value.type) setPathError(null);
+    patch({ type: next });
+  };
+
   const setHyperparam = (key: string, next: HyperparamValue): void => {
     patch({
       hyperparams: {
@@ -80,20 +122,44 @@ export function ApplicationSection({
     });
   };
 
-  const onPickFile = (filePath: string): void => {
-    const format = inferFormat(filePath);
-    patch({ upload: { ...value.upload, filePath, format } });
+  /**
+   * Take a picked or dropped File and store the path the engine can open. The
+   * browser filename is never used as a path: it is a basename, and storing one
+   * yields a config that validates and then fails at Run with "File not found".
+   */
+  const onPickFile = (file: File): void => {
+    const resolved = resolveUploadPath(file);
+    if (!resolved.ok) {
+      setPathError(resolved.message);
+      return;
+    }
+    setPathError(null);
+    patch({
+      upload: {
+        ...value.upload,
+        filePath: resolved.filePath,
+        format: inferFormat(resolved.filePath),
+      },
+    });
   };
 
   const onDrop = (event: React.DragEvent<HTMLLabelElement>): void => {
     event.preventDefault();
     setDragging(false);
     const file = event.dataTransfer.files?.[0];
-    if (file) onPickFile(file.name);
+    if (file) onPickFile(file);
   };
 
   const clearUpload = (): void => {
+    setPathError(null);
     patch({ upload: { ...value.upload, filePath: "" } });
+  };
+
+  const setManualCount = (
+    key: keyof ManualCountsForm,
+    next: number | null,
+  ): void => {
+    patch({ manualCounts: { ...value.manualCounts, [key]: next } });
   };
 
   /**
@@ -142,11 +208,11 @@ export function ApplicationSection({
       </header>
 
       <div className="field-block">
+        {/* No tooltip: the Config Descriptions tab has no copy for the type
+            selector, and an invented one would read as reviewed product copy.
+            Requested in the PR description. */}
         <span className="field-eyebrow" id="application-type-label">
           Application Type
-          <DefinitionTip label="Application Type">
-            {CONFIG_DEFINITIONS.applicationType}
-          </DefinitionTip>
         </span>
         <div className="seg" role="radiogroup" aria-labelledby="application-type-label">
           {TYPE_OPTIONS.map((option) => (
@@ -156,7 +222,7 @@ export function ApplicationSection({
               role="radio"
               aria-checked={value.type === option.value}
               className={`seg__btn${value.type === option.value ? " seg__btn--active" : ""}`}
-              onClick={() => patch({ type: option.value })}
+              onClick={() => setType(option.value)}
             >
               {option.label}
             </button>
@@ -169,9 +235,6 @@ export function ApplicationSection({
           <div className="field-block">
             <span className="field-eyebrow" id="select-benchmark-label">
               Select Benchmark
-              <DefinitionTip label="Select Benchmark">
-                {CONFIG_DEFINITIONS.benchmark}
-              </DefinitionTip>
             </span>
             <div className="search-field">
               <SearchIcon />
@@ -220,9 +283,6 @@ export function ApplicationSection({
         <div className="field-block">
           <span className="field-eyebrow" id="saved-program-label">
             Your Programs
-            <DefinitionTip label="Your Programs">
-              {CONFIG_DEFINITIONS.savedPrograms}
-            </DefinitionTip>
           </span>
           {value.savedPrograms.length === 0 ? (
             <div className="saved-empty">
@@ -231,7 +291,7 @@ export function ApplicationSection({
               <button
                 type="button"
                 className="saved-empty__link"
-                onClick={() => patch({ type: "uploaded" })}
+                onClick={() => setType("uploaded")}
               >
                 Upload a program →
               </button>
@@ -284,20 +344,20 @@ export function ApplicationSection({
               </div>
             </>
           )}
+          {isCheckingFile ? (
+            <p className="field__help" role="status">
+              Checking file…
+            </p>
+          ) : null}
           {errors.savedProgram ? (
             <p className="field__error" role="alert">
               {errors.savedProgram}
             </p>
           ) : null}
         </div>
-      ) : (
+      ) : value.type === "uploaded" ? (
         <div className="upload-picker">
-          <span className="field-eyebrow field-eyebrow--with-tip">
-            Upload Program
-            <DefinitionTip label="Upload Program">
-              {CONFIG_DEFINITIONS.uploadProgram}
-            </DefinitionTip>
-          </span>
+          <span className="field-eyebrow">Upload Program</span>
           <label
             className={`dropzone${dragging ? " dropzone--active" : ""}`}
             onDragOver={(event) => {
@@ -314,7 +374,13 @@ export function ApplicationSection({
               accept=".qs,.qasm,.ll,.bc"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) onPickFile(file.name);
+                // Clear the input before handling: a file input fires `change`
+                // only when the selection changes, so keeping the last file in
+                // it makes re-picking that same file a silent no-op — which is
+                // precisely what the user does after a failed resolution, or
+                // after clearing the pill and choosing the same file again.
+                event.target.value = "";
+                if (file) onPickFile(file);
               }}
             />
             <UploadIcon />
@@ -324,7 +390,11 @@ export function ApplicationSection({
           {value.upload.filePath ? (
             <div className="file-pill">
               <FileIcon className="file-pill__icon" />
-              <span className="file-pill__name">{value.upload.filePath}</span>
+              {/* Name for reading, full path on hover — an absolute path is too
+                  long for the pill but is what actually gets estimated. */}
+              <span className="file-pill__name" title={value.upload.filePath}>
+                {basename(value.upload.filePath)}
+              </span>
               <button
                 type="button"
                 className="file-pill__save"
@@ -335,7 +405,7 @@ export function ApplicationSection({
               <button
                 type="button"
                 className="file-pill__remove"
-                aria-label={`Remove ${value.upload.filePath}`}
+                aria-label={`Remove ${basename(value.upload.filePath)}`}
                 onClick={clearUpload}
               >
                 ×
@@ -347,11 +417,46 @@ export function ApplicationSection({
             Supported: .qs (Q#), .qasm (OpenQASM), .ll / .bc (QIR)
           </p>
 
-          {errors.uploadFilePath ? (
+          {/* Precedence matters: a path that could not be resolved has nothing
+              to pre-flight, so its error outranks both the progress line and the
+              pre-flight's own verdict. */}
+          {pathError ? (
+            <p className="field__error" role="alert">
+              {pathError}
+            </p>
+          ) : isCheckingFile ? (
+            <p className="field__help" role="status">
+              Checking file…
+            </p>
+          ) : errors.uploadFilePath ? (
             <p className="field__error" role="alert">
               {errors.uploadFilePath}
             </p>
           ) : null}
+        </div>
+      ) : (
+        <div className="field-block">
+          <span className="field-eyebrow" id="manual-counts-label">
+            Logical Resource Counts
+          </span>
+          <p className="dropzone__formats">{MANUAL_COUNTS_SECTION}</p>
+          <div className="form-grid" role="group" aria-labelledby="manual-counts-label">
+            {MANUAL_COUNT_FIELDS.map((field) => (
+              <NumberField
+                key={field.key}
+                id={`manual-${field.key}`}
+                label={field.label}
+                definition={MANUAL_COUNT_DEFINITIONS[field.key]}
+                placeholder="None"
+                integer
+                value={value.manualCounts[field.key]}
+                onChange={(next) => setManualCount(field.key, next)}
+                error={errors[field.key]}
+                help={field.help}
+                required
+              />
+            ))}
+          </div>
         </div>
       )}
     </section>

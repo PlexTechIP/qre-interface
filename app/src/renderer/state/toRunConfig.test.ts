@@ -45,7 +45,11 @@ describe("toRunConfig — defaults path", () => {
 
   it("serializes to a schema-valid RunConfig once the two required times are entered", () => {
     const config = expectSchemaValid(validGateBasedDraft());
-    expect(config.schemaVersion).toBe("1.0.0");
+    // Deliberately a literal, not SCHEMA_VERSION: this assertion exists to fail
+    // on a contract bump so someone acknowledges it, rather than tracking the
+    // constant silently. Updated for v1.4.0 (additive: optional trace stages,
+    // four optional QPU parameters, optional provenance).
+    expect(config.schemaVersion).toBe("1.4.0");
     expect(config.application).toEqual({
       type: "benchmark",
       benchmarkId: "shors-factoring",
@@ -58,7 +62,7 @@ describe("toRunConfig — defaults path", () => {
       twoQubitGateTime: null,
     });
     expect(config.qecCode).toBe("surface_code");
-    expect(config.magicStateFactory).toBe("round_based");
+    expect(config.magicStateFactories).toEqual(["round_based"]);
     expect(config.maxError).toBe(1.0);
   });
 
@@ -73,7 +77,7 @@ describe("toRunConfig — name generation", () => {
   it("auto-generates a deterministic name when blank", () => {
     const config = serialize(validGateBasedDraft());
     expect(config?.name).toBe(
-      "Shor's Factoring · Superconducting · Surface Code · PSSPC",
+      "Shor's Factoring · Superconducting · Surface Code · PSSPC 20 T/rot",
     );
   });
 
@@ -115,14 +119,14 @@ describe("toRunConfig — each input changed", () => {
     expect(expectSchemaValid(s).maxError).toBe(1.0);
   });
 
-  it("carries the PSSPC knobs", () => {
+  it("carries both pipeline stages' knobs", () => {
     const s = validGateBasedDraft();
-    s.traceTransform.psspc.tStatesPerRotation = 12;
-    s.traceTransform.psspc.ccxMagicStates = true;
+    s.traceTransform.tStatesPerRotation = 12;
+    s.traceTransform.ccxMagicStates = true;
     expect(expectSchemaValid(s).traceTransform).toEqual({
-      type: "psspc",
       tStatesPerRotation: 12,
       ccxMagicStates: true,
+      slowDownFactor: 1.0,
     });
   });
 });
@@ -185,25 +189,24 @@ describe("toRunConfig — Majorana cases", () => {
 
   it("derives Three-Aux QEC regardless of factory selection", () => {
     const s = majoranaDraft();
-    s.magicStateFactory = "litinski19"; // not allowed on Majorana
+    s.magicStateFactories = ["litinski19"]; // not allowed on Majorana
     const config = expectSchemaValid(s);
     expect(config.qecCode).toBe("three_aux");
-    expect(config.magicStateFactory).toBe("round_based");
+    expect(config.magicStateFactories).toEqual(["round_based"]);
   });
 
   it("auto-names a Majorana run with its derived architecture + QEC", () => {
     expect(serialize(majoranaDraft())?.name).toBe(
-      "Shor's Factoring · Majorana · Three-Aux · PSSPC",
+      "Shor's Factoring · Majorana · Three-Aux · PSSPC 20 T/rot",
     );
   });
 
-  it("serializes Majorana with the Lattice Surgery transform", () => {
-    const s = majoranaDraft();
-    s.traceTransform.type = "latticeSurgery";
-    const config = expectSchemaValid(s);
+  it("serializes Majorana with the full trace pipeline", () => {
+    const config = expectSchemaValid(majoranaDraft());
     expect(config.architecture.type).toBe("majorana");
     expect(config.traceTransform).toEqual({
-      type: "latticeSurgery",
+      tStatesPerRotation: 20,
+      ccxMagicStates: false,
       slowDownFactor: 1.0,
     });
   });
@@ -224,20 +227,21 @@ describe("toRunConfig — Majorana cases", () => {
   });
 });
 
-describe("toRunConfig — transform variants", () => {
-  it("serializes PSSPC (default)", () => {
-    expect(expectSchemaValid(validGateBasedDraft()).traceTransform.type).toBe(
-      "psspc",
-    );
-  });
-
-  it("serializes Lattice Surgery with the fixed 1.0 slowdown", () => {
-    const s = validGateBasedDraft();
-    s.traceTransform.type = "latticeSurgery";
-    expect(expectSchemaValid(s).traceTransform).toEqual({
-      type: "latticeSurgery",
+describe("toRunConfig - the trace transform is one pipeline", () => {
+  it("always serializes both stages' parameters", () => {
+    // There is no variant to choose. qdk runs PSSPC then Lattice Surgery on
+    // every estimate, so every config carries both stages' settings.
+    expect(expectSchemaValid(validGateBasedDraft()).traceTransform).toEqual({
+      tStatesPerRotation: 20,
+      ccxMagicStates: false,
       slowDownFactor: 1.0,
     });
+  });
+
+  it("keeps the Lattice Surgery slowdown pinned at the contract's 1.0", () => {
+    const s = validGateBasedDraft();
+    s.traceTransform.tStatesPerRotation = 5;
+    expect(expectSchemaValid(s).traceTransform.slowDownFactor).toBe(1.0);
   });
 });
 
@@ -263,15 +267,59 @@ describe("toRunConfig — Litinski19 factory coupling", () => {
   it("keeps Litinski19 for qualifying GateBased runs (errorRate <= 1e-3)", () => {
     const s = validGateBasedDraft();
     s.architecture.gateBased.errorRate = 0.0001;
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("litinski19");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["litinski19"]);
   });
 
   it("falls back to Round-Based when Litinski19 isn't allowed (Majorana)", () => {
     const s = createInitialFormState();
     s.architecture.type = "majorana";
-    s.magicStateFactory = "litinski19";
-    expect(expectSchemaValid(s).magicStateFactory).toBe("round_based");
+    s.magicStateFactories = ["litinski19"];
+    expect(expectSchemaValid(s).magicStateFactories).toEqual(["round_based"]);
+  });
+});
+
+/** A defaults draft switched to Manual Logical Counts with all seven fields filled. */
+function validManualCountsDraft(): FormState {
+  const s = validGateBasedDraft();
+  s.application.type = "manualCounts";
+  s.application.manualCounts = {
+    numQubits: 100,
+    tCount: 20000,
+    rotationCount: 500,
+    rotationDepth: 50,
+    cczCount: 0,
+    ccixCount: 0,
+    measurementCount: 10,
+  };
+  return s;
+}
+
+describe("toRunConfig — Manual Logical Counts", () => {
+  it("serializes all seven counts into a schema-valid manualCounts application", () => {
+    const config = expectSchemaValid(validManualCountsDraft());
+    expect(config.application).toEqual({
+      type: "manualCounts",
+      numQubits: 100,
+      tCount: 20000,
+      rotationCount: 500,
+      rotationDepth: 50,
+      cczCount: 0,
+      ccixCount: 0,
+      measurementCount: 10,
+    });
+  });
+
+  it("auto-names a blank-name manual-counts run", () => {
+    const s = validManualCountsDraft();
+    s.name = "";
+    expect(serialize(s)!.name).toContain("Manual Logical Counts");
+  });
+
+  it("returns null when any count is unset", () => {
+    const s = validManualCountsDraft();
+    s.application.manualCounts.tCount = null;
+    expect(serialize(s)).toBeNull();
   });
 });
 

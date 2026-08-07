@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://qre-dashboard.plextech.dev/contracts/runconfig.schema.json",
   "title": "RunConfig",
-  "description": "CANONICAL contract schema (v1.0.0), frozen by the PMs. RunConfig is fully app-controlled, so this schema is deliberately strict (additionalProperties: false, closed enums where the product owns the choice set): a producer typo should fail fast here, not inside the engine. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
+  "description": "CANONICAL contract schema (v1.2.0), frozen by the PMs. RunConfig is fully app-controlled, so this schema is deliberately strict (additionalProperties: false, closed enums where the product owns the choice set): a producer typo should fail fast here, not inside the engine. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,14 +13,14 @@
     "application",
     "architecture",
     "qecCode",
-    "magicStateFactory",
+    "magicStateFactories",
     "traceTransform",
     "maxError",
     "qreVersion"
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.0.0",
+      "const": "1.4.0",
       "description": "Contract version."
     },
     "id": {
@@ -39,14 +39,19 @@
       "format": "date-time"
     },
     "application": {
-      "description": "Application — exactly one benchmark or uploaded program variant.",
+      "description": "Application — exactly one benchmark, uploaded program, or manual logical counts variant.",
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "benchmarkId"],
+          "required": [
+            "type",
+            "benchmarkId"
+          ],
           "properties": {
-            "type": { "const": "benchmark" },
+            "type": {
+              "const": "benchmark"
+            },
             "benchmarkId": {
               "type": "string",
               "description": "A benchmark id from contracts/benchmarks.json. Kept an open string here because the benchmark library can grow at runtime; the engine fail-softs on unknown ids with INVALID_CONFIG.",
@@ -57,9 +62,16 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "filePath", "format", "addToLibrary"],
+          "required": [
+            "type",
+            "filePath",
+            "format",
+            "addToLibrary"
+          ],
           "properties": {
-            "type": { "const": "uploaded" },
+            "type": {
+              "const": "uploaded"
+            },
             "filePath": {
               "type": "string",
               "description": "Absolute or app-resolved path selected by the user.",
@@ -67,11 +79,70 @@
             },
             "format": {
               "type": "string",
-              "enum": ["qsharp", "openqasm", "qir"]
+              "enum": [
+                "qsharp",
+                "openqasm",
+                "qir"
+              ]
             },
             "addToLibrary": {
               "type": "boolean",
               "description": "Whether the uploaded program should be added to the benchmark list."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Manual Logical Counts — the seven fields map 1:1 onto qdk LogicalCounts keys. The cross-field bound rotationDepth <= rotationCount is enforced by the adapter, not expressible here.",
+          "required": [
+            "type",
+            "numQubits",
+            "tCount",
+            "rotationCount",
+            "rotationDepth",
+            "cczCount",
+            "ccixCount",
+            "measurementCount"
+          ],
+          "properties": {
+            "type": {
+              "const": "manualCounts"
+            },
+            "numQubits": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of Qubits (>= 1)."
+            },
+            "tCount": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "T Count (>= 0)."
+            },
+            "rotationCount": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rotation Count (>= 0)."
+            },
+            "rotationDepth": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rotation Depth (>= 0; also <= rotationCount, enforced by the adapter)."
+            },
+            "cczCount": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "CCZ Count (>= 0)."
+            },
+            "ccixCount": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "CCiX Count (>= 0)."
+            },
+            "measurementCount": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Measurement Count (>= 0)."
             }
           }
         }
@@ -83,9 +154,16 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "errorRate", "gateTime", "measurementTime"],
+          "required": [
+            "type",
+            "errorRate",
+            "gateTime",
+            "measurementTime"
+          ],
           "properties": {
-            "type": { "const": "gateBased" },
+            "type": {
+              "const": "gateBased"
+            },
             "errorRate": {
               "type": "number",
               "exclusiveMinimum": 0,
@@ -93,20 +171,28 @@
               "description": "Default UI value: 1e-4."
             },
             "gateTime": {
-              "type": "number",
+              "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Nanoseconds. Required; no UI default."
+              "maximum": 9007199254740991,
+              "description": "Nanoseconds. Required; no UI default. INTEGER: qdk rejects a fractional time with \"'float' object cannot be interpreted as an integer\", and features-and-fields.md types it int [> 0]. The maximum is Number.MAX_SAFE_INTEGER — above it a JSON number no longer carries an integer exactly, and qdk fails opaquely on the conversion."
             },
             "measurementTime": {
-              "type": "number",
+              "type": "integer",
               "exclusiveMinimum": 0,
-              "description": "Nanoseconds. Required; no UI default."
+              "maximum": 9007199254740991,
+              "description": "Nanoseconds. Required; no UI default. Integral and capped as gateTime."
             },
             "twoQubitGateTime": {
-              "description": "Optional nanoseconds. If present, must be null or > 0.",
+              "description": "Optional nanoseconds. If present, must be null or an integer > 0. Integral and capped as gateTime.",
               "oneOf": [
-                { "type": "null" },
-                { "type": "number", "exclusiveMinimum": 0 }
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
               ]
             }
           }
@@ -114,18 +200,146 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "errorRate", "operationTime"],
+          "required": [
+            "type",
+            "errorRate",
+            "operationTime"
+          ],
           "properties": {
-            "type": { "const": "majorana" },
+            "type": {
+              "const": "majorana"
+            },
             "errorRate": {
               "type": "number",
-              "enum": [0.0001, 0.00001, 0.000001],
+              "enum": [
+                0.0001,
+                1e-05,
+                1e-06
+              ],
               "description": "Default UI value: 1e-5; select-only."
             },
-            "operationTime": {
+            "tErrorRate": {
               "type": "number",
               "exclusiveMinimum": 0,
-              "description": "Nanoseconds. Default UI value: 1000."
+              "maximum": 0.05,
+              "description": "T Error Rate (v1.4.0). Optional; omitted means qdk derives it from errorRate."
+            },
+            "targetYear": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Target Year (v1.4.0). Optional. INERT on this pipeline: qdk reads a target year only through a trace transform that accepts one. Recorded, not influential."
+            },
+            "operationTime": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Nanoseconds. Default UI value: 1000. Integral and capped as gateBased.gateTime — unguarded, a fractional value is an opaque qdk TypeError and 0 panics inside pyo3."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Neutral Atom (v1.1.0). Field set, ranges, and defaults per the Features and Fields Google Doc's QPU Specification tab. Pairs with qecCode low_move_surface_code (see allOf).",
+          "required": [
+            "type",
+            "rydbergTime",
+            "rydbergError",
+            "singleQubitTime",
+            "singleQubitError",
+            "measurementTime",
+            "measurementError",
+            "handoffTime",
+            "atomSpacing",
+            "maxVelocity",
+            "maxAcceleration",
+            "surfaceCodeOneQubitTimeFactor",
+            "surfaceCodeTwoQubitTimeFactor"
+          ],
+          "properties": {
+            "type": {
+              "const": "neutralAtom"
+            },
+            "rydbergTime": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Rydberg Time (ns). Default UI value: 500."
+            },
+            "rydbergError": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 0.01,
+              "description": "Rydberg Error. Default UI value: 1e-3."
+            },
+            "singleQubitTime": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Single-Qubit Time (ns). Default UI value: 1000."
+            },
+            "singleQubitError": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 0.01,
+              "description": "Single-Qubit Error. Default UI value: 1e-4."
+            },
+            "measurementTime": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Measurement Time (ns). Default UI value: 10000."
+            },
+            "measurementError": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 0.01,
+              "description": "Measurement Error. Default UI value: 1e-4."
+            },
+            "handoffTime": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Handoff Time (ns). Default UI value: 0."
+            },
+            "atomSpacing": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Atom Spacing (µm). Default UI value: 3.0."
+            },
+            "dataQubitSpacing": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Data Qubit Spacing (µm) (v1.4.0). Optional; omitted means qdk's own default of 12.0. Measured bit-identical across 6.0/12.0/30.0 on this pipeline as of qdk 1.30.0."
+            },
+            "maxVelocity": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Max Velocity (m/s). Default UI value: 0.25."
+            },
+            "maxAcceleration": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Max Acceleration (m/s²). Default UI value: 5000.0."
+            },
+            "surfaceCodeOneQubitTimeFactor": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "Surface Code Single-Qubit Time Factor. Default UI value: 1."
+            },
+            "surfaceCodeTwoQubitTimeFactor": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "description": "Surface Code Two-Qubit Time Factor. Default UI value: 1."
+            },
+            "targetYear": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Target Year (v1.4.0). Optional. INERT on this pipeline, as on Majorana. Recorded, not influential."
             }
           }
         }
@@ -133,48 +347,133 @@
     },
     "qecCode": {
       "type": "string",
-      "description": "Derived from architecture: gateBased -> surface_code; majorana -> three_aux.",
-      "enum": ["surface_code", "three_aux"]
+      "description": "Derived from architecture: gateBased -> surface_code; majorana -> three_aux; neutralAtom -> low_move_surface_code.",
+      "enum": [
+        "surface_code",
+        "three_aux",
+        "low_move_surface_code"
+      ]
     },
-    "magicStateFactory": {
+    "magicStateFactories": {
+      "type": "array",
+      "description": "Primary magic-state factories (v1.2.0) — a non-empty, unique set; was the single-valued magicStateFactory through v1.1.0. Defaults to [\"round_based\"]. litinski19 is allowed on Superconducting (errorRate <= 1e-3) or Neutral Atom (all three errors <= 1e-3). gsj24 is allowed on Superconducting (errorRate <= 1e-3) or Neutral Atom (rydbergError <= 1e-3, single-qubit and measurement error < 1e-2). Majorana admits round_based alone. The engine unions the set into one ISA query, producing a single frontier explored across every selected factory.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "round_based",
+          "litinski19",
+          "gsj24"
+        ]
+      }
+    },
+    "secondaryFactories": {
+      "type": "array",
+      "description": "Secondary factories (v1.1.0). Optional; omitted or [] means none. An independent multi-select set layered on the primary factory. magic_up_to_clifford is incompatible with Majorana (see allOf); gsj24_ccx is bound to traceTransform.ccxMagicStates.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "magic_up_to_clifford",
+          "gsj24_ccx"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "memoryOptimization": {
       "type": "string",
-      "description": "round_based by default; litinski19 is allowed only for GateBased architectures with errorRate <= 1e-3.",
-      "enum": ["round_based", "litinski19"]
+      "description": "Memory optimization (v1.1.0). Optional; omitted is equivalent to none.",
+      "enum": [
+        "none",
+        "yoked_1d",
+        "yoked_2d"
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Benchmark hyperparameter values (v1.1.0). Optional; present only for benchmark applications. A flat map of parameter key -> number or string. RECORDED-ONLY this version: serialized for reproducibility, does not change the estimate.",
+      "additionalProperties": {
+        "type": [
+          "number",
+          "string"
+        ]
+      }
     },
     "traceTransform": {
-      "description": "Trace transform settings, discriminated by type. PSSPC is the default transform.",
-      "oneOf": [
-        {
+      "description": "Trace transform pipeline settings. PSSPC and Lattice Surgery are sequential stages that BOTH run on every estimate, not alternatives; this object carries each stage's parameters.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tStatesPerRotation",
+        "ccxMagicStates",
+        "slowDownFactor"
+      ],
+      "properties": {
+        "tStatesPerRotation": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 20,
+          "description": "PSSPC: T states per arbitrary rotation. Default UI value: 20."
+        },
+        "ccxMagicStates": {
+          "type": "boolean",
+          "description": "PSSPC: synthesize CCX from magic states. Default UI value: false. Bound to the GSJ24 CCX secondary factory."
+        },
+        "slowDownFactor": {
+          "const": 1,
+          "description": "Lattice Surgery: fixed optimistic slowdown factor; no other value is selectable."
+        },
+        "dynamicMemoryCompute": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "tStatesPerRotation", "ccxMagicStates"],
+          "required": [
+            "computeCapacityPercentage",
+            "evictionStrategy"
+          ],
+          "description": "Stage 0 (v1.4.0). PRESENT ONLY when the stage runs — absence means the stage is not in the pipeline, and is NOT equivalent to the stage running at these defaults. Both parameters are required once present, so qdk never silently supplies one.",
           "properties": {
-            "type": { "const": "psspc" },
-            "tStatesPerRotation": {
-              "type": "integer",
-              "minimum": 5,
-              "maximum": 20,
-              "description": "Default UI value: 20."
+            "computeCapacityPercentage": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "description": "Fraction of capacity given to compute. qdk default: 0.5."
             },
-            "ccxMagicStates": {
-              "type": "boolean",
-              "description": "Default UI value: false."
+            "evictionStrategy": {
+              "enum": [
+                "least_recently_used",
+                "least_frequently_used",
+                "first_available"
+              ],
+              "description": "qdk default: least_recently_used."
             }
           }
         },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "slowDownFactor"],
-          "properties": {
-            "type": { "const": "latticeSurgery" },
-            "slowDownFactor": {
-              "const": 1.0,
-              "description": "Fixed optimistic slowdown factor; no other values are selectable."
-            }
-          }
+        "unmemory": {
+          "type": "boolean",
+          "description": "Stage 3 (v1.4.0). Absent or false means the stage is not in the pipeline."
         }
-      ]
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoredBy"
+      ],
+      "description": "How this configuration was authored (v1.4.0). Optional; absence means human-authored. An audit field — it records THAT a model was involved and optionally WHICH, never the prompt. The schema is closed so a prompt cannot be added by a well-meaning producer.",
+      "properties": {
+        "authoredBy": {
+          "enum": [
+            "human",
+            "model_assisted"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "description": "Provider/model identifier, informational and free-form. Never the prompt.",
+          "minLength": 1
+        }
+      }
     },
     "maxError": {
       "type": "number",
@@ -191,51 +490,225 @@
   "allOf": [
     {
       "if": {
-        "required": ["architecture"],
+        "required": [
+          "architecture"
+        ],
         "properties": {
           "architecture": {
-            "required": ["type"],
-            "properties": { "type": { "const": "gateBased" } }
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "qecCode": { "const": "surface_code" }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["architecture"],
-        "properties": {
-          "architecture": {
-            "required": ["type"],
-            "properties": { "type": { "const": "majorana" } }
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "qecCode": { "const": "three_aux" },
-          "magicStateFactory": { "const": "round_based" }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["magicStateFactory"],
-        "properties": {
-          "magicStateFactory": { "const": "litinski19" }
-        }
-      },
-      "then": {
-        "properties": {
-          "architecture": {
-            "required": ["type", "errorRate"],
+            "required": [
+              "type"
+            ],
             "properties": {
-              "type": { "const": "gateBased" },
-              "errorRate": { "maximum": 0.001 }
+              "type": {
+                "const": "gateBased"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qecCode": {
+            "const": "surface_code"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "architecture"
+        ],
+        "properties": {
+          "architecture": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "majorana"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qecCode": {
+            "const": "three_aux"
+          },
+          "magicStateFactories": {
+            "items": {
+              "const": "round_based"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "architecture"
+        ],
+        "properties": {
+          "architecture": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "neutralAtom"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qecCode": {
+            "const": "low_move_surface_code"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "magicStateFactories"
+        ],
+        "properties": {
+          "magicStateFactories": {
+            "contains": {
+              "const": "litinski19"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "required": [
+                  "type",
+                  "errorRate"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "gateBased"
+                  },
+                  "errorRate": {
+                    "maximum": 0.001
+                  }
+                }
+              },
+              {
+                "required": [
+                  "type",
+                  "rydbergError",
+                  "singleQubitError",
+                  "measurementError"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "neutralAtom"
+                  },
+                  "rydbergError": {
+                    "maximum": 0.001
+                  },
+                  "singleQubitError": {
+                    "maximum": 0.001
+                  },
+                  "measurementError": {
+                    "maximum": 0.001
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "magicStateFactories"
+        ],
+        "properties": {
+          "magicStateFactories": {
+            "contains": {
+              "const": "gsj24"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "required": [
+                  "type",
+                  "errorRate"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "gateBased"
+                  },
+                  "errorRate": {
+                    "maximum": 0.001
+                  }
+                }
+              },
+              {
+                "required": [
+                  "type",
+                  "rydbergError",
+                  "singleQubitError",
+                  "measurementError"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "neutralAtom"
+                  },
+                  "rydbergError": {
+                    "maximum": 0.001
+                  },
+                  "singleQubitError": {
+                    "exclusiveMaximum": 0.01
+                  },
+                  "measurementError": {
+                    "exclusiveMaximum": 0.01
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "secondaryFactories"
+        ],
+        "properties": {
+          "secondaryFactories": {
+            "contains": {
+              "const": "magic_up_to_clifford"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "architecture": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "majorana"
+                }
+              }
             }
           }
         }

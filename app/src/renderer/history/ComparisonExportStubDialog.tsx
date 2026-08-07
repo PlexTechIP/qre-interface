@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { RunRecord } from "../../shared/types";
 import { formatMetric } from "../results/formatMetric";
+import type { SelectedRowByRunId } from "../results/selectedRows";
 import { Modal } from "./Modal";
 import {
   buildComparisonExportStub,
@@ -16,6 +17,7 @@ import {
  */
 export interface ComparisonExportStubDialogProps {
   records: RunRecord[];
+  selectedRowByRunId?: SelectedRowByRunId;
   onClose: () => void;
   mode?: "preview" | "complete";
 }
@@ -26,8 +28,11 @@ function markdownCell(value: string): string {
 
 export function buildComparisonExportMarkdown(
   records: readonly RunRecord[],
+  selectedRowByRunId: SelectedRowByRunId = {},
 ): string {
-  const columns = records.map(toComparisonColumn);
+  const columns = records.map((record) =>
+    toComparisonColumn(record, selectedRowByRunId[record.id] ?? 0),
+  );
   const rows = buildComparisonRows(columns, new Set());
   return [
     `# QRE Run Comparison (${records.length} runs)`,
@@ -56,7 +61,12 @@ export function buildComparisonExportMarkdown(
         `| ${markdownCell(
           row.unitLabel ? `${row.label} (${row.unitLabel})` : row.label,
         )}`,
-        ...row.metrics.map((metric) => markdownCell(formatMetric(metric))),
+        // Matches the on-screen table: a failed run's whole column reads as failed.
+        // A bare "—" here would carry the same ambiguity the table deliberately
+        // removed ("field not reported" vs "the run never produced results").
+        ...row.metrics.map((metric, index) =>
+          markdownCell(columns[index]?.failed ? "No result data" : formatMetric(metric)),
+        ),
         "|",
       ].join(" | "),
     ),
@@ -75,12 +85,13 @@ function downloadMarkdown(contents: string): void {
 
 export function ComparisonExportStubDialog({
   records,
+  selectedRowByRunId = {},
   onClose,
   mode = "preview",
 }: ComparisonExportStubDialogProps) {
   const complete = mode === "complete";
   const preview = complete
-    ? buildComparisonExportMarkdown(records)
+    ? buildComparisonExportMarkdown(records, selectedRowByRunId)
     : buildComparisonExportStub(records);
   const [copied, setCopied] = useState(false);
 

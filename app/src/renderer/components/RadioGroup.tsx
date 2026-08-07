@@ -1,3 +1,5 @@
+import { DefinitionTip, definitionId } from "./DefinitionTip";
+
 export interface RadioOption<T extends string> {
   value: T;
   label: string;
@@ -13,6 +15,8 @@ interface RadioGroupProps<T extends string> {
   value: T;
   options: readonly RadioOption<T>[];
   onChange: (value: T) => void;
+  /** Tooltip copy for the group as a whole, from `constants/configDefinitions`. */
+  definition?: string | undefined;
 }
 
 /**
@@ -25,11 +29,27 @@ export function RadioGroup<T extends string>({
   value,
   options,
   onChange,
+  definition,
 }: RadioGroupProps<T>): React.JSX.Element {
+  const legendTextId = `${name}-legend`;
   return (
-    <fieldset className="radio-group">
-      <legend className="radio-group__legend">{legend}</legend>
-      <div className="radio-group__options">
+    // aria-labelledby points at the legend's TEXT span rather than letting the
+    // legend name the fieldset implicitly. Without that, the tooltip trigger
+    // sitting inside the legend is walked by accessible-name computation and the
+    // group announces as "Architecture Architecture definition".
+    <fieldset className="radio-group" aria-labelledby={legendTextId}>
+      <legend className="radio-group__legend">
+        <span id={legendTextId}>{legend}</span>
+        {definition ? (
+          <DefinitionTip id={definitionId(name)} label={legend}>
+            {definition}
+          </DefinitionTip>
+        ) : null}
+      </legend>
+      <div
+        className="radio-group__options"
+        {...(definition ? { "aria-describedby": definitionId(name) } : {})}
+      >
         {options.map((option) => {
           const disabled = option.disabled ?? false;
           const detail = disabled ? option.disabledReason : option.description;

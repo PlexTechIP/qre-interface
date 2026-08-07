@@ -1,10 +1,19 @@
 import type { ReactNode } from "react";
 
-import { DefinitionTip } from "./DefinitionTip";
+import { DefinitionTip, definitionId } from "./DefinitionTip";
 
 interface FieldProps {
   id: string;
   label: ReactNode;
+  /**
+   * Tooltip copy for this field, from `constants/configDefinitions`.
+   *
+   * Field renders arbitrary children, so it cannot reach the control to wire the
+   * association itself: **the caller must put
+   * `aria-describedby={definitionId(id)}` on the control it passes in.**
+   * `NumberField` owns its input and does this for you; a raw `<select>` here
+   * does not.
+   */
   definition?: string | undefined;
   help?: string | undefined;
   error?: string | undefined;
@@ -35,7 +44,10 @@ export function Field({
           ) : null}
         </label>
         {definition ? (
-          <DefinitionTip label={typeof label === "string" ? label : id}>
+          <DefinitionTip
+            id={definitionId(id)}
+            label={typeof label === "string" ? label : id}
+          >
             {definition}
           </DefinitionTip>
         ) : null}

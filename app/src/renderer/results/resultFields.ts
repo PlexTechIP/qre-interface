@@ -5,6 +5,10 @@ import {
   QEC_LABELS,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
+import {
+  describeTraceTransform,
+  normalizeTraceTransform,
+} from "../../shared/traceTransform";
 
 export interface ResultFieldDefinition {
   key: string;
@@ -12,11 +16,11 @@ export interface ResultFieldDefinition {
   unitLabel: string;
   description: string;
 }
-
+ 
 export interface DisplayField extends ResultFieldDefinition {
   metric: FieldMetric;
 }
-
+ 
 export const DEFAULT_FIELD_DEFINITIONS = [
   {
     key: "physicalQubits",
@@ -55,7 +59,7 @@ export const DEFAULT_FIELD_DEFINITIONS = [
     description: "Duration of one logical clock cycle after error correction.",
   },
 ] as const satisfies readonly ResultFieldDefinition[];
-
+ 
 const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
   [
     "physicalComputeQubits",
@@ -106,7 +110,7 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
     "numTsPerRotation",
     {
       key: "numTsPerRotation",
-      label: "T Count Per Rotation",
+      label: "T States / Rotation",
       unitLabel: "T states",
       description: "T states used to synthesize each arbitrary rotation.",
     },
@@ -130,7 +134,7 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
     },
   ],
 ]);
-
+ 
 export function getDefaultMetric(row: FrontierRow, key: string): FieldMetric {
   switch (key) {
     case "physicalQubits":
@@ -149,7 +153,7 @@ export function getDefaultMetric(row: FrontierRow, key: string): FieldMetric {
       throw new Error(`Unknown default result field: ${key}`);
   }
 }
-
+ 
 /**
  * @param hiddenKeys Additional-field keys to exclude, e.g. from field-filter state. The six
  * default fields are never hidden. Omit to show every reported field (unfiltered).
@@ -159,21 +163,21 @@ export function getDisplayFields(row: FrontierRow, hiddenKeys: ReadonlySet<strin
     ...definition,
     metric: getDefaultMetric(row, definition.key),
   }));
-
+ 
   const additionalFields = Object.entries(row.additional ?? {})
     .filter(([key]) => !hiddenKeys.has(key))
     .map(([key, metric]) => ({
       ...getFieldDefinition(key, metric.unit),
       metric,
     }));
-
+ 
   return [...defaultFields, ...additionalFields];
 }
-
+ 
 /** The union of additional (non-default) field definitions reported across any row in the frontier. */
 export function getAdditionalFieldDefinitions(rows: readonly FrontierRow[]): ResultFieldDefinition[] {
   const seen = new Map<string, ResultFieldDefinition>();
-
+ 
   for (const row of rows) {
     for (const [key, metric] of Object.entries(row.additional ?? {})) {
       if (!seen.has(key)) {
@@ -181,10 +185,10 @@ export function getAdditionalFieldDefinitions(rows: readonly FrontierRow[]): Res
       }
     }
   }
-
+ 
   return [...seen.values()];
 }
-
+ 
 export function getFieldDefinition(key: string, unit: string): ResultFieldDefinition {
   return (
     ADDITIONAL_FIELD_DEFINITIONS.get(key) ?? {
@@ -195,7 +199,7 @@ export function getFieldDefinition(key: string, unit: string): ResultFieldDefini
     }
   );
 }
-
+ 
 export function summarizeConfig(config: RunConfig | null | undefined, qreVersion: string) {
   if (!config) {
     return [
@@ -204,11 +208,11 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       { label: "QEC Code", value: "Unknown" },
       { label: "Factory", value: "Unknown" },
       { label: "Trace Transform", value: "Unknown" },
-      { label: "Total Fault Tolerant Execution Error", value: "Unknown" },
+      { label: "Max Error", value: "Unknown" },
       { label: "QRE Version", value: qreVersion },
     ];
   }
-
+ 
   return [
     { label: "Application", value: summarizeApplication(config.application) },
     { label: "Architecture", value: summarizeArchitecture(config.architecture) },
@@ -217,42 +221,51 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       value: QEC_LABELS[config.qecCode] ?? humanizeIdentifier(config.qecCode),
     },
     {
-      label: "Factory",
-      value:
-        MAGIC_STATE_FACTORY_LABELS[config.magicStateFactory] ??
-        humanizeIdentifier(config.magicStateFactory),
+      // A set as of v1.2.0 — every selected factory is named, so the summary
+      // never implies a single choice the run did not make.
+      label: config.magicStateFactories.length > 1 ? "Factories" : "Factory",
+      value: config.magicStateFactories
+        .map((factory) => MAGIC_STATE_FACTORY_LABELS[factory] ?? humanizeIdentifier(factory))
+        .join(" + "),
     },
-    { label: "Trace Transform", value: summarizeTransform(config.traceTransform) },
-    { label: "Total Fault Tolerant Execution Error", value: String(config.maxError) },
+    {
+      // Reads a stored config of any contract version: v1.1.0 records carry the
+      // old psspc/latticeSurgery union and still have to render.
+      label: "Trace Transform",
+      value: describeTraceTransform(normalizeTraceTransform(config.traceTransform)),
+    },
+    { label: "Max Error", value: String(config.maxError) },
     { label: "QRE Version", value: qreVersion },
   ];
 }
-
+ 
 function summarizeApplication(application: RunConfig["application"]): string {
   if (application.type === "uploaded") {
     const fileName =
       application.filePath.split(/[\\/]/).pop() ?? application.filePath;
     return `${fileName} (${FORMAT_LABELS[application.format]})`;
   }
-
+ 
+  if (application.type === "manualCounts") {
+    return `Manual Logical Counts (${application.numQubits} qubits, ${application.tCount} T)`;
+  }
+ 
   return (
     findBenchmark(application.benchmarkId)?.name ??
     humanizeIdentifier(application.benchmarkId)
   );
 }
-
+ 
 function summarizeArchitecture(architecture: RunConfig["architecture"]): string {
-  return `${ARCHITECTURE_LABELS[architecture.type]}, error ${architecture.errorRate}`;
-}
-
-function summarizeTransform(transform: RunConfig["traceTransform"]): string {
-  if (transform.type === "latticeSurgery") {
-    return "Lattice Surgery";
+  const label = ARCHITECTURE_LABELS[architecture.type];
+  if (architecture.type === "neutralAtom") {
+    // Neutral Atom has three distinct error rates rather than one; surface the
+    // Rydberg error as the representative figure, matching the QPU spec ordering.
+    return `${label}, Rydberg error ${architecture.rydbergError}`;
   }
-
-  return `PSSPC, ${transform.tStatesPerRotation} T/rotation`;
+  return `${label}, error ${architecture.errorRate}`;
 }
-
+ 
 function humanizeIdentifier(value: string): string {
   return value
     .split(/[-_]/)
@@ -260,7 +273,7 @@ function humanizeIdentifier(value: string): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
-
+ 
 export function humanizeKey(value: string): string {
   return value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")

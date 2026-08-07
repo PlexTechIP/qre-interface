@@ -40,6 +40,15 @@
   --color-chart-line: #0891b2;
   --color-chart-point-stroke: #a5e8f3;
 
+  /* Comparison series. Marker SHAPE also varies per series, so these never
+     carry meaning on their own — they are picked for separation on light. */
+  --color-series-1: #0e7490;
+  --color-series-2: #b45309;
+  --color-series-3: #6d28d9;
+  --color-series-4: #15803d;
+  --color-series-5: #be123c;
+  --color-series-6: #0f766e;
+
   color: var(--color-text);
   background: var(--color-bg);
   font-size: 14px;
@@ -88,6 +97,14 @@
   --color-chart-axis: #3a4a64;
   --color-chart-line: #22d3ee;
   --color-chart-point-stroke: #17545f;
+
+  /* Same six series, lifted for contrast against the dark surface. */
+  --color-series-1: #22d3ee;
+  --color-series-2: #fbbf24;
+  --color-series-3: #c4b5fd;
+  --color-series-4: #4ade80;
+  --color-series-5: #fb7185;
+  --color-series-6: #5eead4;
 }
 
 * {
@@ -405,6 +422,32 @@ select {
 .results-page {
   display: grid;
   gap: 18px;
+}
+
+.results-page-frame {
+  display: grid;
+  gap: 12px;
+}
+
+.results-page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 30px;
+}
+
+.results-page-toolbar > .muted {
+  margin: 0;
+  font-size: 12px;
+}
+
+.results-actions-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-danger-text);
+  font-size: 12px;
 }
 
 .results-header {
@@ -1246,8 +1289,10 @@ select {
   visibility: hidden;
 }
 
-.definition-tip:hover .definition-tip__bubble,
-.definition-tip:focus-within .definition-tip__bubble {
+/* Driven by state, not by :hover/:focus-within — the trigger owns hover, focus,
+   click and Escape, so the tooltip is genuinely dismissible. A CSS-only :hover
+   rule would reopen it the instant the pointer moved, defeating Escape. */
+.definition-tip__bubble--open {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
   visibility: visible;
@@ -1610,6 +1655,19 @@ input[type="range"]:focus-visible,
 .micro-subgroup--private {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* An optional pipeline stage that is switched off. Greyed, but NOT
+   pointer-events: none — the stage's own toggle has to stay operable, and the
+   tooltip has to stay readable, so only the parameters below are dimmed (the
+   controls' own `disabled` is what actually blocks interaction).
+
+   Scoped to `.field` deliberately: the subgroup's own help line is what explains
+   WHY the stage is off ("Needs Dynamic Memory Compute — there is no memory model
+   to reverse without it"), and dimming the one sentence the user most needs to
+   read is the opposite of the intent. */
+.micro-subgroup--off .field {
+  opacity: 0.55;
 }
 
 .private-badge {
@@ -2136,14 +2194,37 @@ input[type="range"]:focus-visible,
 
 .checkbox-field {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
-  cursor: pointer;
 }
 
 .checkbox-field input {
   margin-top: 2px;
   accent-color: var(--color-accent);
+}
+
+/* The row is a <div> wrapping an explicit <label>, not a wrapping <label> — a
+   nested tooltip trigger would otherwise be folded into the checkbox's
+   accessible name. The pointer affordance moves to the label with it. */
+.checkbox-field > label {
+  cursor: pointer;
+}
+
+.checkbox-field input:disabled + label {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Why an option is unselectable. A greyed-out checkbox with no reason is its own
+   bug — these rules are architecture- and error-rate-dependent and are not
+   guessable from the screen. */
+.checkbox-field__reason {
+  flex-basis: 100%;
+  padding-left: 26px;
+  color: var(--color-label-soft);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .checkbox-field__label {
@@ -2624,6 +2705,53 @@ input[type="range"]:focus-visible,
   min-height: 0;
 }
 
+.history-panel__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bulk-delete-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  border: 1px solid var(--color-danger-border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-danger-bg);
+}
+
+.bulk-delete-toolbar > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bulk-delete-toolbar strong {
+  color: var(--color-danger-text);
+  font-size: 13px;
+}
+
+.bulk-delete-toolbar span {
+  color: var(--color-body);
+  font-size: 12px;
+}
+
+.bulk-delete-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bulk-delete-toolbar__count {
+  min-width: 72px;
+  text-align: center;
+  font-weight: 700;
+}
+
 .history-table-scroll {
   width: 100%;
   max-width: 100%;
@@ -2679,6 +2807,10 @@ input[type="range"]:focus-visible,
   background: var(--color-accent-bg);
 }
 
+.history-table tbody tr.marked-for-deletion {
+  background: var(--color-danger-bg);
+}
+
 .history-table tbody tr:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: -2px;
@@ -2687,6 +2819,11 @@ input[type="range"]:focus-visible,
 .col-compare {
   width: 34px;
   text-align: center;
+}
+
+.col-delete-select {
+  width: 52px;
+  text-align: center !important;
 }
 
 .run-name {
@@ -2981,6 +3118,38 @@ button.danger:hover {
   color: var(--color-danger-text);
 }
 
+/* What is being compared, before the numbers. */
+.comparison-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comparison-summary__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-body);
+}
+
+.comparison-summary__line strong {
+  color: var(--color-heading);
+  font-size: 15px;
+}
+
+.comparison-summary__failed {
+  color: var(--color-danger-text);
+  font-weight: 700;
+}
+
+.comparison-chip--failed {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+}
+
 .comparison-table-scroll {
   width: 100%;
   max-width: 100%;
@@ -2989,28 +3158,72 @@ button.danger:hover {
 }
 
 .comparison-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   font-size: 13px;
 }
 
+/* `border-collapse: separate` is required for the sticky column below, but it
+   makes every cell paint its own edges — so interior rules would double to 2px.
+   Each cell draws only its right/bottom edge; the table supplies the outer top
+   and left. */
 .comparison-table th,
 .comparison-table td {
-  border: 1px solid var(--color-hairline);
+  border-right: 1px solid var(--color-hairline);
+  border-bottom: 1px solid var(--color-hairline);
   padding: 8px 12px;
   text-align: left;
   vertical-align: top;
 }
 
+.comparison-table tr > *:first-child {
+  border-left: 1px solid var(--color-hairline);
+}
+
 .comparison-table thead th {
+  border-top: 1px solid var(--color-hairline);
   background: var(--color-table-head-bg);
   position: sticky;
   top: 0;
+  z-index: 1;
+  /* Keeps a 6+ run header readable. The cap lives on the inner span, not here:
+     max-width does not apply to cells under automatic table layout (CSS 2.1
+     §10.4), so setting it on the `th` would silently do nothing. */
+  min-width: 148px;
 }
 
+/* The field column stays put while runs scroll horizontally past it — this is
+   what makes 6+ runs usable rather than a header you lose track of. */
 .comparison-table .field-col {
   background: var(--color-well-bg);
   white-space: nowrap;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 0;
+}
+
+.comparison-table thead .field-col {
+  z-index: 3;
+}
+
+.comparison-run-row {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* A failed run reads as failed across its whole column, never as blank cells. */
+.comparison-table th.comparison-col-failed,
+.comparison-table td.comparison-col-failed {
+  background: var(--color-danger-bg);
+}
+
+.comparison-no-data {
+  color: var(--color-danger-text);
+  font-size: 12px;
+  font-style: italic;
+  font-variant-numeric: normal;
 }
 
 .comparison-table td.num,
@@ -3023,6 +3236,11 @@ button.danger:hover {
   display: block;
   font-weight: 700;
   color: var(--color-heading);
+  /* The real column cap. It lives on this block, not the `th`: max-width does
+     not apply to cells under automatic table layout, so a long run name would
+     otherwise stretch its column. */
+  max-width: 232px;
+  overflow-wrap: anywhere;
 }
 
 .comparison-run-meta {
@@ -3064,6 +3282,62 @@ button.danger:hover {
   box-shadow: 0 4px 14px var(--color-shadow-soft);
   padding: 8px 10px;
   font-size: 12px;
+}
+
+/* ---- Pareto curves ------------------------------------------------------- */
+
+.comparison-curves {
+  padding-bottom: 12px;
+}
+
+.comparison-curves__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 10px;
+}
+
+.comparison-curves__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.comparison-curves__legend-name {
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.comparison-curves__empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.comparison-curves__omitted {
+  margin: 8px 0 0;
+  border-top: 1px solid var(--color-hairline);
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.comparison-curves__omitted strong {
+  color: var(--color-danger-text);
+}
+
+/* Below-threshold "Compare Selected" explanation, shown in place on History. */
+.compare-warning {
+  margin: 12px 0 0;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--color-accent-bg);
+  color: var(--color-body);
+  font-size: 13px;
 }
 
 .comparison-tooltip strong {
@@ -3119,8 +3393,18 @@ button.danger:hover {
 
   .comparison-actions,
   .detail-actions,
+  .results-page-toolbar,
+  .bulk-delete-toolbar,
   .run-flow__actions {
     flex-wrap: wrap;
+  }
+
+  .bulk-delete-toolbar {
+    align-items: stretch;
+  }
+
+  .results-page-toolbar {
+    justify-content: flex-start;
   }
 
   .filter-toggle {

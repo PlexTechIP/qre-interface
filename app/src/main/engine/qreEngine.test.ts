@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { RunConfig } from "../../shared/types.js";
+import { SCHEMA_VERSION } from "../../shared/types.js";
 import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
 
 const PYTHON_BIN = resolvePythonBin();
+const PYTHON_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "python");
 const QRE_AVAILABLE =
   spawnSync(PYTHON_BIN, ["-c", "import qdk.qre"], { stdio: "ignore" })
     .status === 0;
 
 const config: RunConfig = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "acaf1c0e-a716-41bc-9774-598cacee033f",
   name: "test",
   createdAt: "2026-07-09T18:22:00Z",
@@ -23,15 +27,102 @@ const config: RunConfig = {
     twoQubitGateTime: null,
   },
   qecCode: "surface_code",
-  magicStateFactory: "round_based",
-  traceTransform: {
-    type: "psspc",
-    tStatesPerRotation: 20,
-    ccxMagicStates: false,
-  },
+  magicStateFactories: ["round_based"],
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
 };
+
+/**
+ * Manual Logical Counts on Neutral Atom + Low-Move Surface Code. The two v1.1.0
+ * headline features in one config, driven all the way through estimate.py.
+ *
+ * The v11 suites prove these values validate and serialize; only a real run
+ * proves they estimate. Both week-4 P0 defects — the `LogicalCounts` import and
+ * the `one_qubit_time` kwargs — were invisible to schema tests and would have
+ * been caught here.
+ */
+const manualNeutralAtom: RunConfig = {
+  schemaVersion: SCHEMA_VERSION,
+  id: "b3f1c2d4-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+  name: "manual counts on neutral atom",
+  createdAt: "2026-07-30T00:00:00Z",
+  application: {
+    type: "manualCounts",
+    numQubits: 100,
+    tCount: 20_000,
+    rotationCount: 0,
+    rotationDepth: 0,
+    cczCount: 0,
+    ccixCount: 0,
+    measurementCount: 0,
+  },
+  architecture: {
+    type: "neutralAtom",
+    rydbergTime: 500,
+    rydbergError: 0.001,
+    singleQubitTime: 1000,
+    singleQubitError: 0.0001,
+    measurementTime: 10_000,
+    measurementError: 0.0001,
+    handoffTime: 0,
+    atomSpacing: 3.0,
+    maxVelocity: 0.25,
+    maxAcceleration: 5000.0,
+    surfaceCodeOneQubitTimeFactor: 1,
+    surfaceCodeTwoQubitTimeFactor: 1,
+  },
+  qecCode: "low_move_surface_code",
+  magicStateFactories: ["round_based"],
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
+  maxError: 0.01,
+  qreVersion: "qdk-qre-v1-fixture",
+};
+
+/**
+ * Physical-qubit counts confirmed on the pinned qdk 1.29.1.
+ *
+ * These are deliberately exact. They are the 1.30.0 canary: if the version bump
+ * lands and these move, that is a real behaviour change to investigate and sign
+ * off — not a flaky test to relax. Re-baseline only with a stated reason.
+ */
+const NEUTRAL_ATOM_ANCHORS = {
+  small: 108_090, // numQubits 100, tCount 20,000
+  large: 627_598, // numQubits 400, tCount 900,000
+  gsj24: 103_733, // GSJ24 primary + both secondary factories
+} as const;
+
+/**
+ * Majorana + ThreeAux + maxError 1 — the same trio crossConfig.test.ts pins its
+ * third anchor on. `operationTime` is the field that reached every layer of the
+ * stack except the engine until it was mapped in build_architecture.
+ */
+const majorana: RunConfig = {
+  ...config,
+  id: "e6a4f5c7-8b9d-4e0f-1a2b-3c4d5e6f7a8b",
+  name: "majorana operation time",
+  architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
+  qecCode: "three_aux",
+  // Explicitly sized rather than left at the spec defaults: Majorana/Three-Aux
+  // has no feasible frontier point for the default 10x10 / 34-step lattice even
+  // at maxError = 1, and this test needs an estimate to compare against itself.
+  parameters: {
+    latticeN1: 3,
+    latticeN2: 3,
+    totalTime: 9.0,
+    trotterStep: 0.9,
+    couplingJ: 1.0,
+    fieldG: 1.0,
+  },
+};
+
+/**
+ * Runtime at operationTime 1000 (QDK's default and the UI's) for the 3x3 lattice
+ * pinned above. `operationTime` is the field that reached every layer of the
+ * stack except the engine until it was mapped in build_architecture, so this
+ * anchor is what proves the mapping is still there.
+ */
+const MAJORANA_RUNTIME_AT_1000 = 24_681_000;
 
 describe("QreEngine", () => {
   it.runIf(QRE_AVAILABLE)(
@@ -47,6 +138,156 @@ describe("QreEngine", () => {
         stats: expect.any(Object),
       });
       expect(result.qreVersion).toBe("1.30.0");
+    },
+    60_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "estimates Manual Logical Counts on Neutral Atom end to end",
+    async () => {
+      const result = await new QreEngine(PYTHON_BIN).run(manualNeutralAtom);
+      expect(result.status).toBe("succeeded");
+      expect(result.runId).toBe(manualNeutralAtom.id);
+      expect(result.frontier!.length).toBeGreaterThan(0);
+      expect(result.frontier![0]!.physicalQubits.value).toBeGreaterThan(0);
+      expect(result.frontier![0]!.physicalQubits.value).toBe(
+        NEUTRAL_ATOM_ANCHORS.small,
+      );
+    },
+    120_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "scales physical qubits with the manual counts it is given",
+    async () => {
+      const engine = new QreEngine(PYTHON_BIN);
+      const small = await engine.run(manualNeutralAtom);
+      const large = await engine.run({
+        ...manualNeutralAtom,
+        id: "c4e2d3a5-6f7b-4c8d-9e0f-1a2b3c4d5e6f",
+        application: {
+          type: "manualCounts",
+          numQubits: 400,
+          tCount: 900_000,
+          rotationCount: 0,
+          rotationDepth: 0,
+          cczCount: 0,
+          ccixCount: 0,
+          measurementCount: 0,
+        },
+      });
+
+      expect(small.status).toBe("succeeded");
+      expect(large.status).toBe("succeeded");
+
+      // A constant answer would still pass the smoke test above; this is what
+      // proves the counts actually reach the estimator.
+      expect(large.frontier![0]!.physicalQubits.value).toBeGreaterThan(
+        small.frontier![0]!.physicalQubits.value,
+      );
+      expect(small.frontier![0]!.physicalQubits.value).toBe(
+        NEUTRAL_ATOM_ANCHORS.small,
+      );
+      expect(large.frontier![0]!.physicalQubits.value).toBe(
+        NEUTRAL_ATOM_ANCHORS.large,
+      );
+    },
+    240_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "reaches the engine with GSJ24 plus both secondary factories",
+    async () => {
+      const engine = new QreEngine(PYTHON_BIN);
+      const roundBased = await engine.run(manualNeutralAtom);
+      const gsj24 = await engine.run({
+        ...manualNeutralAtom,
+        id: "d5f3e4b6-7a8c-4d9e-0f1a-2b3c4d5e6f7a",
+        magicStateFactories: ["gsj24"],
+        secondaryFactories: ["magic_up_to_clifford", "gsj24_ccx"],
+        // gsj24_ccx is yoked to this flag — turning either on turns the other on.
+        traceTransform: { tStatesPerRotation: 20, ccxMagicStates: true, slowDownFactor: 1.0 },
+      });
+
+      expect(gsj24.status).toBe("succeeded");
+      expect(gsj24.frontier![0]!.physicalQubits.value).not.toBe(
+        roundBased.frontier![0]!.physicalQubits.value,
+      );
+      expect(gsj24.frontier![0]!.physicalQubits.value).toBe(
+        NEUTRAL_ATOM_ANCHORS.gsj24,
+      );
+    },
+    240_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "scales Majorana runtime linearly with operationTime",
+    async () => {
+      const engine = new QreEngine(PYTHON_BIN);
+      const atDefault = await engine.run(majorana);
+      const atQuarter = await engine.run({
+        ...majorana,
+        id: "f7b5a6d8-9c0e-4f1a-2b3c-4d5e6f7a8b9c",
+        architecture: { type: "majorana", errorRate: 0.00001, operationTime: 250 },
+      });
+
+      expect(atDefault.status).toBe("succeeded");
+      expect(atQuarter.status).toBe("succeeded");
+
+      const slow = atDefault.frontier![0]!;
+      const fast = atQuarter.frontier![0]!;
+
+      expect(slow.runtime.value).toBe(MAJORANA_RUNTIME_AT_1000);
+
+      // Quartering the operation time quarters the runtime exactly, and moves
+      // nothing else. A regression that drops the mapping makes these equal.
+      expect(fast.runtime.value).toBe(MAJORANA_RUNTIME_AT_1000 / 4);
+      expect(slow.runtime.value / fast.runtime.value).toBe(4);
+      expect(fast.physicalQubits.value).toBe(slow.physicalQubits.value);
+      expect(fast.totalError.value).toBe(slow.totalError.value);
+    },
+    240_000,
+  );
+
+  it.runIf(QRE_AVAILABLE)(
+    "pins the QDK NeutralAtom defaults inherited when both fields are blank",
+    () => {
+      // COMMENT CORRECTED 2026-08-06 — the test is unchanged and still passes.
+      //
+      // It used to say data_qubit_spacing and target_year were "absent from the
+      // field spec, so the wrapper never sets them". Both are in the spec AND in
+      // the contract as of v1.4.0, and the wrapper DOES set them when present.
+      //
+      // What keeps the test worth having is that its fixture sets NEITHER, which
+      // is still the default path: the form leaves both blank, `toRunConfig`
+      // omits them, and qdk's own defaults apply. So this pins the values we
+      // INHERIT. They are inert on 1.30.0 — a property of this version, not a
+      // guarantee — and a future bump that moves them fails here, loudly,
+      // instead of silently moving every Neutral Atom estimate.
+      const probe = spawnSync(
+        PYTHON_BIN,
+        [
+          "-c",
+          [
+            "import json",
+            "from estimate import build_architecture",
+            `arch = json.loads(${JSON.stringify(
+              JSON.stringify(manualNeutralAtom.architecture),
+            )})`,
+            "na = build_architecture(arch)",
+            "print(json.dumps({'spacing': na.data_qubit_spacing, 'year': na.target_year}))",
+          ].join("\n"),
+        ],
+        { cwd: PYTHON_DIR, encoding: "utf8" },
+      );
+
+      expect(probe.status).toBe(0);
+      const probed = JSON.parse(probe.stdout.trim()) as {
+        spacing: number;
+        year: number | null;
+      };
+      expect(probed.spacing).toBe(12.0);
+      expect(probed.year).toBeNull();
     },
     60_000,
   );

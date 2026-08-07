@@ -7,6 +7,7 @@ import { QreEngine } from "./engine/qreEngine.js";
 import { registerEstimatorHandler } from "./estimatorHandler.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
 import { registerStoreHandlers } from "./storeHandler.js";
+import { registerUploadHandler } from "./uploadHandler.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,8 @@ const engine = new QreEngine(
   resolvePythonBin(process.env, process.platform, engineDir),
 );
 registerEstimatorHandler(ipcMain, engine);
+// Form-level pre-flight for uploaded programs (main-process filesystem access).
+registerUploadHandler(ipcMain);
 
 // The run store is main-process only. Its DB file resolves under the app's
 // per-user data dir, which is valid only after `whenReady` — so it's constructed

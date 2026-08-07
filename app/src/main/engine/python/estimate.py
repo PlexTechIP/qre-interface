@@ -1,38 +1,52 @@
 #!/usr/bin/env python3
 """JSON-lines boundary around qdk.qre.estimate.
-
+ 
 The process writes exactly one JSON object to stdout. Engine failures are data,
 not process failures. ``verbatim`` is the lossless JSON representation of every
 field exposed by qdk's EstimationTable, entries, source graph, and factories;
 ``frontier`` is the deliberately tidy adapter projection.
 """
-
+ 
 from __future__ import annotations
-
+ 
 import importlib.metadata
 import json
+import math
 import sys
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
-
+ 
 import qdk
 import qdk.qre as qre
 from qsharp import QSharpError
-from qdk.qre import LatticeSurgery, PSSPC, instruction_name
+from qdk.qre import (
+    DynamicMemoryCompute,
+    EvictionStrategy,
+    LatticeSurgery,
+    PSSPC,
+    Unmemory,
+    instruction_name,
+)
+from qdk.estimator import LogicalCounts
 from qdk.qre.application import OpenQASMApplication, QIRApplication, QSharpApplication
 from qdk.qre.models import (
     GateBased,
+    GSJ24CCXFactory,
+    GSJ24Factory,
     Litinski19Factory,
+    MagicUpToClifford,
     Majorana,
+    NeutralAtom,
     RoundBasedFactory,
     SurfaceCode,
+    SurfaceCodeLowMove,
     ThreeAux,
 )
 from qdk.qre import property_keys
 from qdk.qre.property_keys import CODE_CYCLE_TIME, DISTANCE
-
-
+ 
+ 
 PROPERTY_IDS = {
     name: getattr(property_keys, name)
     for name in dir(property_keys)
@@ -43,18 +57,29 @@ ROUND_BASED_CACHE = Path(__file__).parent / ".qre-cache" / "round-based"
 MISSING_PROPERTY = 2**63 - 1
 
 
+class InvalidInvocation(ValueError):
+    """The invocation parsed, but describes a model qdk should never be handed.
+
+    A distinct type, rather than a bare ValueError, so `failure_code_for` can
+    report INVALID_CONFIG: nothing was estimated, and the analyst's next step is
+    to correct a field rather than relax a bound or read a qdk traceback.
+    """
+
+
 def failure_code_for(exc: Exception) -> str:
-    """Classify compiler failures by QDK's structured exception type."""
+    """Classify failures by structured exception type."""
+    if isinstance(exc, InvalidInvocation):
+        return "INVALID_CONFIG"
     return "COMPILE_ERROR" if isinstance(exc, QSharpError) else "ESTIMATION_FAILED"
 
-
+ 
 def _public_slots(value: Any) -> list[str]:
     slots = getattr(type(value), "__slots__", ())
     if isinstance(slots, str):
         slots = (slots,)
     return [name for name in slots if not name.startswith("_") and hasattr(value, name)]
-
-
+ 
+ 
 def jsonable(value: Any) -> Any:
     """Convert qdk-exposed values without pruning public fields."""
     if value is None or isinstance(value, (bool, int, float, str)):
@@ -81,8 +106,8 @@ def jsonable(value: Any) -> Any:
             if not key.startswith("_")
         }
     return repr(value)
-
-
+ 
+ 
 def build_application(program: dict[str, Any]):
     fmt = program["format"]
     if fmt == "qsharp":
@@ -94,41 +119,518 @@ def build_application(program: dict[str, Any]):
     if fmt == "qir":
         with open(program["sourcePath"], "r", encoding="utf-8") as source:
             return QIRApplication(input=source.read())
+    if fmt == "logicalCounts":
+        # Manual Logical Counts: no source to compile. QSharpApplication accepts
+        # a LogicalCounts as its entry_expr; qdk builds the Trace straight from
+        # the counts, skipping Q# compilation entirely. The seven keys map 1:1.
+        counts = program["logicalCounts"]
+        return QSharpApplication(entry_expr=LogicalCounts(counts))
     raise ValueError(f"Unknown program format: {fmt}")
+ 
+ 
+# ---------------------------------------------------------------------------
+# Architecture parameter bounds
+# ---------------------------------------------------------------------------
+#
+# qdk validates NO architecture parameter. `GateBased`, `Majorana` and
+# `NeutralAtom` are plain dataclasses whose only `__post_init__` logic is
+# Majorana's `t_error_rate` derivation, so every field below constructs happily
+# from a negative, zero, or absurd value. Measured on 1.30.0, that lands three
+# ways:
+#
+#   * a WRONG NUMBER reported as success -- `gateBased error_rate=-1e-4`
+#     estimates and returns `error: -9.99e-05`, a negative probability, on the
+#     DEFAULT architecture;
+#   * a soft failure blaming the wrong thing -- "math domain error" for
+#     `atom_spacing=-3`, reported as ESTIMATION_FAILED;
+#   * a hard crash -- `majorana time=0` panics inside pyo3, and PanicException
+#     derives from BaseException, so `main()`'s `except Exception` never sees it
+#     and the run comes back ENGINE_CRASH ("verify the Python environment").
+#
+# The rules below are transcribed from runconfig.schema.json's three
+# architecture variants and use the schema's own vocabulary, so the two can be
+# diffed by eye -- and `architectureBounds.test.ts` diffs them mechanically,
+# against the committed schema, so the transcription is enforced rather than
+# asserted here. `configToInvocation` checks the same bounds first; these are
+# the second line of defence, for a config that reaches the engine another way.
+
+# The largest integer a JSON number carries exactly (2**53 - 1, JavaScript's
+# Number.MAX_SAFE_INTEGER). It is the ceiling on every `integer` rule, for two
+# reasons that are really one:
+#
+#   * every producer on this wire serializes from JavaScript, so an integral
+#     value above it was already wrong when it was written; and
+#   * `float()` below cannot range-check it anyway -- a Python int is arbitrary
+#     precision, so 9007199254740993 rounds silently to ...992 and 10**400
+#     raises OverflowError outright.
+#
+# Unguarded, both land in qdk: `gateTime=1e300` is integral and passes every
+# other bound, then fails inside the pyo3 conversion as ESTIMATION_FAILED "int
+# too big to convert" -- a field-less diagnostic of exactly the kind this table
+# exists to remove. `runconfig.schema.json` and `configToInvocation` carry the
+# same ceiling (`Number.isSafeInteger`).
+MAX_EXACT_INT = 2**53 - 1
+
+
+def integral(**rule: Any) -> dict[str, Any]:
+    """An integral rule, ceilinged at MAX_EXACT_INT.
+
+    The ceiling lives in the rule rather than in the checker so that it reaches
+    the message ("an integer in (0, 9007199254740991]") and stays visible to the
+    schema diff, instead of being an invisible extra the two cannot compare.
+    """
+    return {"integer": True, "maximum": MAX_EXACT_INT, **rule}
+
+
+GATE_BASED_RULES: dict[str, dict[str, Any]] = {
+    "errorRate": {"exclusive_minimum": 0, "exclusive_maximum": 0.01},
+    "gateTime": integral(exclusive_minimum=0),
+    "measurementTime": integral(exclusive_minimum=0),
+    "twoQubitGateTime": integral(exclusive_minimum=0, optional=True),
+}
+
+# `errorRate` is an enum rather than a range, and EXACT rather than qdk's own
+# tolerance test (`abs(x - 1e-4) <= 1e-8`), matching the schema. qdk's check is
+# unusable anyway: it sits inside `__post_init__`'s `if t_error_rate is None:`
+# branch, so supplying a `t_error_rate` skips it entirely.
+#
+# `tErrorRate`'s (0, 0.05] is not an arbitrary cap: 0.05 is the LARGEST value
+# qdk's own derivation ever produces (error_rate 1e-4 -> 0.05, 1e-5 -> 0.015,
+# 1e-6 -> 0.01), so the bound is the edge of the regime qdk models.
+MAJORANA_RULES: dict[str, dict[str, Any]] = {
+    "errorRate": {"enum": (1e-4, 1e-5, 1e-6)},
+    "operationTime": integral(exclusive_minimum=0),
+    "tErrorRate": {"exclusive_minimum": 0, "maximum": 0.05, "optional": True},
+    "targetYear": integral(minimum=0, optional=True),
+}
+
+NEUTRAL_ATOM_RULES: dict[str, dict[str, Any]] = {
+    "rydbergTime": integral(exclusive_minimum=0),
+    "rydbergError": {"minimum": 0, "exclusive_maximum": 0.01},
+    "singleQubitTime": integral(exclusive_minimum=0),
+    "singleQubitError": {"minimum": 0, "exclusive_maximum": 0.01},
+    "measurementTime": integral(exclusive_minimum=0),
+    "measurementError": {"minimum": 0, "exclusive_maximum": 0.01},
+    "handoffTime": integral(minimum=0),
+    "atomSpacing": {"exclusive_minimum": 0},
+    "dataQubitSpacing": {"exclusive_minimum": 0, "optional": True},
+    "maxVelocity": {"exclusive_minimum": 0},
+    "maxAcceleration": {"exclusive_minimum": 0},
+    "surfaceCodeOneQubitTimeFactor": integral(minimum=1),
+    "surfaceCodeTwoQubitTimeFactor": integral(minimum=1),
+    "targetYear": integral(minimum=0, optional=True),
+}
+
+# Contract architecture id -> the label its messages use and the rules that
+# govern it. A single mapping, so `build_architecture` cannot dispatch on a type
+# the table does not cover (or vice versa) and the schema diff has one list to
+# walk.
+ARCHITECTURE_RULES: dict[str, tuple[str, dict[str, dict[str, Any]]]] = {
+    "gateBased": ("GateBased", GATE_BASED_RULES),
+    "majorana": ("Majorana", MAJORANA_RULES),
+    "neutralAtom": ("NeutralAtom", NEUTRAL_ATOM_RULES),
+}
+
+
+def _constraint_text(rule: dict[str, Any]) -> str:
+    """Describe a rule the way configToInvocation's messages describe it."""
+    if "enum" in rule:
+        return "one of " + ", ".join(f"{value:.0e}" for value in rule["enum"])
+
+    prefix = "an integer " if rule.get("integer") else ""
+    low = (
+        ("[", ">=", rule["minimum"])
+        if "minimum" in rule
+        else ("(", ">", rule["exclusive_minimum"])
+        if "exclusive_minimum" in rule
+        else None
+    )
+    high = (
+        ("]", "<=", rule["maximum"])
+        if "maximum" in rule
+        else (")", "<", rule["exclusive_maximum"])
+        if "exclusive_maximum" in rule
+        else None
+    )
+    if low and high:
+        return f"{prefix}in {low[0]}{low[2]}, {high[2]}{high[0]}"
+    if low:
+        return f"{prefix}{low[1]} {low[2]}"
+    if high:
+        return f"{prefix}{high[1]} {high[2]}"
+    # Unreachable for the three tables above, and deliberately loud rather than
+    # given a vague fallback string: a rule with no bound and no enum is one
+    # `checked_number` would accept unconditionally, which is a defect in the
+    # table rather than a message to render. main()'s handler still catches it,
+    # so the process fails soft.
+    raise AssertionError(f"architecture rule constrains nothing: {rule!r}")
+
+
+def _shown(value: Any) -> str:
+    """The value as a message should show it, with an absurd literal truncated.
+
+    Python's ints are arbitrary precision and `json.loads` builds one from any
+    digit string, so a 400-digit `gateTime` -- or a megabyte-long string where a
+    number belongs -- is a real input on this wire. The message it produces is
+    stored on the run record and rendered, so the value is capped here rather
+    than pasted in whole.
+    """
+    text = repr(value)
+    return text if len(text) <= 60 else f"{text[:57]}..."
+
+
+def _as_number(value: Any) -> float | None:
+    """The value as a finite float, or None if it cannot be range-checked.
+
+    `bool` is a subclass of `int` in Python, so it has to be excluded before the
+    numeric tests rather than left to them. Short-circuiting also keeps
+    `float()` away from strings, None, lists and dicts.
+
+    `float()` is guarded because a Python int is arbitrary precision:
+    `float(10**400)` raises OverflowError, which is NOT an `InvalidInvocation`
+    and would leave `build_architecture` classified ESTIMATION_FAILED with "int
+    too large to convert to float" -- the field-less diagnostic this whole table
+    exists to remove. Returning None routes it to the same named refusal as any
+    other unusable value. (Values merely too large to be exact, rather than to
+    convert at all, are caught by MAX_EXACT_INT on the `integer` rules.)
+
+    isfinite() is load-bearing for the same reason: json.loads accepts the
+    non-standard `Infinity` literal, and a field with no upper bound
+    (atomSpacing, maxVelocity) would otherwise pass it straight through to qdk.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def checked_number(value: Any, label: str, rule: dict[str, Any]):
+    """Check one architecture parameter against its rule, or refuse the run.
+
+    An absent OPTIONAL field stays absent: for every optional parameter here
+    that means "let qdk derive or default it", and substituting a value would
+    run a configuration the saved record does not describe. An absent REQUIRED
+    field falls through to the same refusal as a bad one, so it is named rather
+    than raising a bare KeyError three frames down.
+
+    An `integer` rule is a check on the VALUE, not the JSON type, and the result
+    is coerced with `int()`. JavaScript cannot tell 1000 from 1000.0, so a
+    producer emitting the latter is describing the same configuration -- but
+    qdk rejects the float outright, so coercing is what keeps the boundary
+    forgiving about representation while strict about value. The `maximum` every
+    `integer` rule carries (MAX_EXACT_INT) is what stops that forgiveness
+    extending to a value no producer could have written exactly.
+    """
+    if value is None and rule.get("optional"):
+        return None
+
+    number = _as_number(value)
+
+    if number is None:
+        ok = False
+    elif "enum" in rule:
+        ok = number in rule["enum"]
+    else:
+        ok = (
+            (not rule.get("integer") or number.is_integer())
+            and ("minimum" not in rule or number >= rule["minimum"])
+            and ("exclusive_minimum" not in rule or number > rule["exclusive_minimum"])
+            and ("maximum" not in rule or number <= rule["maximum"])
+            and ("exclusive_maximum" not in rule or number < rule["exclusive_maximum"])
+        )
+
+    if not ok:
+        raise InvalidInvocation(
+            f"{label} must be {_constraint_text(rule)}, got {_shown(value)}."
+        )
+    return int(number) if rule.get("integer") else number
+
+
+def checked_fields(architecture: dict[str, Any]) -> dict[str, Any]:
+    """Validate every declared parameter of an architecture, returning the values.
+
+    The rules are selected from the architecture's own `type`, which is checked
+    first: `architecture["type"]` raised a bare KeyError for a record missing the
+    discriminator, and that surfaced as ESTIMATION_FAILED with the message
+    `'type'` -- naming nothing, on the one field that decides which bounds apply
+    at all. It is the same defect this table fixed for `errorRate`.
+    """
+    arch_type = architecture.get("type")
+    if arch_type not in ARCHITECTURE_RULES:
+        raise InvalidInvocation(
+            f"architecture type must be one of {', '.join(ARCHITECTURE_RULES)}, "
+            f"got {_shown(arch_type)}."
+        )
+    label, rules = ARCHITECTURE_RULES[arch_type]
+    return {
+        name: checked_number(architecture.get(name), f"{label} {name}", rule)
+        for name, rule in rules.items()
+    }
 
 
 def build_architecture(architecture: dict[str, Any]):
-    if architecture["type"] == "gateBased":
+    # Every parameter is bounded before any model is constructed. Selecting the
+    # rules by type also means an unknown or missing `type` is refused as
+    # INVALID_CONFIG here: dispatching on it is what forced the conversion, since
+    # there is no table to check a config against until the type is known.
+    checked = checked_fields(architecture)
+    arch_type = architecture["type"]
+    if arch_type == "gateBased":
         return GateBased(
-            error_rate=architecture["errorRate"],
-            gate_time=architecture["gateTime"],
-            measurement_time=architecture["measurementTime"],
-            two_qubit_gate_time=architecture.get("twoQubitGateTime"),
+            error_rate=checked["errorRate"],
+            gate_time=checked["gateTime"],
+            measurement_time=checked["measurementTime"],
+            # Optional: None here means "let qdk derive it from gate_time",
+            # which is what every config without a two-qubit time has always
+            # done. It is NOT a value being substituted.
+            two_qubit_gate_time=checked["twoQubitGateTime"],
         )
-    return Majorana(error_rate=architecture["errorRate"])
+    if arch_type == "majorana":
+        # `time` is the contract's "Operation Time" (features-and-fields.md).
+        # QDK's default and the UI default are both 1000, so mapping it is
+        # output-identical for every existing run; the only behaviour it changes
+        # is the case that is wrong today, where a user types 250 and silently
+        # gets the answer for 1000.
+        #
+        # v1.4.0 adds `t_error_rate` and `target_year`, both optional in the
+        # contract and both `Optional[...] = None` on the model. Passing None for
+        # an absent field is therefore identical to not passing it at all, which
+        # is what keeps this additive for every pre-v1.4.0 record.
+        #
+        # Every parameter is re-checked in `checked_fields` above as well as in
+        # configToInvocation, because qdk checks none of them usefully — see
+        # MAJORANA_RULES.
+        return Majorana(
+            error_rate=checked["errorRate"],
+            time=checked["operationTime"],
+            t_error_rate=checked["tErrorRate"],
+            target_year=checked["targetYear"],
+        )
+    if arch_type == "neutralAtom":
+        # Field names follow the 1.30.0 NeutralAtom model. Times are integer
+        # nanoseconds; the three error rates and the motion parameters map 1:1
+        # from the contract's Neutral Atom variant (QPU Specification tab).
+        #
+        # v1.4.0's `data_qubit_spacing` is NOT Optional on the model — it
+        # defaults to 12.0 — so an absent contract value must OMIT the kwarg
+        # rather than pass None. Omitting also avoids duplicating qdk's default
+        # here, where it would silently pin the old value if qdk ever changed it.
+        optional: dict[str, Any] = {}
+        if checked["dataQubitSpacing"] is not None:
+            optional["data_qubit_spacing"] = checked["dataQubitSpacing"]
+
+        return NeutralAtom(
+            rydberg_time=checked["rydbergTime"],
+            rydberg_error=checked["rydbergError"],
+            one_qubit_time=checked["singleQubitTime"],
+            one_qubit_error=checked["singleQubitError"],
+            measurement_time=checked["measurementTime"],
+            measurement_error=checked["measurementError"],
+            handoff_time=checked["handoffTime"],
+            atom_spacing=checked["atomSpacing"],
+            max_velocity=checked["maxVelocity"],
+            max_acceleration=checked["maxAcceleration"],
+            surface_code_one_qubit_time_factor=checked["surfaceCodeOneQubitTimeFactor"],
+            surface_code_two_qubit_time_factor=checked["surfaceCodeTwoQubitTimeFactor"],
+            target_year=checked["targetYear"],
+            **optional,
+        )
+    # Unreachable: `checked_fields` refuses any type ARCHITECTURE_RULES does not
+    # carry, so this is here to keep the function total rather than to classify
+    # anything. The sibling `Unknown ...` ValueErrors in build_qec and the
+    # factory builders are untouched and still report ESTIMATION_FAILED — see
+    # risks-and-open-questions.md.
+    raise InvalidInvocation(f"architecture type has no builder: {_shown(arch_type)}.")
+ 
+ 
+def build_qec(qec_code: str):
+    if qec_code == "surface_code":
+        return SurfaceCode.q()
+    if qec_code == "three_aux":
+        return ThreeAux.q()
+    if qec_code == "low_move_surface_code":
+        return SurfaceCodeLowMove.q()
+    raise ValueError(f"Unknown QEC code: {qec_code}")
+ 
+ 
+def build_primary_factory(magic_state_factory: str):
+    if magic_state_factory == "litinski19":
+        return Litinski19Factory.q()
+    if magic_state_factory == "gsj24":
+        return GSJ24Factory.q()
+    if magic_state_factory == "round_based":
+        return RoundBasedFactory.q(cache_dir=ROUND_BASED_CACHE, use_cache=True)
+    raise ValueError(f"Unknown magic state factory: {magic_state_factory}")
 
 
-def build_isa_query(qec_code: str, magic_state_factory: str):
-    qec = SurfaceCode.q() if qec_code == "surface_code" else ThreeAux.q()
-    factory = (
-        Litinski19Factory.q()
-        if magic_state_factory == "litinski19"
-        else RoundBasedFactory.q(cache_dir=ROUND_BASED_CACHE, use_cache=True)
-    )
-    return qec * factory
+def build_primary_factory_query(magic_state_factories: list[str]):
+    """Union the selected primary factories into a single ISA query.
+
+    ``_ComponentQuery.__add__`` is documented as a union: enumerating ``a + b``
+    yields the ISAs of both. So ``qec * (f1 + f2)`` makes the estimator explore
+    every selected factory and return ONE Pareto frontier across all of them --
+    not one frontier per factory, and not a silently-picked winner.
+    """
+    if not magic_state_factories:
+        raise ValueError("At least one magic state factory is required.")
+    query = build_primary_factory(magic_state_factories[0])
+    for factory in magic_state_factories[1:]:
+        query = query + build_primary_factory(factory)
+    return query
+ 
+ 
+# Contract id -> the qdk yoked-surface-code CLASS NAME. Strings resolved at call
+# time, for the same reason EVICTION_STRATEGY_MEMBERS below is lazy: a class qdk
+# renames in a future release then fails only the run that asked for it, instead
+# of raising at import and turning EVERY run into an ENGINE_CRASH.
+YOKED_CODE_CLASSES = {
+    "yoked_1d": "OneDimensionalYokedSurfaceCode",
+    "yoked_2d": "TwoDimensionalYokedSurfaceCode",
+}
+
+
+def resolve_yoked_code(name: str):
+    """Map a contract memoryOptimization id onto its qdk yoked-code class.
+
+    Raises ValueError — not KeyError — for both failure modes, matching
+    `build_isa_query`'s "Unknown secondary factory" convention, so the message
+    that reaches the analyst names the value rather than being a bare key.
+    """
+    class_name = YOKED_CODE_CLASSES.get(name)
+    if class_name is None:
+        raise ValueError(
+            f"Unknown memory optimization: {name!r}. "
+            f"Expected one of {', '.join(sorted(YOKED_CODE_CLASSES))}."
+        )
+    yoked = getattr(qdk.qre.models, class_name, None)
+    if yoked is None:
+        raise ValueError(
+            f"This qdk release does not expose {class_name}; "
+            "the memory-optimization mapping needs updating."
+        )
+    return yoked
+
+
+def build_isa_query(
+    qec_code: str,
+    magic_state_factories: list[str],
+    secondary_factories: list[str] | None = None,
+    memory_optimization: str | None = None,
+):
+    qec = build_qec(qec_code)
+    query = qec * build_primary_factory_query(magic_state_factories)
+    # Secondary factories are layered onto the primary factories. They are an
+    # independent multi-select set; order does not matter to the product.
+    for secondary in secondary_factories or []:
+        if secondary == "magic_up_to_clifford":
+            query = query * MagicUpToClifford.q()
+        elif secondary == "gsj24_ccx":
+            query = query * GSJ24CCXFactory.q()
+        else:
+            raise ValueError(f"Unknown secondary factory: {secondary}")
+    # Memory optimization, layered after the factories — the yoked codes compose
+    # exactly like the secondary factories do. None means the analyst selected
+    # no optimization: the adapter omits the key rather than sending "none", so
+    # nothing is multiplied in.
+    if memory_optimization is not None:
+        query = query * resolve_yoked_code(memory_optimization).q()
+    return query
+ 
+ 
+# Contract id -> the qdk enum MEMBER NAME. Deliberately strings, resolved at
+# call time rather than at import: dereferencing EvictionStrategy.<MEMBER> at
+# module scope means a member qdk renames in a future release raises at import,
+# before main() runs, and every run — benchmark, uploaded, manual counts — comes
+# back ENGINE_CRASH. That is the shape of the 1.29.1 `LogicalCounts` import
+# defect; keeping this lazy confines the blast radius to the one stage that
+# actually uses it.
+EVICTION_STRATEGY_MEMBERS = {
+    "least_recently_used": "LEAST_RECENTLY_USED",
+    "least_frequently_used": "LEAST_FREQUENTLY_USED",
+    "first_available": "FIRST_AVAILABLE",
+}
+
+
+def resolve_eviction_strategy(name: str):
+    """Map a contract eviction-strategy id onto qdk's enum.
+
+    Raises ValueError — not KeyError — for both failure modes, matching
+    `build_isa_query`'s "Unknown secondary factory" convention, so the message
+    that reaches the analyst names the value instead of being a bare key.
+    """
+    member = EVICTION_STRATEGY_MEMBERS.get(name)
+    if member is None:
+        raise ValueError(
+            f"Unknown eviction strategy: {name!r}. "
+            f"Expected one of {', '.join(sorted(EVICTION_STRATEGY_MEMBERS))}."
+        )
+    strategy = getattr(EvictionStrategy, member, None)
+    if strategy is None:
+        raise ValueError(
+            f"qdk's EvictionStrategy has no member {member!r} "
+            f"(contract id {name!r}); the installed qdk may be incompatible."
+        )
+    return strategy
 
 
 def build_trace_query(trace_transform: dict[str, Any]):
-    if trace_transform["type"] == "psspc":
-        return PSSPC.q(
+    """Compose the ordered trace pipeline.
+
+    PSSPC lowers arbitrary rotations and CCX into Pauli-based operations, and
+    Lattice Surgery maps those onto lattice-surgery instructions. Both always
+    run, and only in this order: `PSSPC.q()` alone yields an empty frontier, and
+    `LatticeSurgery.q() * PSSPC.q()` raises "unsupported instruction
+    LATTICE_SURGERY in trace transformation 'PSSPC'".
+
+    v1.4.0 adds two OPTIONAL stages around them, for the full pipeline:
+
+        DynamicMemoryCompute x PSSPC x LatticeSurgery x Unmemory
+
+    Two rules this function exists to hold:
+
+    1. Order is a correctness property, not a presentation choice — so the
+       stages are assembled from a FIXED sequence and folded left to right,
+       never from iterating a set or a dict's keys.
+    2. An absent stage is absent from the composition. It is NOT run at its
+       defaults. Those are different pipelines and therefore different
+       estimates, and quietly substituting one for the other would add a stage
+       the analyst never selected to every run.
+    """
+    stages = []
+
+    dynamic_memory_compute = trace_transform.get("dynamicMemoryCompute")
+    if dynamic_memory_compute is not None:
+        stages.append(
+            DynamicMemoryCompute.q(
+                compute_capacity_percentage=dynamic_memory_compute[
+                    "computeCapacityPercentage"
+                ],
+                eviction_strategy=resolve_eviction_strategy(
+                    dynamic_memory_compute["evictionStrategy"]
+                ),
+            )
+        )
+
+    stages.append(
+        PSSPC.q(
             num_ts_per_rotation=trace_transform["tStatesPerRotation"],
             ccx_magic_states=trace_transform["ccxMagicStates"],
-        ) * LatticeSurgery.q(slow_down_factor=1.0)
-    return PSSPC.q() * LatticeSurgery.q(
-        slow_down_factor=trace_transform["slowDownFactor"]
+        )
     )
+    stages.append(LatticeSurgery.q(slow_down_factor=trace_transform["slowDownFactor"]))
 
+    if trace_transform.get("unmemory"):
+        stages.append(Unmemory.q())
 
+    query = stages[0]
+    for stage in stages[1:]:
+        query = query * stage
+    return query
+ 
+ 
 def instruction_properties(instruction: Any) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     for name, key in PROPERTY_IDS.items():
@@ -136,8 +638,8 @@ def instruction_properties(instruction: Any) -> dict[str, Any]:
         if value != MISSING_PROPERTY:
             properties[str(key)] = jsonable(value)
     return properties
-
-
+ 
+ 
 def serialize_source(source: Any) -> dict[str, Any]:
     return {
         "roots": list(source.roots),
@@ -167,8 +669,8 @@ def serialize_source(source: Any) -> dict[str, Any]:
             for node in source.nodes
         ],
     }
-
-
+ 
+ 
 def serialize_entry(entry: Any) -> dict[str, Any]:
     return {
         "qubits": entry.qubits,
@@ -178,19 +680,42 @@ def serialize_entry(entry: Any) -> dict[str, Any]:
         "factories": {str(key): jsonable(value) for key, value in entry.factories.items()},
         "properties": {str(key): jsonable(value) for key, value in entry.properties.items()},
     }
-
-
+ 
+ 
 def serialize_stats(stats: Any) -> dict[str, Any]:
     return {field.name: jsonable(getattr(stats, field.name)) for field in fields(stats)}
-
-
+ 
+ 
 def find_qec_property(entry: Any, key: int, default: Any = None) -> Any:
     for node in entry.source.nodes:
-        if type(node.transform).__name__ in ("SurfaceCode", "ThreeAux"):
+        if type(node.transform).__name__ in ("SurfaceCode", "ThreeAux", "SurfaceCodeLowMove"):
             value = node.instruction.get_property_or(key, MISSING_PROPERTY)
             if value != MISSING_PROPERTY:
                 return value
     return default
+ 
+ 
+# Factory model class name -> the contract's MagicStateFactoryId.
+FACTORY_MODEL_IDS = {
+    "RoundBasedFactory": "round_based",
+    "Litinski19Factory": "litinski19",
+    "GSJ24Factory": "gsj24",
+}
+
+
+def find_magic_state_factory(entry: Any) -> str | None:
+    """Which primary factory produced this frontier point.
+
+    With a multi-select set the estimator unions the factories, so different
+    rows of the SAME frontier can come from different factories. The winning
+    one is named by its transform in the entry's source graph; reading it back
+    is what keeps a multi-factory frontier legible instead of anonymous.
+    """
+    for node in entry.source.nodes:
+        factory_id = FACTORY_MODEL_IDS.get(type(node.transform).__name__)
+        if factory_id is not None:
+            return factory_id
+    return None
 
 
 def entry_to_dict(entry: Any, source_format: str) -> dict[str, Any]:
@@ -216,15 +741,32 @@ def entry_to_dict(entry: Any, source_format: str) -> dict[str, Any]:
             for instruction_id, result in entry.factories.items()
         ],
         "source": source_format,
+        "magicStateFactory": find_magic_state_factory(entry),
         "properties": {
             PROPERTY_NAMES.get(key, str(key)): jsonable(value)
             for key, value in entry.properties.items()
         },
     }
-
-
+ 
+ 
 def qre_version() -> str:
     return importlib.metadata.version("qdk")
+ 
+ 
+# The suggested next step appended to every failure message, keyed by code.
+# INVALID_CONFIG gets its own: the diagnostic already names the field and its
+# range, so pointing at raw qdk diagnostics would send the analyst away from the
+# one thing they can actually fix.
+#
+# Read with .get(), never []: this is dereferenced INSIDE main()'s last-resort
+# except block, where a KeyError would escape the handler and take the process
+# down — turning a soft, explained failure into an ENGINE_CRASH traceback.
+DEFAULT_NEXT_STEP = "Review the raw diagnostics, adjust the configuration, and retry."
+NEXT_STEP = {
+    "COMPILE_ERROR": "Check the program source and entry point, then retry.",
+    "INVALID_CONFIG": "Correct the named field and retry.",
+    "ESTIMATION_FAILED": DEFAULT_NEXT_STEP,
+}
 
 
 def failure(code: str, message: str, verbatim: dict[str, Any]) -> dict[str, Any]:
@@ -235,14 +777,19 @@ def failure(code: str, message: str, verbatim: dict[str, Any]) -> dict[str, Any]
         "verbatim": verbatim,
         "qreVersion": qre_version(),
     }
-
-
+ 
+ 
 def main() -> int:
     try:
         invocation = json.loads(sys.stdin.read())
         application = build_application(invocation["program"])
         architecture = build_architecture(invocation["architecture"])
-        isa_query = build_isa_query(invocation["qecCode"], invocation["magicStateFactory"])
+        isa_query = build_isa_query(
+            invocation["qecCode"],
+            invocation["magicStateFactories"],
+            invocation.get("secondaryFactories"),
+            invocation.get("memoryOptimization"),
+        )
         trace_query = build_trace_query(invocation["traceTransform"])
         table = qre.estimate(
             application,
@@ -263,7 +810,7 @@ def main() -> int:
                 verbatim,
             )))
             return 0
-
+ 
         print(json.dumps({
             "status": "success",
             "engineApi": "qdk-qre-estimate",
@@ -276,20 +823,15 @@ def main() -> int:
         diagnostic = str(exc)
         exc_type = type(exc).__name__
         error_code = failure_code_for(exc)
-        compile_error = error_code == "COMPILE_ERROR"
         detail = diagnostic or exc_type
-        message = (
-            f"{detail} Check the program source and entry point, then retry."
-            if compile_error
-            else f"{detail} Review the raw diagnostics, adjust the configuration, and retry."
-        )
+        message = f"{detail} {NEXT_STEP.get(error_code, DEFAULT_NEXT_STEP)}"
         print(json.dumps(failure(
             error_code,
             message,
             {"error": {"type": exc_type, "message": diagnostic}},
         )))
         return 0
-
-
+ 
+ 
 if __name__ == "__main__":
     sys.exit(main())

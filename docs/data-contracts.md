@@ -1,7 +1,7 @@
 # Data Contracts — RunConfig & RunResult
 
-> **STATUS: v1.0.0 FROZEN.** This document describes the canonical estimation
-> boundary for week 2. The committed artifacts under `contracts/` — JSON
+> **STATUS: v1.2.0.** This document describes the canonical estimation
+> boundary. The committed artifacts under `contracts/` — JSON
 > Schemas, `types.ts`, `benchmarks.json`, and fixtures — are the source of
 > truth. Changes go through the contract-change process in
 > `engineering-workflow.md`.
@@ -52,15 +52,14 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
   },
 
   "qecCode": "surface_code",
-  "magicStateFactory": "round_based",
+  "magicStateFactories": ["round_based"],
 
+  // A PIPELINE, not a choice. qdk applies PSSPC and then Lattice Surgery on
+  // every estimate; each field below belongs to one of the two stages.
   "traceTransform": {
-    "type": "psspc",
-    "tStatesPerRotation": 20,
-    "ccxMagicStates": false
-    // latticeSurgery variant:
-    // "type": "latticeSurgery",
-    // "slowDownFactor": 1.0
+    "tStatesPerRotation": 20,   // PSSPC
+    "ccxMagicStates": false,    // PSSPC
+    "slowDownFactor": 1.0       // Lattice Surgery, fixed
   },
 
   "maxError": 1.0,
@@ -70,6 +69,24 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 
 ### Validation Rules
 
+> **Every architecture bound below is enforced twice** — in
+> `configToInvocation.ts` before the engine spawns, and again in `estimate.py`
+> before the qdk model is constructed. That is not belt-and-braces: qdk
+> validates **no** architecture parameter (its three models are plain
+> dataclasses), so an unguarded value does not reliably fail. Measured on
+> 1.30.0, a negative `gateBased errorRate` estimates *successfully* and reports
+> a negative total error, which passes the row mapper and renders. The
+> wrapper's rules are transcribed from `runconfig.schema.json`, which stays the
+> authority on the full field list, and `architectureBounds.test.ts` diffs the
+> two mechanically — in both directions — so the transcription cannot silently
+> drift.
+>
+> **Every integral field is capped at 2^53 - 1** (`Number.MAX_SAFE_INTEGER`),
+> in the schema, `configToInvocation.ts` and `estimate.py` alike. That bound is
+> about the wire rather than the hardware: above it a JSON number no longer
+> carries an integer exactly, so the value the engine runs stops being the value
+> the record describes.
+
 | Field | Rule |
 |---|---|
 | `application.type` | `"benchmark"` or `"uploaded"` |
@@ -77,16 +94,19 @@ everyone conforms, integration in week 3 is a swap, not a rewrite.
 | uploaded `format` | `"qsharp"`, `"openqasm"`, or `"qir"` |
 | `architecture.type` | `"gateBased"` (default) or `"majorana"` |
 | gateBased `errorRate` | Default `1e-4`; **0 < x < 0.01** |
-| gateBased `gateTime` | **Required, > 0**; serialized in ns |
-| gateBased `measurementTime` | **Required, > 0**; serialized in ns |
-| gateBased `twoQubitGateTime` | Optional; `null` or a positive number in ns |
-| majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`** |
-| majorana `operationTime` | Default `1000`; **> 0**, serialized in ns |
+| gateBased `gateTime` | **Required; an integer in (0, 2^53 - 1]**, serialized in ns. INTEGER because qdk requires a Python `int` and rejects `50.5` with "'float' object cannot be interpreted as an integer", and because `features-and-fields.md` has always typed it `int [> 0]`. Tightened from `number` on 2026-08-02, along with the three fields below — see `risks-and-open-questions.md` |
+| gateBased `measurementTime` | **Required; an integer in (0, 2^53 - 1]**, serialized in ns |
+| gateBased `twoQubitGateTime` | Optional; `null` or **an integer in (0, 2^53 - 1]** in ns. `null` means "let qdk derive it from `gateTime`" |
+| majorana `errorRate` | Default `1e-5`; **one of `1e-4`, `1e-5`, `1e-6`**, by EXACT membership. qdk's own domain check is unusable: it sits inside the branch that derives `tErrorRate`, so supplying a `tErrorRate` skips it, and it is a tolerance test (`abs(x - 1e-4) <= 1e-8`) that admits values this enum does not |
+| majorana `operationTime` | Default `1000`; **an integer in (0, 2^53 - 1]**, serialized in ns. Unguarded, `0` does not fail soft — it panics inside pyo3 and surfaces as `ENGINE_CRASH` |
+| majorana `tErrorRate` | Optional (v1.4.0); omitted means qdk derives it from `errorRate`. A present value must be a finite number in **(0, 0.05]**. qdk validates it not at all — it feeds a supplied value straight to the `T` instruction, so `0.9` and `-0.1` estimate happily |
+| majorana `targetYear` | Optional (v1.4.0); **integer >= 0**. Inert on this pipeline; recorded, not influential |
+| neutralAtom (all 12 required + `dataQubitSpacing`, `targetYear`) | Bounds per `runconfig.schema.json`'s `neutralAtom` variant, which is the authority for the field list. The times and the two surface-code factors are integers; the three error rates are **[0, 0.01)**; spacing, velocity and acceleration are **> 0**. An unguarded negative `rydbergError` does not fail — it estimates and silently changes the answer (0.0109 against a true 0.991) |
 | `qecCode` | Coupled to architecture: gateBased → `surface_code`; majorana → `three_aux` |
-| `magicStateFactory` | Default `round_based`; `litinski19` only for gateBased with `errorRate <= 1e-3`; Majorana is always `round_based` |
-| PSSPC `tStatesPerRotation` | Default `20`; **5 <= x <= 20** |
-| PSSPC `ccxMagicStates` | Boolean, default `false` |
-| latticeSurgery `slowDownFactor` | Fixed `1.0` |
+| `magicStateFactories` | **A non-empty, unique SET** (v1.2.0; was the single-valued `magicStateFactory`). Default `["round_based"]`; `litinski19` / `gsj24` only on gateBased with `errorRate <= 1e-3` or qualifying Neutral Atom; Majorana is always exactly `["round_based"]`. The engine unions the set into one ISA query, so the frontier is explored across every selected factory and each row names its own in `additional.magicStateFactory` |
+| `traceTransform.tStatesPerRotation` | PSSPC stage. Default `20`; **5 <= x <= 20**. A sparse `5` is in range but has no feasible frontier point on qdk 1.30.0 — that is a failed run, not a validation error |
+| `traceTransform.ccxMagicStates` | PSSPC stage. Boolean, default `false`; bound to the GSJ24 CCX secondary factory |
+| `traceTransform.slowDownFactor` | Lattice Surgery stage. Fixed `1.0` |
 | `maxError` | Default `1.0`; **0 < x <= 1**. In-range values can still be unsatisfiable; that is a failed run, not a validation error |
 | `name` | Optional in the UI; when blank, auto-generate and serialize the generated value |
 
@@ -162,6 +182,84 @@ Everything beyond the six defaults is optional per row and lives in
 `frontier[].additional`; filtering chooses what is in view, and `raw` always
 has the complete engine output.
 
+## Versioning note — v1.2.0 and the trace transform
+
+`traceTransform` was a `psspc` | `latticeSurgery` discriminated union through
+v1.1.0, which said the analyst picks one transform. They do not. PSSPC and
+Lattice Surgery are sequential stages of one pipeline and qdk runs both on every
+estimate — `PSSPC.q()` alone yields an empty frontier, and composing them in the
+other order raises `unsupported instruction LATTICE_SURGERY in trace
+transformation 'PSSPC'`. No UI control ever set the discriminant, and the
+`latticeSurgery` branch silently discarded the T-states and CCX values the form
+had collected.
+
+v1.2.0 replaces the union with one object carrying both stages' parameters.
+
+**Nothing migrates on disk.** Records are validated on save and never on read,
+and they are immutable (Rerun mints a new record). Stored v1.1.0 records
+therefore keep loading; History, Comparison, Rerun and the engine all read them
+through `normalizeTraceTransform`, which maps a legacy `latticeSurgery` record
+onto the PSSPC defaults it actually ran.
+
+## Versioning note — v1.4.0 (additive)
+
+v1.4.0 adds three things and reshapes nothing. **Every v1.3.0 record is already
+a valid v1.4.0 record**, which is why `upgradeRunConfig` gains no branch — and
+there is a test asserting exactly that, because a "minor" bump that quietly
+reshaped something would leave stored records without a migration.
+
+**1. Two optional trace-pipeline stages.** The full ordered pipeline becomes:
+
+```
+DynamicMemoryCompute × PSSPC × LatticeSurgery × Unmemory
+```
+
+PSSPC and Lattice Surgery always run. `traceTransform.dynamicMemoryCompute`
+(`{ computeCapacityPercentage, evictionStrategy }`) and
+`traceTransform.unmemory` (boolean) are optional.
+
+> **An absent stage is ABSENT, not "running at its defaults."** Those are
+> different pipelines and therefore different estimates. Measured on qdk 1.30.0
+> (Quantum Dynamics 3×3): stages off gives **477 physical qubits / 1,363,950 ns**;
+> adding `DynamicMemoryCompute(0.5, least_recently_used)` gives **256 qubits /
+> 1,852,200 ns** — it trades runtime for qubits, which is what the stage is for.
+> Filling in defaults for an unselected stage would add that swing to every run.
+
+Order is a correctness property, not a presentation choice: `estimate.py` builds
+the stages from a fixed sequence and folds left to right, never by iterating a
+set or a dict's keys.
+
+**Two measured findings recorded rather than hidden:**
+
+- **`unmemory` is currently INERT on this pipeline.** With it on and everything
+  else equal the estimate is unchanged (477 qubits / 1,363,950 ns either way). It
+  is recorded-but-not-yet-influential, a test pins the current measurement, and
+  any UI exposing it must label it as such.
+- **Some Dynamic Memory Compute settings have no feasible frontier.**
+  `computeCapacityPercentage: 0.25` with `least_frequently_used` returns a
+  resolved **failed** result (`ESTIMATION_FAILED`) for that workload. That is the
+  estimator answering honestly, in the same way a sparse `tStatesPerRotation`
+  does — not an adapter bug.
+
+**2. Four optional QPU parameters**, restored to the spec by the Jul 31 Config
+Descriptions tab: Majorana `tErrorRate` and `targetYear`; Neutral Atom
+`dataQubitSpacing` and `targetYear`. All optional, and **omitting one means "let
+qdk apply its own default"** — which is exactly what every pre-v1.4.0 record did.
+`targetYear` is **inert on our pipeline** on both architectures: qdk consumes a
+target year only through a trace transform that accepts one, and ours does not.
+
+**3. `provenance`** — whether a model helped author the configuration:
+`{ authoredBy: "human" | "model_assisted", model?: string }`. Optional; absence
+means human-authored. It exists now because `RunConfig` is
+`additionalProperties: false`, so an audit trail could not have been added later
+without another contract change.
+
+> Provenance records **that** a model was involved and optionally **which one**.
+> It never records the prompt. Prompts are user content, the run store is local
+> and unencrypted, and "what did you ask it" is not a question a run record
+> should be able to answer. The object is closed, so a prompt cannot be added by
+> a well-meaning producer either.
+
 ## Contract Rules
 
 1. **`raw` is sacred.** Whatever the engine emits is stored verbatim and
@@ -186,7 +284,7 @@ The canonical failure codes are:
 
 | Code | Meaning |
 |---|---|
-| `INVALID_CONFIG` | The config is schema-valid JSON but invalid for the engine or selected benchmark/upload |
+| `INVALID_CONFIG` | The config is schema-valid JSON but invalid for the engine or selected benchmark/upload. Emitted by the pre-flight validator AND by the engine wrapper, which re-checks the architecture parameters qdk does not validate itself — a run refused there never reached the estimator |
 | `COMPILE_ERROR` | The selected or uploaded program failed to compile |
 | `ESTIMATION_FAILED` | The engine ran but could not produce a feasible estimate |
 | `TIMEOUT` | The run exceeded the allowed execution timeout |

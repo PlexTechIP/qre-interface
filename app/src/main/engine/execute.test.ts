@@ -22,7 +22,9 @@ function invocation(overrides: Partial<QreInvocation> = {}): QreInvocation {
     program: {
       sourcePath: BENCHMARK_PROJECT,
       format: "qsharp",
-      entryExpr: "QuantumDynamics.Run()",
+      // Small lattice: this suite exercises the subprocess boundary, not the
+      // benchmark, so it wants the cheapest circuit that still estimates.
+      entryExpr: "QuantumDynamics.Run(2, 2, 6.0, 0.9, 1.0, 1.0)",
     },
     architecture: {
       type: "gateBased",
@@ -32,12 +34,8 @@ function invocation(overrides: Partial<QreInvocation> = {}): QreInvocation {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
-    traceTransform: {
-      type: "psspc",
-      tStatesPerRotation: 20,
-      ccxMagicStates: false,
-    },
+    magicStateFactories: ["round_based"],
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     timeoutMs: 30_000,
     ...overrides,
@@ -87,6 +85,23 @@ describe("execute", () => {
         ok: false,
         code: "ENGINE_CRASH",
         raw: { stdout, stderr: "warning\n", exitCode: 0 },
+      });
+    });
+
+    it("passes a wrapper-reported INVALID_CONFIG through unchanged", () => {
+      // The wrapper refuses an out-of-range architecture value before qdk sees
+      // it. Downgrading that to ESTIMATION_FAILED would tell the analyst the
+      // estimator ran and found nothing, when in fact nothing ran and the fix
+      // is a field they can edit.
+      const stdout = JSON.stringify({
+        status: "failed",
+        code: "INVALID_CONFIG",
+        message: "Majorana tErrorRate must be in (0, 0.05], got 0.9.",
+        verbatim: { error: { type: "InvalidInvocation", message: "..." } },
+      });
+      expect(interpretProcessCompletion(0, stdout, "")).toMatchObject({
+        ok: false,
+        code: "INVALID_CONFIG",
       });
     });
 

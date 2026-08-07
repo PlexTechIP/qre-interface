@@ -16,9 +16,19 @@ export interface RunDetailPanelProps {
   onRerun: (record: RunRecord) => void;
   onExport: (record: RunRecord) => void;
   onDelete: (id: string) => void;
+  selectedIndex: number;
+  onSelectedIndexChange: (index: number) => void;
 }
 
-export function RunDetailPanel({ record, onClose, onRerun, onExport, onDelete }: RunDetailPanelProps) {
+export function RunDetailPanel({
+  record,
+  onClose,
+  onRerun,
+  onExport,
+  onDelete,
+  selectedIndex,
+  onSelectedIndexChange,
+}: RunDetailPanelProps) {
   return (
     <section className="run-detail" aria-labelledby="run-detail-title">
       <div className="detail-toolbar">
@@ -40,7 +50,13 @@ export function RunDetailPanel({ record, onClose, onRerun, onExport, onDelete }:
       <h1 id="run-detail-title" className="sr-only">
         Details for {record.config.name}
       </h1>
-      <ResultsArea result={record.result} phase="done" config={record.config} />
+      <ResultsArea
+        result={record.result}
+        phase="done"
+        config={record.config}
+        selectedIndex={selectedIndex}
+        onSelectedIndexChange={onSelectedIndexChange}
+      />
     </section>
   );
 }

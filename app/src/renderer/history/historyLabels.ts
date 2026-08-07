@@ -10,28 +10,43 @@ import { findBenchmark } from "../constants/staticOptions";
 export const ARCHITECTURE_LABELS: Record<string, string> = {
   gateBased: "Superconducting",
   majorana: "Majorana",
+  neutralAtom: "Neutral Atom",
 };
 
 export const QEC_LABELS: Record<string, string> = {
   surface_code: "Surface Code",
   three_aux: "Three-Aux",
+  low_move_surface_code: "Low-Move Surface Code",
 };
 
 export const FACTORY_LABELS: Record<string, string> = {
   round_based: "Round-Based",
   litinski19: "Litinski19",
+  gsj24: "GSJ24",
 };
 
-/** A run's application as a label: the benchmark id, or `Uploaded: <filename>`. */
+/**
+ * A run's primary magic-state factories as one label. The field is a SET as of
+ * contract v1.2.0, so every surface that used to print one id now prints the
+ * joined set through here rather than each re-deriving it.
+ */
+export function factorySetLabel(config: RunConfig): string {
+  return config.magicStateFactories
+    .map((factory) => FACTORY_LABELS[factory] ?? factory)
+    .join(" + ");
+}
+
+/**
+ * A run's application as a label: the benchmark name/id, `Manual Logical
+ * Counts`, or `Uploaded: <filename>`.
+ */
 export function applicationLabel(config: RunConfig): string {
-  if (config.application.type === "benchmark") {
-    return (
-      findBenchmark(config.application.benchmarkId)?.name ??
-      config.application.benchmarkId
-    );
+  const app = config.application;
+  if (app.type === "benchmark") {
+    return findBenchmark(app.benchmarkId)?.name ?? app.benchmarkId;
   }
-  return `Uploaded: ${
-    config.application.filePath.split(/[\\/]/).pop() ??
-    config.application.filePath
-  }`;
+  if (app.type === "manualCounts") {
+    return "Manual Logical Counts";
+  }
+  return `Uploaded: ${app.filePath.split(/[\\/]/).pop() ?? app.filePath}`;
 }

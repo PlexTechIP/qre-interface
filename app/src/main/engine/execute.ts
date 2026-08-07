@@ -13,21 +13,37 @@ export function killLiveEngineProcesses(): void {
   liveEngineProcesses.clear();
 }
 
+/**
+ * The failure codes this layer may report. `INVALID_CONFIG` is here because the
+ * wrapper re-validates every architecture parameter qdk itself does not check
+ * (see `GATE_BASED_RULES` / `MAJORANA_RULES` / `NEUTRAL_ATOM_RULES` and
+ * `checked_number` in estimate.py) — a run refused there never reached the
+ * estimator, and reporting it as ESTIMATION_FAILED would tell the analyst the
+ * model was infeasible when the fix is a field they can edit.
+ */
+export type EngineFailureCode =
+  | "TIMEOUT"
+  | "ENGINE_CRASH"
+  | "COMPILE_ERROR"
+  | "ESTIMATION_FAILED"
+  | "INVALID_CONFIG";
+
 export type ExecuteResult =
   | { ok: true; raw: Record<string, unknown> }
   | {
       ok: false;
-      code: "TIMEOUT" | "ENGINE_CRASH" | "COMPILE_ERROR" | "ESTIMATION_FAILED";
+      code: EngineFailureCode;
       message: string;
       raw: Record<string, unknown> | null;
     };
 
-const FAILURE_CODES = new Set([
+const FAILURE_CODES = new Set<string>([
   "TIMEOUT",
   "ENGINE_CRASH",
   "COMPILE_ERROR",
   "ESTIMATION_FAILED",
-]);
+  "INVALID_CONFIG",
+] satisfies EngineFailureCode[]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -82,8 +98,7 @@ export function interpretProcessCompletion(
   if (parsed["status"] === "failed") {
     const rawCode = String(parsed["code"] ?? "ESTIMATION_FAILED");
     const code = FAILURE_CODES.has(rawCode)
-      ? (rawCode as
-          "TIMEOUT" | "ENGINE_CRASH" | "COMPILE_ERROR" | "ESTIMATION_FAILED")
+      ? (rawCode as EngineFailureCode)
       : "ESTIMATION_FAILED";
     return {
       ok: false,

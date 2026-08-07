@@ -8,13 +8,18 @@ const QSHARP_PROJECT_ROOT = path.join(
   "qsharp-project",
 );
 
+/**
+ * Where a starter benchmark's source lives. The ENTRY EXPRESSION is not here:
+ * it is derived per run from the benchmark's hyperparameters (see
+ * shared/benchmarkParams.ts), so a fixed string in this table would be a second,
+ * silently-wrong answer to "what did we run?".
+ */
 export interface BenchmarkEntry {
   id: string;
   name: string;
   description: string;
   sourcePath: string;
   format: "qsharp" | "openqasm" | "qir";
-  entryExpr: string;
 }
 
 export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
@@ -25,7 +30,6 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Factoring-oriented benchmark for estimating resources of Shor-style modular arithmetic workloads.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "ShorsFactoring.Run()",
   },
   "ekera-hastad-factoring": {
     id: "ekera-hastad-factoring",
@@ -34,16 +38,14 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Factoring benchmark based on the Ekerå-Håstad variant, useful for contrasting factoring resource estimates against Shor's algorithm.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "EkeraHastadFactoring.Run()",
   },
   "quantum-dynamics": {
     id: "quantum-dynamics",
-    name: "Quantum Dynamics",
+    name: "Ising Model (2D)",
     description:
       "Simulation-style benchmark for quantum dynamics workloads and the default baseline for week-2 contract fixtures.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "QuantumDynamics.Run()",
   },
   "grovers-search": {
     id: "grovers-search",
@@ -52,7 +54,6 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Search benchmark for Grover-style amplitude amplification workloads.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "GroversSearch.Run()",
   },
   "phase-estimation": {
     id: "phase-estimation",
@@ -61,7 +62,6 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
       "Phase-estimation benchmark for algorithms dominated by controlled unitary applications and precision trade-offs.",
     sourcePath: QSHARP_PROJECT_ROOT,
     format: "qsharp",
-    entryExpr: "PhaseEstimation.Run()",
   },
 };
 

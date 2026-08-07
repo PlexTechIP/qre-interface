@@ -2,10 +2,10 @@ import {
   ARCHITECTURE_LABELS,
   MAGIC_STATE_FACTORY_LABELS,
   QEC_LABELS,
-  TRANSFORM_LABELS,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
-import { deriveQecCode, type FormState } from "../state/formState";
+import { describeTraceTransform } from "../../shared/traceTransform";
+import { buildTraceTransform, deriveQecCode, type FormState } from "../state/formState";
 
 interface ConfigurationSummaryProps {
   state: FormState;
@@ -46,12 +46,23 @@ export function ConfigurationSummary({
     { label: "Architecture", value: ARCHITECTURE_LABELS[state.architecture.type] },
     { label: "QEC Code", value: QEC_LABELS[deriveQecCode(state.architecture)] },
     {
-      label: "Factory",
-      value: `${MAGIC_STATE_FACTORY_LABELS[state.magicStateFactory]} Factory`,
+      label: state.magicStateFactories.length > 1 ? "Factories" : "Factory",
+      value: state.magicStateFactories
+        .map((factory) => `${MAGIC_STATE_FACTORY_LABELS[factory]} Factory`)
+        .join(" + "),
     },
     {
+      // Every stage present, not a single name: the old row read as a selection.
+      // A half-entered stage 0 serializes to null, and the summary then shows
+      // the two always-on stages rather than claiming a stage that won't run.
       label: "Trace Transform",
-      value: TRANSFORM_LABELS[state.traceTransform.type],
+      value: describeTraceTransform(
+        buildTraceTransform(state.traceTransform) ?? {
+          tStatesPerRotation: state.traceTransform.tStatesPerRotation,
+          ccxMagicStates: state.traceTransform.ccxMagicStates,
+          slowDownFactor: state.traceTransform.slowDownFactor,
+        },
+      ),
     },
     { label: "Error Rate", value: errorRateSummary(state.architecture) },
     {

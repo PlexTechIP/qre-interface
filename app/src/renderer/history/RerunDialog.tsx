@@ -1,5 +1,5 @@
 import { Modal } from "./Modal";
-import type { RerunRequest } from "./RunHistoryContainer";
+import type { RerunRequest } from "./rerun";
 
 /**
  * Rerun — the affordance + the seam, not the wiring. `reconstructConfig`

@@ -2,9 +2,10 @@ import { useState } from "react";
 
 import { applicationKey, type RunRecord } from "../../shared/types";
 import { formatMetric } from "../results/formatMetric";
+import { getAdditionalFieldDefinitions } from "../results/resultFields";
 import {
   ARCHITECTURE_LABELS,
-  FACTORY_LABELS,
+  factorySetLabel,
   QEC_LABELS,
   applicationLabel,
 } from "./historyLabels";
@@ -34,7 +35,7 @@ export function buildExportStub(record: RunRecord): string {
     `- Application: ${applicationKey(config)}`,
     `- Architecture: ${config.architecture.type}`,
     `- QEC code: ${config.qecCode}`,
-    `- Magic state factory: ${config.magicStateFactory}`,
+    `- Magic state factories: ${config.magicStateFactories.join(", ")}`,
     `- QRE version: ${result.qreVersion}`,
     `- Created: ${config.createdAt}`,
     `- Saved: ${record.savedAt}`,
@@ -55,7 +56,7 @@ export function buildRunExportMarkdown(record: RunRecord): string {
     `- **Application:** ${applicationLabel(config)}`,
     `- **Architecture:** ${ARCHITECTURE_LABELS[config.architecture.type] ?? config.architecture.type}`,
     `- **QEC code:** ${QEC_LABELS[config.qecCode] ?? config.qecCode}`,
-    `- **Magic-state factory:** ${FACTORY_LABELS[config.magicStateFactory] ?? config.magicStateFactory}`,
+    `- **Magic-state ${config.magicStateFactories.length > 1 ? "factories" : "factory"}:** ${factorySetLabel(config)}`,
     `- **QRE version:** ${result.qreVersion}`,
     `- **Created:** ${config.createdAt}`,
     `- **Completed:** ${result.completedAt}`,
@@ -71,22 +72,43 @@ export function buildRunExportMarkdown(record: RunRecord): string {
       "",
     );
   } else {
+    const frontier = result.frontier ?? [];
+    // A typical run reports ~10–15 of the 37 possible fields; the six defaults are
+    // only the head of that. Everything else lives in `frontier[].additional` and
+    // used to be dropped from the export. Same derivation the UI uses, so the
+    // exported table and the on-screen one agree on which columns exist.
+    const additional = getAdditionalFieldDefinitions(frontier);
+    const headers = [
+      "#",
+      "Physical qubits",
+      "Runtime",
+      "Total error",
+      "Factories",
+      "Code distance",
+      "Logical cycle time",
+      ...additional.map((def) => def.label),
+    ];
+
     lines.push(
       "## Pareto frontier",
       "",
-      "| # | Physical qubits | Runtime | Total error | Factories | Code distance | Logical cycle time |",
-      "|---:|---:|---:|---:|---:|---:|---:|",
-      ...(result.frontier ?? []).map((row, index) =>
-        [
-          `| ${index + 1}`,
-          markdownCell(formatMetric(row.physicalQubits)),
-          markdownCell(formatMetric(row.runtime)),
-          markdownCell(formatMetric(row.totalError)),
-          markdownCell(formatMetric(row.factories)),
-          markdownCell(formatMetric(row.codeDistance)),
-          `${markdownCell(formatMetric(row.logicalCycleTime))} |`,
-        ].join(" | "),
-      ),
+      `| ${headers.map(markdownCell).join(" | ")} |`,
+      `|${headers.map(() => "---:").join("|")}|`,
+      ...frontier.map((row, index) => {
+        const cells = [
+          `${index + 1}`,
+          formatMetric(row.physicalQubits),
+          formatMetric(row.runtime),
+          formatMetric(row.totalError),
+          formatMetric(row.factories),
+          formatMetric(row.codeDistance),
+          formatMetric(row.logicalCycleTime),
+          // A field one row reports and another omits renders as formatMetric's
+          // "—" rather than shifting the row's cells.
+          ...additional.map((def) => formatMetric(row.additional?.[def.key] ?? null)),
+        ];
+        return `| ${cells.map(markdownCell).join(" | ")} |`;
+      }),
       "",
     );
   }

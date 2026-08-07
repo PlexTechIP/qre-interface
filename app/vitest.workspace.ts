@@ -22,6 +22,7 @@ export default defineConfig({
             "src/main/engine/pythonBin.test.ts",
             "src/main/engine/benchmarkRegistry.test.ts",
             "src/main/engine/configToInvocation.test.ts",
+            "src/main/engine/configToInvocationV14.test.ts",
             "src/main/engine/outputToResult.test.ts",
             "src/main/engine/execute.test.ts",
             "src/main/engine/qreEngine.test.ts",
@@ -35,6 +36,16 @@ export default defineConfig({
           globals: true,
           include: ["src/main/**/*.test.ts"],
           exclude: ["src/main/engine/**"], // engine tests run via test:engine
+        },
+      },
+      {
+        // The contract layer both processes import. Without this project its
+        // tests match no include pattern and silently never run.
+        test: {
+          name: "shared",
+          environment: "node",
+          globals: true,
+          include: ["src/shared/**/*.test.ts"],
         },
       },
     ],

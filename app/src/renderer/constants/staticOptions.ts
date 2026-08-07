@@ -102,4 +102,4 @@ export const FORMAT_LABELS: Record<UploadedProgramFormat, string> = {
  * (informational — RunResult.qreVersion, self-reported by the engine at runtime,
  * is authoritative). Pinned to the bundled qdk[qre] version (requirements.txt).
  */
-export const QRE_VERSION = "1.29.1";
+export const QRE_VERSION = "1.30.0";

@@ -11,7 +11,7 @@
  *  - SAMPLE_RUN_RECORDS reproduce the 7-record corpus (ids, names, filterable
  *    fields, launch-time ordering) the store/history tests pin.
  */
-
+ 
 import {
   SCHEMA_VERSION,
   makeRunRecord,
@@ -23,15 +23,15 @@ import {
   type RunResult,
   type RunRecord,
 } from "../types";
-
+ 
 // ---------------------------------------------------------------------------
 // Metric helpers
 // ---------------------------------------------------------------------------
-
+ 
 function metric(value: number, unit: string, display?: string): NumericMetric {
   return { value, unit, display: display ?? String(value) };
 }
-
+ 
 function factoriesOf(copies: number): FactoryMetric {
   return {
     value: [{ stateType: "T", copies }],
@@ -39,11 +39,11 @@ function factoriesOf(copies: number): FactoryMetric {
     display: `${copies} x T`,
   };
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Atomic builders
 // ---------------------------------------------------------------------------
-
+ 
 /** A structurally complete, schema-valid succeeded frontier row (6 default metrics). */
 export function buildFrontierRow(overrides: Partial<FrontierRow> = {}): FrontierRow {
   return {
@@ -59,7 +59,7 @@ export function buildFrontierRow(overrides: Partial<FrontierRow> = {}): Frontier
     ...overrides,
   };
 }
-
+ 
 /** A default quantum-dynamics gateBased config; override any field. */
 export function buildRunConfig(overrides: Partial<RunConfig> = {}): RunConfig {
   return {
@@ -76,12 +76,41 @@ export function buildRunConfig(overrides: Partial<RunConfig> = {}): RunConfig {
       twoQubitGateTime: null,
     },
     qecCode: "surface_code",
-    magicStateFactory: "round_based",
-    traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+    magicStateFactories: ["round_based"],
+    traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     maxError: 1,
     qreVersion: "qdk-qre-1.29.1",
     ...overrides,
   };
+}
+ 
+let engineConfigSeq = 0;
+
+/**
+ * A Quantum Dynamics config sized to run fast against the REAL engine — a 3x3
+ * lattice over a short total time, so a test that exercises the estimator is
+ * about the setting under test rather than about wall-clock.
+ *
+ * Each call gets a distinct `id`, so several runs in one file stay
+ * distinguishable in engine diagnostics.
+ */
+export function buildSmallDynamicsConfig(overrides: Partial<RunConfig> = {}): RunConfig {
+  engineConfigSeq += 1;
+  return buildRunConfig({
+    id: `8e000000-0000-4000-8000-${String(engineConfigSeq).padStart(12, "0")}`,
+    name: "small quantum dynamics",
+    createdAt: "2026-07-31T00:00:00Z",
+    parameters: {
+      latticeN1: 3,
+      latticeN2: 3,
+      totalTime: 9.0,
+      trotterStep: 0.9,
+      couplingJ: 1.0,
+      fieldG: 1.0,
+    },
+    qreVersion: "qdk-qre-v1-fixture",
+    ...overrides,
+  });
 }
 
 /** A default succeeded result (one complete row); override to vary. */
@@ -99,7 +128,7 @@ export function buildRunResult(overrides: Partial<RunResult> = {}): RunResult {
     ...overrides,
   };
 }
-
+ 
 /** Assemble a record; `result.runId` is forced to `config.id` so it always validates. */
 export function buildRunRecord(
   opts: {
@@ -112,16 +141,16 @@ export function buildRunRecord(
   const result = buildRunResult({ ...opts.result, runId: config.id });
   return makeRunRecord(config, result, opts.savedAt ?? "2026-07-16T09:00:07Z");
 }
-
+ 
 // ---------------------------------------------------------------------------
 // Named result/config scenarios — reproduced VALUE-FOR-VALUE from the deleted
 // fixtures (runresult.success/success-large/success-sparse/failed and
 // runconfig.benchmark/large/sparse/failing). A fidelity gate asserts equality
 // against the originals before those fixtures are deleted.
 // ---------------------------------------------------------------------------
-
+ 
 const SUCCESS_RESULT: RunResult = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   runId: "acaf1c0e-a716-41bc-9774-598cacee033f",
   status: "succeeded",
   error: null,
@@ -178,7 +207,7 @@ const SUCCESS_RESULT: RunResult = {
     configuration: {
       architecture: "GateBased",
       qecCode: "surface_code",
-      magicStateFactory: "round_based",
+      magicStateFactories: ["round_based"],
       traceTransform: "psspc",
       maxError: 1,
     },
@@ -227,9 +256,9 @@ const SUCCESS_RESULT: RunResult = {
   startedAt: "2026-07-09T18:22:03Z",
   completedAt: "2026-07-09T18:22:06Z",
 };
-
+ 
 const LARGE_RESULT: RunResult = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   runId: "1c4b86d6-8a26-4fa0-98a9-271b09e9abfe",
   status: "succeeded",
   error: null,
@@ -272,7 +301,7 @@ const LARGE_RESULT: RunResult = {
     configuration: {
       architecture: "GateBased",
       qecCode: "surface_code",
-      magicStateFactory: "litinski19",
+      magicStateFactories: ["litinski19"],
       traceTransform: "latticeSurgery",
       maxError: 0.001,
     },
@@ -309,9 +338,9 @@ const LARGE_RESULT: RunResult = {
   startedAt: "2026-07-09T18:30:04Z",
   completedAt: "2026-07-09T18:30:07Z",
 };
-
+ 
 const SPARSE_RESULT: RunResult = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   runId: "5116295f-0220-442f-b06e-abe22e8acd29",
   status: "succeeded",
   error: null,
@@ -340,7 +369,7 @@ const SPARSE_RESULT: RunResult = {
     configuration: {
       architecture: "Majorana",
       qecCode: "three_aux",
-      magicStateFactory: "round_based",
+      magicStateFactories: ["round_based"],
       traceTransform: "psspc",
       maxError: 1,
     },
@@ -365,9 +394,9 @@ const SPARSE_RESULT: RunResult = {
   startedAt: "2026-07-09T18:35:02Z",
   completedAt: "2026-07-09T18:35:03Z",
 };
-
+ 
 const FAILED_RESULT: RunResult = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   runId: "bead9c0e-c3ff-4d33-bb13-5f1c0a01b385",
   status: "failed",
   error: {
@@ -385,7 +414,7 @@ const FAILED_RESULT: RunResult = {
     configuration: {
       architecture: "GateBased",
       qecCode: "surface_code",
-      magicStateFactory: "round_based",
+      magicStateFactories: ["round_based"],
       traceTransform: "psspc",
       maxError: 1e-12,
     },
@@ -394,79 +423,79 @@ const FAILED_RESULT: RunResult = {
   startedAt: "2026-07-09T18:40:02Z",
   completedAt: "2026-07-09T18:40:03Z",
 };
-
+ 
 const BENCHMARK_CONFIG: RunConfig = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "acaf1c0e-a716-41bc-9774-598cacee033f",
   name: "Quantum Dynamics - GateBased 1e-4 - Surface - PSSPC",
   createdAt: "2026-07-09T18:22:00Z",
   application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
   architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 50, measurementTime: 100, twoQubitGateTime: null },
   qecCode: "surface_code",
-  magicStateFactory: "round_based",
-  traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+  magicStateFactories: ["round_based"],
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
 };
-
+ 
 const LARGE_CONFIG: RunConfig = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "1c4b86d6-8a26-4fa0-98a9-271b09e9abfe",
   name: "Shor's Factoring - GateBased 1e-4 - Litinski19 - Lattice Surgery",
   createdAt: "2026-07-09T18:30:00Z",
   application: { type: "benchmark", benchmarkId: "shors-factoring" },
   architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 100000, measurementTime: 100000, twoQubitGateTime: 100000 },
   qecCode: "surface_code",
-  magicStateFactory: "litinski19",
-  traceTransform: { type: "latticeSurgery", slowDownFactor: 1.0 },
+  magicStateFactories: ["litinski19"],
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 0.001,
   qreVersion: "qdk-qre-v1-fixture",
 };
-
+ 
 const SPARSE_CONFIG: RunConfig = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "5116295f-0220-442f-b06e-abe22e8acd29",
   name: "Phase Estimation - Majorana 1e-5 - Three-Aux - PSSPC",
   createdAt: "2026-07-09T18:35:00Z",
   application: { type: "benchmark", benchmarkId: "phase-estimation" },
   architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
   qecCode: "three_aux",
-  magicStateFactory: "round_based",
-  traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+  magicStateFactories: ["round_based"],
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1,
   qreVersion: "qdk-qre-v1-fixture",
 };
-
+ 
 const FAILING_CONFIG: RunConfig = {
-  schemaVersion: "1.0.0",
+  schemaVersion: SCHEMA_VERSION,
   id: "bead9c0e-c3ff-4d33-bb13-5f1c0a01b385",
   name: "Quantum Dynamics - GateBased 1e-4 - Unsatisfiable Max Error",
   createdAt: "2026-07-09T18:40:00Z",
   application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
   architecture: { type: "gateBased", errorRate: 0.0001, gateTime: 100000, measurementTime: 100000, twoQubitGateTime: null },
   qecCode: "surface_code",
-  magicStateFactory: "round_based",
-  traceTransform: { type: "psspc", tStatesPerRotation: 20, ccxMagicStates: false },
+  magicStateFactories: ["round_based"],
+  traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
   maxError: 1e-12,
   qreVersion: "qdk-qre-v1-fixture",
 };
-
+ 
 export const buildSuccessResult = (): RunResult => structuredClone(SUCCESS_RESULT);
 export const buildLargeResult = (): RunResult => structuredClone(LARGE_RESULT);
 export const buildSparseResult = (): RunResult => structuredClone(SPARSE_RESULT);
 export const buildFailedResult = (): RunResult => structuredClone(FAILED_RESULT);
-
+ 
 export const buildBenchmarkConfig = (): RunConfig => structuredClone(BENCHMARK_CONFIG);
 export const buildLargeConfig = (): RunConfig => structuredClone(LARGE_CONFIG);
 export const buildSparseConfig = (): RunConfig => structuredClone(SPARSE_CONFIG);
 export const buildFailingConfig = (): RunConfig => structuredClone(FAILING_CONFIG);
-
+ 
 // ---------------------------------------------------------------------------
 // RESULT_SCENARIOS — a FIXTURE_SCENARIOS-shaped list for the Results surface tests.
 // ---------------------------------------------------------------------------
-
+ 
 export type ResultScenarioId = "idle" | "running" | "success" | "large" | "sparse" | "failed";
-
+ 
 export interface ResultScenario {
   id: ResultScenarioId;
   label: string;
@@ -474,7 +503,7 @@ export interface ResultScenario {
   result: RunResult | null;
   config: RunConfig | null;
 }
-
+ 
 export const RESULT_SCENARIOS: readonly ResultScenario[] = [
   { id: "idle", label: "Empty / no run", phase: "idle", result: null, config: null },
   { id: "running", label: "Running", phase: "running", result: null, config: BENCHMARK_CONFIG },
@@ -483,13 +512,13 @@ export const RESULT_SCENARIOS: readonly ResultScenario[] = [
   { id: "sparse", label: "Sparse / one-row frontier", phase: "done", result: SPARSE_RESULT, config: SPARSE_CONFIG },
   { id: "failed", label: "Failed", phase: "done", result: FAILED_RESULT, config: FAILING_CONFIG },
 ];
-
+ 
 // ---------------------------------------------------------------------------
 // SAMPLE_RUN_RECORDS — the fixed 7-record corpus (drop-in for MOCK_RUN_RECORDS).
 // createdAt descending order is R7 > R6 > R4 > R2 > R1 > R5 > R3 so the store's
 // newest-first ordering resolves to [R7,R6,R4,R2,R1,R5,R3].
 // ---------------------------------------------------------------------------
-
+ 
 const ID = {
   R1: "11111111-1111-4111-8111-111111111111",
   R2: "22222222-2222-4222-8222-222222222222",
@@ -499,12 +528,12 @@ const ID = {
   R6: "66666666-6666-4666-8666-666666666666",
   R7: "77777777-7777-4777-8777-777777777777",
 } as const;
-
+ 
 /** A succeeded result for the corpus, one standard row, keyed to `runId`. */
 function corpusSuccess(runId: string, qreVersion: string): RunResult {
   return buildRunResult({ runId, qreVersion });
 }
-
+ 
 /** The sparse corpus row: legitimate zeros, no factories. */
 function corpusSparse(runId: string, qreVersion: string): RunResult {
   return buildRunResult({
@@ -523,7 +552,7 @@ function corpusSparse(runId: string, qreVersion: string): RunResult {
     ],
   });
 }
-
+ 
 /** A failed corpus result with verbatim engine diagnostics in `raw`. */
 function corpusFailed(runId: string, qreVersion: string): RunResult {
   return buildRunResult({
@@ -544,7 +573,7 @@ function corpusFailed(runId: string, qreVersion: string): RunResult {
     },
   });
 }
-
+ 
 export const SAMPLE_RUN_RECORDS: readonly RunRecord[] = [
   buildRunRecord({
     config: {
@@ -562,7 +591,7 @@ export const SAMPLE_RUN_RECORDS: readonly RunRecord[] = [
       name: "Shor's Factoring - Litinski19",
       createdAt: "2026-07-16T10:30:00Z",
       application: { type: "benchmark", benchmarkId: "shors-factoring" },
-      magicStateFactory: "litinski19",
+      magicStateFactories: ["litinski19"],
     },
     result: corpusSuccess(ID.R2, "qdk-qre-1.29.1"),
     savedAt: "2026-07-16T10:30:05Z",
@@ -574,7 +603,7 @@ export const SAMPLE_RUN_RECORDS: readonly RunRecord[] = [
       createdAt: "2026-07-15T14:00:00Z",
       application: { type: "benchmark", benchmarkId: "grovers-search" },
       architecture: { type: "gateBased", errorRate: 0.0005, gateTime: 50, measurementTime: 100, twoQubitGateTime: null },
-      traceTransform: { type: "latticeSurgery", slowDownFactor: 1.0 },
+      traceTransform: { tStatesPerRotation: 20, ccxMagicStates: false, slowDownFactor: 1.0 },
     },
     result: corpusSparse(ID.R3, "qdk-qre-1.28.0"),
     savedAt: "2026-07-15T14:00:05Z",

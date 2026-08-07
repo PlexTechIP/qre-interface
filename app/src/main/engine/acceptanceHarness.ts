@@ -5,6 +5,10 @@ import { resolvePythonBin } from "./pythonBin.js";
 import { QreEngine } from "./qreEngine.js";
 import runResultSchema from "../../shared/contracts/runresult.schema.json";
 import {
+  describeTraceTransform,
+  normalizeTraceTransform,
+} from "../../shared/traceTransform.js";
+import {
   buildBenchmarkConfig,
   buildFailingConfig,
   buildLargeConfig,
@@ -51,10 +55,14 @@ async function main(): Promise<void> {
         application:
           config.application.type === "benchmark"
             ? config.application.benchmarkId
-            : config.application.format,
+            : config.application.type === "manualCounts"
+              ? "manual-counts"
+              : config.application.format,
         architecture: config.architecture.type,
         qecCode: config.qecCode,
-        traceTransform: config.traceTransform.type,
+        traceTransform: describeTraceTransform(
+          normalizeTraceTransform(config.traceTransform),
+        ),
         maxError: config.maxError,
       },
       schemaValid,

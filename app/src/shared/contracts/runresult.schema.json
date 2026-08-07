@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://qre-dashboard.plextech.dev/contracts/runresult.schema.json",
   "title": "RunResult",
-  "description": "CANONICAL contract schema (v1.0.0), frozen by the PMs. RunResult flows from the engine to consumers, so this schema is deliberately tolerant of EXTRA top-level fields (forward compatibility: consumers must not crash on unknowns) while every required field must be present. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
+  "description": "CANONICAL contract schema (v1.2.0), frozen by the PMs. RunResult flows from the engine to consumers, so this schema is deliberately tolerant of EXTRA top-level fields (forward compatibility: consumers must not crash on unknowns) while every required field must be present. Validation requires ajv-formats (uuid, date-time). Changes only via the contract-change process in docs/engineering-workflow.md.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.0.0",
+      "const": "1.4.0",
       "description": "Contract version."
     },
     "runId": {
@@ -28,15 +28,23 @@
     "status": {
       "type": "string",
       "description": "The ONLY flow control. Consumers render from status + error; they never infer failure from missing fields.",
-      "enum": ["succeeded", "failed"]
+      "enum": [
+        "succeeded",
+        "failed"
+      ]
     },
     "error": {
       "description": "null when status = 'succeeded'; populated when status = 'failed'.",
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
-          "required": ["code", "message"],
+          "required": [
+            "code",
+            "message"
+          ],
           "properties": {
             "code": {
               "type": "string",
@@ -55,49 +63,85 @@
     "frontier": {
       "description": "Pareto frontier rows; null when status = 'failed'. On success every row carries the six default fields. A value may legitimately be 0.",
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/definitions/frontierRow" }
+          "items": {
+            "$ref": "#/definitions/frontierRow"
+          }
         }
       ]
     },
     "raw": {
       "description": "The COMPLETE, unmodified engine output object — verbatim, never re-keyed or pruned. Schema-less by contract: its shape may vary by config and QRE version; consumers render whatever arrives. null is permitted ONLY on failure, and only when the engine produced no output at all (TIMEOUT, ENGINE_CRASH); when the engine emitted structured diagnostics, raw carries them verbatim.",
-      "type": ["object", "null"]
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "qreVersion": {
       "type": "string",
       "description": "The engine version that ACTUALLY executed, self-reported by the engine/package at runtime — never a hardcoded constant. This is the authoritative reproducibility anchor for the run.",
       "minLength": 1
     },
-    "startedAt": { "type": "string", "format": "date-time" },
-    "completedAt": { "type": "string", "format": "date-time" }
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
   },
   "allOf": [
     {
       "if": {
-        "required": ["status"],
-        "properties": { "status": { "const": "succeeded" } }
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        }
       },
       "then": {
         "properties": {
-          "error": { "type": "null" },
-          "frontier": { "type": "array", "minItems": 1 },
-          "raw": { "type": "object" }
+          "error": {
+            "type": "null"
+          },
+          "frontier": {
+            "type": "array",
+            "minItems": 1
+          },
+          "raw": {
+            "type": "object"
+          }
         }
       }
     },
     {
       "if": {
-        "required": ["status"],
-        "properties": { "status": { "const": "failed" } }
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        }
       },
       "then": {
         "properties": {
-          "error": { "type": "object" },
-          "frontier": { "type": "null" }
+          "error": {
+            "type": "object"
+          },
+          "frontier": {
+            "type": "null"
+          }
         }
       }
     }
@@ -116,16 +160,30 @@
         "codeDistance"
       ],
       "properties": {
-        "physicalQubits": { "$ref": "#/definitions/numericMetric" },
-        "runtime": { "$ref": "#/definitions/numericMetric" },
-        "logicalCycleTime": { "$ref": "#/definitions/numericMetric" },
-        "factories": { "$ref": "#/definitions/factoryMetric" },
-        "totalError": { "$ref": "#/definitions/numericMetric" },
-        "codeDistance": { "$ref": "#/definitions/numericMetric" },
+        "physicalQubits": {
+          "$ref": "#/definitions/numericMetric"
+        },
+        "runtime": {
+          "$ref": "#/definitions/numericMetric"
+        },
+        "logicalCycleTime": {
+          "$ref": "#/definitions/numericMetric"
+        },
+        "factories": {
+          "$ref": "#/definitions/factoryMetric"
+        },
+        "totalError": {
+          "$ref": "#/definitions/numericMetric"
+        },
+        "codeDistance": {
+          "$ref": "#/definitions/numericMetric"
+        },
         "additional": {
           "type": "object",
           "description": "Optional result fields reported for this row, keyed by the app-facing names in contracts/types.ts RESULT_FIELD_KEYS where possible. Unknown keys are tolerated for forward compatibility.",
-          "additionalProperties": { "$ref": "#/definitions/fieldMetric" }
+          "additionalProperties": {
+            "$ref": "#/definitions/fieldMetric"
+          }
         }
       }
     },
@@ -133,45 +191,85 @@
       "type": "object",
       "description": "One numeric metric. `value` is ALWAYS a number in the declared `unit`; math, sorting, plotting, and comparison use value+unit. `display` is human-friendly rendering; consumers must NEVER parse or compute from it.",
       "additionalProperties": false,
-      "required": ["value", "unit", "display"],
+      "required": [
+        "value",
+        "unit",
+        "display"
+      ],
       "properties": {
-        "value": { "type": "number" },
-        "unit": { "type": "string" },
-        "display": { "type": "string", "minLength": 1 }
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "factoryMetric": {
       "type": "object",
       "description": "Magic-state factories used, represented as state type x number of copies. Empty value array means no factories.",
       "additionalProperties": false,
-      "required": ["value", "unit", "display"],
+      "required": [
+        "value",
+        "unit",
+        "display"
+      ],
       "properties": {
         "value": {
           "type": "array",
-          "items": { "$ref": "#/definitions/factoryUse" }
+          "items": {
+            "$ref": "#/definitions/factoryUse"
+          }
         },
-        "unit": { "type": "string" },
-        "display": { "type": "string", "minLength": 1 }
+        "unit": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "factoryUse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stateType", "copies"],
+      "required": [
+        "stateType",
+        "copies"
+      ],
       "properties": {
-        "stateType": { "type": "string", "minLength": 1 },
-        "copies": { "type": "integer", "minimum": 0 }
+        "stateType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "copies": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "fieldMetric": {
       "type": "object",
       "description": "An optional result field. Numeric optional fields should use numeric values; non-numeric fields (source, FEASIBILITY, ASSUMPTIONS, NAME, MOLECULE, etc.) may use strings, booleans, arrays, or objects. `display` remains the renderable human form.",
       "additionalProperties": false,
-      "required": ["value", "unit", "display"],
+      "required": [
+        "value",
+        "unit",
+        "display"
+      ],
       "properties": {
         "value": {},
-        "unit": { "type": "string" },
-        "display": { "type": "string", "minLength": 1 }
+        "unit": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
   }

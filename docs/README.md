@@ -17,8 +17,12 @@ docs/
 ├── tech-stack.md              ← Electron / React / TypeScript / SQLite / QRE v3
 ├── engineering-workflow.md    ← git, branches, PRs, reviews, repo conventions
 ├── data-contracts.md          ← RunConfig & RunResult JSON shapes (v1)
+├── features-and-fields.md     ← THE FIELD SPEC: every application type, field,
+│                                range, default, and tooltip copy
 ├── architecture.md            ← end-to-end app, IPC, engine, and store architecture
 ├── setup-and-troubleshooting.md ← clean-machine setup and real failure fixes
+├── agentic-integration-research.md ← standing reference: MCP, BYO-key, and the
+│                                structured-output finding (read its Currency note)
 ├── glossary.md                ← QRE and project terminology
 ├── week-1/                    ← Tue Jun 30 → Tue Jul 7, 2026
 │   ├── week-1-overview.md
@@ -36,11 +40,16 @@ docs/
 │   ├── team-1/                ← Run History UI + Comparison UI
 │   ├── team-2/                ← SQLite persistence + Rerun
 │   └── team-3/                ← Integration — the mock→real swap
-└── week-4/                    ← Fri Jul 24 → due Wed Jul 29 EOD
-    ├── week-4-overview.md
-    ├── team-1/                ← Run Configuration
-    ├── team-2/                ← Results · History · Comparison
-    └── team-3/                ← Engine upgrade + documentation
+├── week-4/                    ← Fri Jul 24 → due Wed Jul 29 EOD
+│   ├── week-4-overview.md
+│   ├── team-1/                ← Run Configuration
+│   ├── team-2/                ← Results · History · Comparison
+│   └── team-3/                ← Engine upgrade + documentation
+└── week-5/                    ← Fri Jul 31 → due Wed Aug 5 EOD
+    ├── week-5-overview.md
+    ├── team-1/                ← MCP server research (documentation only)
+    ├── team-2/                ← LLM interface (bring-your-own API key)
+    └── team-3/                ← The configuration surface, end to end
 ```
 
 Each team folder for a week contains the docs the PMs publish for that week's
