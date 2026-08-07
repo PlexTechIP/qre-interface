@@ -16,7 +16,7 @@ import {
 import {
   CONFIG_DEFINITIONS,
   FACTORY_DEFINITIONS,
-  MEMORY_OPTIMIZATION_DEFINITIONS,
+  MEMORY_OPTIMIZATION_SECTION,
   QEC_CODE_DEFINITIONS,
   TRACE_TRANSFORM_DEFINITIONS,
 } from "../constants/configDefinitions";
@@ -29,7 +29,11 @@ import {
   type TraceTransformForm,
 } from "../state/formState";
 import { EVICTION_STRATEGIES, type EvictionStrategy } from "../../shared/traceTransform";
-import { DefinitionTip, definitionId } from "./DefinitionTip";
+import {
+  DefinitionTip,
+  definitionDescribedBy,
+  definitionId,
+} from "./DefinitionTip";
 import { Field } from "./Field";
 import { NumberField } from "./NumberField";
 
@@ -291,7 +295,10 @@ export function MicroArchitectureSection({
           <select
             id="micro-qec"
             className="field__input"
-            aria-describedby={definitionId("micro-qec")}
+            aria-describedby={definitionDescribedBy(
+              "micro-qec",
+              QEC_CODE_DEFINITIONS[derivedQec],
+            )}
             value={derivedQec}
             onChange={() => {
               /* locked to architecture — value is derived, never set here */
@@ -362,13 +369,19 @@ export function MicroArchitectureSection({
             `secondaryFactories` is unchanged on the wire — see the partition in
             that control. */}
 
-        {/* Unavailable rather than optional — and as of week 5 that is a
-            MEASURED claim, not an inferred one. The field now reaches
-            build_isa_query, and with Dynamic Memory Compute supplying the
-            READ_FROM_MEMORY / WRITE_TO_MEMORY demand the yoked codes exist to
-            serve, the estimate is still bit-identical (memoryOptimization.test.ts).
-            An enabled control that silently changes nothing is worse than a
-            disabled one that says why. */}
+        {/* Unavailable rather than optional. Week 5 wired the field through to
+            build_isa_query and measured: with Dynamic Memory Compute supplying
+            the READ_FROM_MEMORY / WRITE_TO_MEMORY demand the yoked codes exist
+            to serve, the estimate is still bit-identical
+            (memoryOptimization.test.ts).
+
+            The copy says "consistent with", NOT "measured, not assumed". An
+            unchanged estimate has two explanations — the codes are inert, or
+            `query * YokedSurfaceCode.q()` does not put them anywhere qdk
+            applies — and nothing yet distinguishes them. §G's "prove it is
+            actually in the query" is still open; see the checklist. Either way
+            an enabled control that silently changes nothing is worse than a
+            disabled one that says why, so the control stays off. */}
         <div className="field">
           <div className="field__label-row">
             <label className="field__label" htmlFor="micro-memory-opt">
@@ -379,7 +392,7 @@ export function MicroArchitectureSection({
               id={definitionId("micro-memory-opt")}
               label="Memory Optimization"
             >
-              {MEMORY_OPTIMIZATION_DEFINITIONS.section}
+              {MEMORY_OPTIMIZATION_SECTION}
             </DefinitionTip>
           </div>
           <select
@@ -406,10 +419,12 @@ export function MicroArchitectureSection({
             id="micro-memory-opt-help"
             data-testid="memory-opt-help"
           >
-            Unavailable in this build — measured, not assumed. The yoked surface
-            codes now reach the estimator, and on qdk 1.30.0 they leave the
-            estimate unchanged even with Dynamic Memory Compute enabled, which is
-            what supplies the memory demand they optimize.
+            Unavailable in this build. The yoked surface codes now reach the
+            estimator, and on qdk 1.30.0 they leave the estimate unchanged even
+            with Dynamic Memory Compute enabled — which is what supplies the
+            memory demand they optimize. That is consistent with their having no
+            effect, though it does not yet prove it, so the control stays
+            disabled.
           </p>
         </div>
       </div>

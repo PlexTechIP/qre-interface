@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 interface DefinitionTipProps {
   /** The field's own label, used to name the trigger for screen readers. */
@@ -32,6 +32,28 @@ export function DefinitionTip({
 }: DefinitionTipProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
 
+  // Escape dismisses the bubble whether it was opened by hover, focus or click.
+  //
+  // A keydown handler on the TRIGGER only fires while the trigger has focus,
+  // which a hover-opened bubble never has — the pointer user's only escape was
+  // to move the pointer away. WCAG 2.1 SC 1.4.13 (Content on Hover or Focus)
+  // requires dismissal without moving pointer hover OR keyboard focus, so the
+  // listener has to sit on the document. It is only attached while open, so a
+  // form full of these fields adds at most one listener at a time.
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      // Capture phase, and stopped here: Escape belongs to the topmost
+      // dismissible thing on screen, which while a bubble is open is the
+      // bubble — not whatever dialog encloses the form.
+      event.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener("keydown", dismiss, true);
+    return () => document.removeEventListener("keydown", dismiss, true);
+  }, [open]);
+
   return (
     <span
       className="definition-tip"
@@ -51,14 +73,6 @@ export function DefinitionTip({
         onClick={() => setOpen(true)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        onKeyDown={(event) => {
-          // Dismissible without moving focus. stopPropagation so Escape closes
-          // the tooltip rather than whatever dialog encloses the form.
-          if (event.key === "Escape" && open) {
-            event.stopPropagation();
-            setOpen(false);
-          }
-        }}
       >
         ?
       </button>
@@ -76,4 +90,24 @@ export function DefinitionTip({
 /** The bubble id for a field, and the value its control's `aria-describedby` takes. */
 export function definitionId(fieldId: string): string {
   return `${fieldId}-definition`;
+}
+
+/**
+ * The `aria-describedby` a control should carry for its definition — or
+ * `undefined` when there is no copy for that field.
+ *
+ * Use this rather than a bare `definitionId(id)` at any call site that renders
+ * the tip conditionally. `Field` and `NumberField` only mount a `DefinitionTip`
+ * when `definition` is truthy, and the copy tables are `Record<string, string>`
+ * reads, which `noUncheckedIndexedAccess` correctly types as possibly
+ * `undefined`. Hard-coding the id on the control therefore risks pointing
+ * `aria-describedby` at an element that was never rendered — a dangling IDREF,
+ * which drops the description AND, in most screen readers, the field's own help
+ * line along with it.
+ */
+export function definitionDescribedBy(
+  fieldId: string,
+  definition: string | undefined,
+): string | undefined {
+  return definition ? definitionId(fieldId) : undefined;
 }

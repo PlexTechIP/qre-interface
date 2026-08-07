@@ -1,6 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import { DefinitionTip, definitionId } from "./DefinitionTip";
+import {
+  DefinitionTip,
+  definitionDescribedBy,
+  definitionId,
+} from "./DefinitionTip";
 
 interface NumberFieldProps {
   id: string;
@@ -89,8 +93,11 @@ export function NumberField({
   // tooltip bubble. Pointing aria-describedby at only the trigger button would
   // mean a screen-reader user who tabs to the input hears no definition at all.
   const describedBy =
-    [descriptor ? `${id}-desc` : null, definition ? definitionId(id) : null]
-      .filter((part): part is string => part !== null)
+    [
+      descriptor ? `${id}-desc` : undefined,
+      definitionDescribedBy(id, definition),
+    ]
+      .filter((part): part is string => part !== undefined)
       .join(" ") || undefined;
 
   return (

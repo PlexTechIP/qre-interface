@@ -1523,15 +1523,14 @@ input[type="range"]:focus-visible,
   text-transform: uppercase;
 }
 
+/* The 6px gap matches `.field__label-row`, so an eyebrow's "?" sits the same
+   distance from its label as every other tooltip trigger on the surface. The
+   flex `gap` is the whole spacing rule — a `.field-eyebrow .definition-tip`
+   margin on top of it put this one trigger at 12px. */
 .field-eyebrow--with-tip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.field-eyebrow .definition-tip {
-  margin-left: 6px;
-  vertical-align: middle;
 }
 
 /* QPU + Micro field labels adopt the uppercase eyebrow treatment from the mockup. */
@@ -1795,6 +1794,21 @@ input[type="range"]:focus-visible,
 
 .toggle--on .toggle__knob {
   transform: translateX(18px);
+}
+
+/* A gated stage's switch. `.micro-subgroup--off` dims `.field` descendants only,
+   and Stage 3 · Unmemory has none — it is a toggle and a help line — so without
+   this the disabled switch painted at full strength and looked operable while
+   ignoring every click. The On/Off state text travels with it; the "Enable
+   stage" label and the subgroup's help line stay at full strength on purpose,
+   because they are what says WHICH stage this is and WHY it is unavailable. */
+.toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.toggle:disabled ~ .toggle-field__state {
+  opacity: 0.55;
 }
 
 /* --- Search field with leading icon --------------------------------*/

@@ -20,7 +20,21 @@
  *    Descriptions tab. An invented tooltip is worse than none: it reads as
  *    reviewed product copy while being one engineer's guess. They are listed in
  *    the PR description as copy to request.
+ *
+ * **The per-option tables below are keyed by their contract union, not by
+ * `string`.** A `Record<string, string>` read is `string | undefined` under
+ * `noUncheckedIndexedAccess`, which silently permits a "?" trigger that opens an
+ * empty bubble — and, where a control hard-codes `aria-describedby`, a dangling
+ * IDREF. Keying by the union instead makes adding a contract id without adding
+ * copy a compile error, which is where that mistake belongs.
  */
+
+import type {
+  MagicStateFactoryId,
+  QecCodeId,
+  SecondaryFactoryId,
+} from "../../shared/types";
+import type { ManualCountsForm } from "../state/formState";
 
 /** Fields whose key is unambiguous across the form. */
 export const CONFIG_DEFINITIONS = {
@@ -29,7 +43,7 @@ export const CONFIG_DEFINITIONS = {
 } as const;
 
 /** QEC Code, per option — the control is locked, but the copy explains each. */
-export const QEC_CODE_DEFINITIONS: Record<string, string> = {
+export const QEC_CODE_DEFINITIONS: Record<QecCodeId, string> = {
   surface_code:
     "A quantum error correction method used to protect logical qubits from physical errors in gate-based architectures.",
   three_aux:
@@ -42,7 +56,10 @@ export const QEC_CODE_DEFINITIONS: Record<string, string> = {
  * The five Magic State Factory options, in one list. The former "Secondary
  * Factory" members carry their own copy; the analyst never sees the split.
  */
-export const FACTORY_DEFINITIONS: Record<string, string> = {
+export const FACTORY_DEFINITIONS: Record<
+  MagicStateFactoryId | SecondaryFactoryId,
+  string
+> = {
   round_based:
     "A method for producing high-quality magic states used for non-Clifford operations such as T gates.",
   litinski19:
@@ -55,15 +72,19 @@ export const FACTORY_DEFINITIONS: Record<string, string> = {
     "A factory that converts magic states into CCX (Toffoli) resources for fault-tolerant computation.",
 };
 
-/** Memory Optimization: the section's own copy, then each yoked code. */
-export const MEMORY_OPTIMIZATION_DEFINITIONS: Record<string, string> = {
-  section:
-    "Memory optimization techniques that reduce quantum memory resource requirements.",
-  yoked_1d:
-    "A memory optimization technique using a 1D yoked surface code structure to reduce quantum memory resource requirements.",
-  yoked_2d:
-    "A memory optimization technique using a 2D yoked surface code structure to reduce quantum memory resource requirements.",
-};
+/**
+ * Memory Optimization — the SECTION's copy, which is all that has anywhere to
+ * render.
+ *
+ * The source doc also gives each yoked code its own sentence, but the control is
+ * disabled and `<option>` cannot carry a tooltip, so there is no surface for
+ * per-option copy. Those two strings lived here unread until 2026-08-07; a
+ * transcribed string nothing displays reads like shipped copy and has to be
+ * re-checked on every doc revision for no benefit. Re-transcribe them from
+ * § Config Descriptions if the control is ever re-enabled with per-option help.
+ */
+export const MEMORY_OPTIMIZATION_SECTION =
+  "Memory optimization techniques that reduce quantum memory resource requirements.";
 
 /** The four pipeline stages and their parameters. */
 export const TRACE_TRANSFORM_DEFINITIONS = {
@@ -149,7 +170,7 @@ export const NEUTRAL_ATOM_DEFINITIONS = {
 export const MANUAL_COUNTS_SECTION =
   "Manually specify the logical resource requirements of a quantum program. These values represent logical operations before physical hardware and error correction overhead are applied.";
 
-export const MANUAL_COUNT_DEFINITIONS: Record<string, string> = {
+export const MANUAL_COUNT_DEFINITIONS: Record<keyof ManualCountsForm, string> = {
   numQubits:
     "The number of logical qubits required by the quantum program. The QRE uses this value to estimate the physical qubit resources needed after error correction.",
   tCount:
@@ -170,6 +191,11 @@ export const MANUAL_COUNT_DEFINITIONS: Record<string, string> = {
  * Benchmark hyperparameters, keyed by the `BenchmarkParamSpec` key. `generator`
  * is shared by Shor's and Ekerå-Håstad and the source doc gives each its own
  * wording, so the Ekerå-Håstad one is keyed separately by the caller.
+ *
+ * The deliberate exception to the union-keyed rule above: coverage here is
+ * PARTIAL by design — a computed field has no definition to give — so a
+ * `string | undefined` read is the honest type. `HyperparametersPanel` guards on
+ * it and renders neither trigger nor `aria-describedby` when it is absent.
  */
 export const HYPERPARAMETER_DEFINITIONS: Record<string, string> = {
   bitSize: "The number of bits in the integer being factored.",

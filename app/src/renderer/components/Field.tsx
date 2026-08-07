@@ -10,9 +10,14 @@ interface FieldProps {
    *
    * Field renders arbitrary children, so it cannot reach the control to wire the
    * association itself: **the caller must put
-   * `aria-describedby={definitionId(id)}` on the control it passes in.**
-   * `NumberField` owns its input and does this for you; a raw `<select>` here
-   * does not.
+   * `aria-describedby={definitionDescribedBy(id, definition)}` on the control it
+   * passes in.** `NumberField` owns its input and does this for you; a raw
+   * `<select>` here does not.
+   *
+   * Use the helper rather than a bare `definitionId(id)`. The tip below is only
+   * mounted when `definition` is truthy, and these strings come from
+   * `Record<string, string>` lookups that `noUncheckedIndexedAccess` types as
+   * possibly `undefined` — so a hard-coded id can outlive the element it names.
    */
   definition?: string | undefined;
   help?: string | undefined;

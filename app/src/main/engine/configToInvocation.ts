@@ -1,5 +1,6 @@
 import type { RunConfig } from "../../shared/types.js";
 import {
+  MEMORY_OPTIMIZATION_IDS,
   expectedQecCode,
   isGsj24Allowed,
   isLitinski19Allowed,
@@ -238,7 +239,24 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
   ) {
     return invalid("magic_up_to_clifford secondary factory is not compatible with Majorana architectures.");
   }
- 
+
+  // --- memory optimization ---
+  // Range-checked like every other enum in this function, and for the same
+  // reason: records are validated on SAVE and never on load, so this is the only
+  // gate between a stored config and the engine. Unchecked, an out-of-contract
+  // id reached `resolve_yoked_code`, which raises a bare ValueError —
+  // `failure_code_for` classifies that as ESTIMATION_FAILED, i.e. "your model
+  // was infeasible", when the analyst's actual next step is to fix a field.
+  const memoryOptimization = config.memoryOptimization;
+  if (
+    memoryOptimization !== undefined &&
+    !(MEMORY_OPTIMIZATION_IDS as readonly string[]).includes(memoryOptimization)
+  ) {
+    return invalid(
+      `memoryOptimization must be one of ${MEMORY_OPTIMIZATION_IDS.join(", ")}, got ${JSON.stringify(memoryOptimization)}.`,
+    );
+  }
+
   // --- trace transform (one pipeline; both stages always run) ---
   // Parsed strictly, NOT normalized: normalization repairs a malformed record
   // so the UI can still render it, and repairing on the way into the engine
@@ -315,10 +333,10 @@ export function configToInvocation(config: RunConfig, timeoutMs: number): Config
       secondaryFactories: config.secondaryFactories ?? [],
       // Absent OR "none" means omit the key entirely, so an unselected
       // optimization stays absent all the way to Python — the same rule the
-      // optional trace stages follow.
-      ...(config.memoryOptimization !== undefined &&
-      config.memoryOptimization !== "none"
-        ? { memoryOptimization: config.memoryOptimization }
+      // optional trace stages follow. Range-checked above, so what reaches
+      // `resolve_yoked_code` is always an id it knows.
+      ...(memoryOptimization !== undefined && memoryOptimization !== "none"
+        ? { memoryOptimization }
         : {}),
       traceTransform,
       maxError: config.maxError,
