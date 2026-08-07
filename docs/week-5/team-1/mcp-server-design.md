@@ -142,6 +142,16 @@ non-Electron Node entry point can `import { QreEngine }` and
 `new SqliteRunStore(dbPath)` and reuse both unchanged. This is what makes the idea
 cheap.
 
+**[VERIFIED · `ed52411`] Two tools are backed by `renderer/` modules — and those
+are importable too.** `validate_config` (`renderer/state/schemaValidation.ts`) and
+`compare_runs` (`renderer/history/comparisonModel.ts`) live under `renderer/`, which
+could imply a browser/React dependency. They don't have one: `schemaValidation.ts`
+imports only `ajv`, `ajv-formats`, the JSON schema, and a type; `comparisonModel.ts`
+and its transitive deps (`resultFields`, `formatMetric`, `selectedRows`,
+`historyLabels`) reference no React, `document`, or `window`. So a non-Electron Node
+server can import all four backing modules — engine, store, and these two — unchanged.
+The `renderer/` path is a source-tree convention here, not a runtime constraint.
+
 **[VERIFIED · `ed52411`] There are four preload surfaces, not three.**
 `app/src/main/preload.ts` lines 63–66 call `contextBridge.exposeInMainWorld` for:
 `estimator`, `uploads`, `store`, `files`. (The prior research doc says three; it
@@ -365,6 +375,39 @@ permanent data loss (there is no trash or undo in the store):
 Enforcement lives in the tool handler wrapping `SqliteRunStore.delete` (§7), not in
 prompt text. Bulk deletion (which the dashboard UI offers) is intentionally left out
 of v1; if it's wanted later it returns through its own design pass.
+
+### 6.1 Tool contracts
+
+The shapes below are the **data contract** week-6 builds to — the input each tool
+takes and what it returns. **[INFERENCE]** the tool shapes are a proposed design; the
+**backing types they reuse are [VERIFIED · `ed52411`]** and named per tool so nothing
+is invented. Types referenced (`app/src/shared/types.ts`): `RunConfig` (`:419`),
+`RunResult` (`:589`), `RunRecord` (`:678`), `RunFilter` (`:763`).
+
+Two conventions hold across every tool:
+- **Errors come back as tool results with `isError: true`** (§3), not as JSON-RPC
+  protocol errors — the agent can read the message and retry. Protocol errors are
+  reserved for unknown tools / arguments that fail schema validation before execution.
+- **Timestamps are ISO-8601 UTC strings**, matching the existing records.
+
+| Tool | Input | Returns |
+|---|---|---|
+| `list_benchmarks` | *(none)* | `{ benchmarks: BenchmarkEntry[] }` — each entry is `{ id, name, description, format }` from `BENCHMARK_REGISTRY` (`engine/benchmarkRegistry.ts:25`). *(Omit the internal `sourcePath`.)* |
+| `validate_config` | `{ config: RunConfig }` | `SchemaValidationResult` = `{ valid: boolean, errors: string }` — on failure `errors` is Ajv's **human-readable, newline-separated** text (not an array), straight from `validateRunConfigSchema` (`renderer/state/schemaValidation.ts:23`), so the agent can read it and self-correct |
+| `list_runs` | `{ filter?: RunFilter }` | `{ runs: RunSummary[] }` — id, name, `createdAt`, `status`, newest-first; a summary, **not** the full `RunRecord`, to keep payloads small. Omitting `filter` lists all (maps to `SqliteRunStore.list()`); passing one maps to `query(filter)` |
+| `get_run` | `{ id: string }` | `{ run: RunRecord }` — the full record (config + result + `savedAt`), **or** `isError` if the id is unknown (`get()` returns `null`; the handler turns that into a tool error) |
+| `compare_runs` | `{ idA: string, idB: string }` | `{ comparison: … }` — the server fetches both `RunRecord`s (`get_run` path) and assembles the diff via `comparisonModel.ts`'s builders (`toComparisonColumn` → `buildComparisonRows` / `buildCharts`). Note: there is **no single `compare(a, b)` entry point** — it's a toolkit over records, so the tool does the fetch-then-assemble, reusing the app's own logic so agent and UI agree |
+| `run_estimate` | `{ config: RunConfig }` | `{ runId: string, result: RunResult }` on success; on a failed run, `isError: true` carrying `result.status: "failed"` and `result.error` (the engine reports failure **as data**, §3). **Gated: user approval before the subprocess spawns.** Sets `provenance.authoredBy = "model_assisted"` when the agent authored the config (§8) |
+| `delete` | `{ id: string }` | `{ deleted: true, id }` on success; `isError` if the id is unknown. **Gated harder: `destructiveHint: true`, single id only, approval prompt names the run (§6)** |
+
+**Notes that keep week-6 from having to ask:**
+- `validate_config` returns Ajv's errors **unmodified** — it's the same schema path
+  the UI uses, so an agent that fixes-and-revalidates converges the same way a user
+  would.
+- `run_estimate` should **validate the config through the same Ajv path first** and
+  refuse (`isError`) on an invalid config, rather than spawning Python on bad input.
+- `list_runs` returns summaries, not full records, on purpose: run histories can be
+  large, and the agent pulls the full `RunRecord` only via `get_run` when it needs it.
 
 ---
 
