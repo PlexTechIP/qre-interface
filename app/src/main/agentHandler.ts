@@ -2,10 +2,13 @@ import type { IpcMain } from "electron";
 
 import {
   GENERATION_SCHEMA_ID,
+  PROVIDER_IDS,
   type AgentDraftRequest,
   type AgentDraftResult,
   type AgentProviderStatus,
+  type ProviderId,
 } from "../shared/agentTypes.js";
+import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels.js";
 import type { CredentialStore } from "./credentialStore.js";
 import {
   AGENT_DRAFT_CHANNEL,
@@ -30,6 +33,16 @@ export interface DraftGenerator {
   requestDraft(apiKey: string, prompt: string): Promise<AgentDraftResult>;
 }
 
+export interface DraftGeneratorFactory {
+  create(model: string): DraftGenerator;
+}
+
+type CredentialVault = Record<
+  ProviderId,
+  Pick<CredentialStore, "hasCredential" | "readForRequest">
+>;
+type DraftGeneratorRegistry = Record<ProviderId, DraftGeneratorFactory>;
+
 /**
  * Registers window.agent — the fifth preload surface (docs/architecture.md's
  * decision rule): provider failures resolve carrying a typed failure, exactly
@@ -45,16 +58,22 @@ export interface DraftGenerator {
  */
 export function registerAgentHandlers(
   ipcMain: Pick<IpcMain, "handle">,
-  credentialStore: Pick<CredentialStore, "hasCredential" | "readForRequest">,
-  generator: DraftGenerator,
+  vault: CredentialVault,
+  generators: DraftGeneratorRegistry,
 ): void {
   ipcMain.handle(AGENT_STATUS_CHANNEL, (): AgentProviderStatus => {
-    if (!credentialStore.hasCredential()) {
+    const providers = PROVIDER_IDS.map((provider) => ({
+      provider,
+      displayName: PROVIDER_MODELS[provider].displayName,
+      configured: vault[provider].hasCredential(),
+      models: PROVIDER_MODELS[provider].models,
+      defaultModel: PROVIDER_MODELS[provider].defaultModel,
+    }));
+    if (!providers.some((provider) => provider.configured)) {
       return {
         available: false,
         networkEnabled: false,
-        provider: null,
-        model: null,
+        providers,
         mode: "unavailable",
         message:
           "No model provider is configured. The rest of the app remains available offline.",
@@ -63,8 +82,7 @@ export function registerAgentHandlers(
     return {
       available: true,
       networkEnabled: true,
-      provider: generator.provider,
-      model: generator.model,
+      providers,
       mode: "provider",
     };
   });
@@ -74,14 +92,18 @@ export function registerAgentHandlers(
   // this feature would transmit before deciding to enable it at all.
   ipcMain.handle(
     AGENT_PREVIEW_CHANNEL,
-    (_event, request: unknown): unknown =>
-      generator.buildRequestBody(readDraftRequest(AGENT_PREVIEW_CHANNEL, request).prompt),
+    (_event, payload: unknown): unknown => {
+      const request = readDraftRequest(AGENT_PREVIEW_CHANNEL, payload);
+      return generatorFor(generators, request).buildRequestBody(request.prompt);
+    },
   );
 
   ipcMain.handle(
     AGENT_DRAFT_CHANNEL,
     async (_event, payload: unknown): Promise<AgentDraftResult> => {
       const request = readDraftRequest(AGENT_DRAFT_CHANNEL, payload);
+      const generator = generatorFor(generators, request);
+      const credentialStore = vault[request.provider];
 
       // Reading the key can fail on a locked keychain, a denied access prompt,
       // or a blob truncated by a crash. None of those is a programmer error, so
@@ -128,7 +150,7 @@ function readDraftRequest(channel: string, value: unknown): AgentDraftRequest {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${channel} requires an AgentDraftRequest object.`);
   }
-  const { prompt, generationSchema } = value as Record<string, unknown>;
+  const { prompt, generationSchema, provider, model } = value as Record<string, unknown>;
   if (typeof prompt !== "string") {
     throw new Error(`${channel} requires a string prompt.`);
   }
@@ -137,5 +159,18 @@ function readDraftRequest(channel: string, value: unknown): AgentDraftRequest {
       `${channel} expects generationSchema ${JSON.stringify(GENERATION_SCHEMA_ID)}, got ${JSON.stringify(generationSchema)}. The renderer and main bundles disagree about the generation contract.`,
     );
   }
-  return { prompt, generationSchema };
+  if (!isProviderId(provider)) {
+    throw new Error(`${channel} requires a supported provider id.`);
+  }
+  if (!isModelForProvider(provider, model)) {
+    throw new Error(`${channel} requires a supported model for ${provider}.`);
+  }
+  return { prompt, generationSchema, provider, model };
+}
+
+function generatorFor(
+  registry: DraftGeneratorRegistry,
+  request: AgentDraftRequest,
+): DraftGenerator {
+  return registry[request.provider].create(request.model);
 }

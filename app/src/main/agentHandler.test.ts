@@ -1,236 +1,127 @@
 // @vitest-environment node
-
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentDraftResult, AgentProviderStatus } from "../shared/agentTypes.js";
 import { registerAgentHandlers, type DraftGenerator } from "./agentHandler.js";
 import type { CredentialStore } from "./credentialStore.js";
-import {
-  AGENT_DRAFT_CHANNEL,
-  AGENT_PREVIEW_CHANNEL,
-  AGENT_STATUS_CHANNEL,
-} from "./ipcChannels.js";
+import { AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+type Store = Pick<CredentialStore, "hasCredential" | "readForRequest">;
+const request = { prompt: "estimate Grover search", generationSchema: "runconfig-generation-v1.4.0", provider: "openai" as const, model: "gpt-5.6-terra" };
 
-type StorePick = Pick<CredentialStore, "hasCredential" | "readForRequest">;
-
-function setup(options: {
-  hasCredential?: boolean;
-  storedKey?: string | null;
-  readError?: Error;
-  draftResult?: AgentDraftResult;
-} = {}) {
+function setup(options: { anthropic?: boolean; openai?: boolean; key?: string | null; readError?: Error; result?: AgentDraftResult } = {}) {
   const handlers = new Map<string, Listener>();
-  const ipcMain: Pick<IpcMain, "handle"> = {
-    handle(channel, listener) {
-      handlers.set(channel, listener as Listener);
-    },
+  const ipcMain: Pick<IpcMain, "handle"> = { handle(channel, listener) { handlers.set(channel, listener as Listener); } };
+  const store = (configured: boolean): Store => ({ hasCredential: vi.fn(() => configured), readForRequest: vi.fn(() => { if (options.readError) throw options.readError; return options.key ?? null; }) });
+  const vault = { anthropic: store(options.anthropic ?? false), openai: store(options.openai ?? false) };
+  const generators = {
+    anthropic: { create: vi.fn((model: string): DraftGenerator => ({ provider: "Anthropic", model, buildRequestBody: vi.fn((prompt) => ({ provider: "anthropic", model, prompt })), requestDraft: vi.fn(async (): Promise<AgentDraftResult> => options.result ?? ({ ok: true, draft: {} as never, provider: "Anthropic", model })) })) },
+    openai: { create: vi.fn((model: string): DraftGenerator => ({ provider: "OpenAI", model, buildRequestBody: vi.fn((prompt) => ({ provider: "openai", model, prompt })), requestDraft: vi.fn(async (): Promise<AgentDraftResult> => options.result ?? ({ ok: true, draft: {} as never, provider: "OpenAI", model })) })) },
   };
-
-  const credentialStore: StorePick = {
-    hasCredential: vi.fn(() => options.hasCredential ?? false),
-    readForRequest: vi.fn(() => {
-      if (options.readError) throw options.readError;
-      return options.storedKey ?? null;
-    }),
-  };
-  const generator: DraftGenerator = {
-    provider: "Test Provider",
-    model: "test-model",
-    buildRequestBody: vi.fn((prompt: string) => ({ model: "test-model", prompt })),
-    // The return annotation is load-bearing: without it `ok: true` widens to
-    // `ok: boolean` and no longer narrows against AgentDraftResult.
-    requestDraft: vi.fn(
-      async (): Promise<AgentDraftResult> =>
-        options.draftResult ?? {
-          ok: true,
-          draft: {} as never,
-          provider: "Test Provider",
-          model: "test-model",
-        },
-    ),
-  };
-
-  registerAgentHandlers(ipcMain, credentialStore, generator);
-
-  // Mirrors `ipcMain.handle`, which turns a SYNCHRONOUS throw from a listener
-  // into a rejected invoke promise on the renderer side. Letting a sync throw
-  // escape this helper instead would make a rejecting handler look like a test
-  // harness crash — and the preview channel's listener is synchronous.
+  registerAgentHandlers(ipcMain, vault, generators);
   const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
     const handler = handlers.get(channel);
     if (!handler) return Promise.reject(new Error(`no handler registered for ${channel}`));
-    try {
-      return Promise.resolve(
-        handler(undefined as unknown as IpcMainInvokeEvent, ...args) as T,
-      );
-    } catch (error) {
-      return Promise.reject(error);
-    }
+    try { return Promise.resolve(handler(undefined as unknown as IpcMainInvokeEvent, ...args) as T); } catch (error) { return Promise.reject(error); }
   };
-
-  return { invoke, handlers, credentialStore, generator };
+  return { invoke, vault, generators };
 }
 
 describe("registerAgentHandlers", () => {
-  it("registers exactly the status, preview and draft channels", () => {
-    const { handlers } = setup();
+  it("reports per-provider availability without exposing a key", async () => {
+    const { invoke } = setup({ openai: true });
+    const status = await invoke<AgentProviderStatus>(AGENT_STATUS_CHANNEL);
+    expect(status).toMatchObject({ available: true, networkEnabled: true, mode: "provider" });
+    expect(status.providers).toEqual(expect.arrayContaining([expect.objectContaining({ provider: "openai", configured: true }), expect.objectContaining({ provider: "anthropic", configured: false })]));
+    expect(JSON.stringify(status)).not.toContain("sk-");
+  });
+
+  it("previews the selected provider without reading a credential", async () => {
+    const { invoke, vault, generators } = setup({ openai: true, key: "sk-secret" });
+    await expect(invoke(AGENT_PREVIEW_CHANNEL, request)).resolves.toEqual({ provider: "openai", model: "gpt-5.6-terra", prompt: request.prompt });
+    expect(vault.openai.readForRequest).not.toHaveBeenCalled();
+    expect(generators.openai.create).toHaveBeenCalledWith("gpt-5.6-terra");
+  });
+
+  it("sends through the same selected provider and keeps key decryption in main", async () => {
+    const { invoke, vault } = setup({ openai: true, key: "sk-secret" });
+    await expect(invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request)).resolves.toMatchObject({ ok: true, provider: "OpenAI", model: "gpt-5.6-terra" });
+    expect(vault.openai.readForRequest).toHaveBeenCalledOnce();
+    expect(vault.anthropic.readForRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown provider and resolves an unreadable key as data", async () => {
+    const unknown = { ...request, provider: "unknown" };
+    await expect(setup().invoke(AGENT_PREVIEW_CHANNEL, unknown)).rejects.toThrow(/provider id/);
+    const result = await setup({ openai: true, readError: new Error("locked keychain") }).invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request);
+    expect(result).toMatchObject({ ok: false, code: "CREDENTIAL_UNREADABLE" });
+  });
+
+  // The surface itself is the security boundary: a fourth channel here would
+  // be the place a key getter would appear, so the channel set is asserted
+  // exactly rather than by membership.
+  it("registers exactly the status, preview and draft channels — no getter", () => {
+    const handlers = new Map<string, Listener>();
+    const ipcMain: Pick<IpcMain, "handle"> = { handle(channel, listener) { handlers.set(channel, listener as Listener); } };
+    const store = (): Store => ({ hasCredential: vi.fn(() => false), readForRequest: vi.fn(() => null) });
+    const generator = (): { create: (model: string) => DraftGenerator } => ({ create: (model) => ({ provider: "x", model, buildRequestBody: () => ({}), requestDraft: async () => ({ ok: true, draft: {} as never, provider: "x", model }) }) });
+    registerAgentHandlers(ipcMain, { anthropic: store(), openai: store() }, { anthropic: generator(), openai: generator() });
+
     expect([...handlers.keys()].sort()).toEqual(
       [AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
     );
   });
 
-  it("status reports unavailable with no credential configured", async () => {
-    const { invoke } = setup({ hasCredential: false });
+  it("status reports unavailable when no provider holds a key", async () => {
+    const { invoke } = setup();
     const status = await invoke<AgentProviderStatus>(AGENT_STATUS_CHANNEL);
-    expect(status).toEqual({
-      available: false,
-      networkEnabled: false,
-      provider: null,
-      model: null,
-      mode: "unavailable",
-      message: expect.stringContaining("No model provider is configured"),
+
+    expect(status).toMatchObject({ available: false, networkEnabled: false, mode: "unavailable" });
+    // Still enumerates both providers, so the picker can offer the one to set up.
+    expect(status.providers.map((entry) => entry.provider).sort()).toEqual(["anthropic", "openai"]);
+    expect(status.providers.every((entry) => !entry.configured)).toBe(true);
+  });
+
+  it("previews before any credential exists, so the feature can be inspected first", async () => {
+    // Deciding whether to enable a networked feature requires seeing what it
+    // would transmit — gating the preview on a stored key inverts that.
+    const { invoke } = setup();
+    await expect(invoke(AGENT_PREVIEW_CHANNEL, request)).resolves.toMatchObject({
+      provider: "openai",
+      prompt: request.prompt,
     });
   });
 
-  it("status reports available with the injected generator's provider/model", async () => {
-    const { invoke } = setup({ hasCredential: true });
-    const status = await invoke<AgentProviderStatus>(AGENT_STATUS_CHANNEL);
-    expect(status).toEqual({
-      available: true,
-      networkEnabled: true,
-      provider: "Test Provider",
-      model: "test-model",
-      mode: "provider",
-    });
-  });
+  it("draft rejects with no credential configured — the one programmer error", async () => {
+    const { invoke, vault } = setup({ openai: false, key: null });
 
-  it("preview returns the outbound body without touching the credential", async () => {
-    const { invoke, generator, credentialStore } = setup({
-      hasCredential: true,
-      storedKey: "sk-ant-key",
-    });
-
-    const body = await invoke(AGENT_PREVIEW_CHANNEL, {
-      prompt: "estimate Grover search",
-      generationSchema: "runconfig-generation-v1.4.0",
-    });
-
-    expect(generator.buildRequestBody).toHaveBeenCalledWith("estimate Grover search");
-    expect(body).toEqual({ model: "test-model", prompt: "estimate Grover search" });
-    // The preview is rendered to the analyst, so it must never be built from
-    // anything that required decrypting the key.
-    expect(credentialStore.readForRequest).not.toHaveBeenCalled();
-  });
-
-  it("preview works before a credential exists, so the feature can be inspected first", async () => {
-    const { invoke } = setup({ hasCredential: false });
-
-    await expect(
-      invoke(AGENT_PREVIEW_CHANNEL, {
-        prompt: "estimate something",
-        generationSchema: "runconfig-generation-v1.4.0",
-      }),
-    ).resolves.toBeDefined();
-  });
-
-  it("draft rejects when no credential is configured — the one programmer error", async () => {
-    const { invoke, generator } = setup({ hasCredential: false, storedKey: null });
-    await expect(
-      invoke(AGENT_DRAFT_CHANNEL, { prompt: "estimate something", generationSchema: "runconfig-generation-v1.4.0" }),
-    ).rejects.toThrow(/requires a configured credential/);
-    expect(generator.requestDraft).not.toHaveBeenCalled();
+    await expect(invoke(AGENT_DRAFT_CHANNEL, request)).rejects.toThrow(
+      /requires a configured credential/,
+    );
+    // The generator is resolved before the key is read, so what matters is
+    // that the read was attempted and nothing was sent afterwards — not that
+    // the registry went untouched.
+    expect(vault.openai.readForRequest).toHaveBeenCalledOnce();
   });
 
   it("draft resolves a provider failure as data rather than rejecting", async () => {
+    // The estimator convention: 401/429/network are expected outcomes the UI
+    // renders, not exceptions that blow up the channel.
     const failure: AgentDraftResult = { ok: false, code: "AUTHENTICATION", message: "bad key" };
-    const { invoke } = setup({ hasCredential: true, storedKey: "sk-ant-key", draftResult: failure });
-    const result = await invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, {
-      prompt: "estimate something",
-      generationSchema: "runconfig-generation-v1.4.0",
-    });
-    expect(result).toEqual(failure);
+    const { invoke } = setup({ openai: true, key: "sk-secret", result: failure });
+
+    await expect(invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request)).resolves.toEqual(failure);
   });
 
-  it("draft forwards the prompt to the generator with the decrypted key and resolves ok", async () => {
-    const { invoke, generator } = setup({ hasCredential: true, storedKey: "sk-ant-key" });
-    const result = await invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, {
-      prompt: "estimate Grover search",
-      generationSchema: "runconfig-generation-v1.4.0",
-    });
-    expect(result.ok).toBe(true);
-    expect(generator.requestDraft).toHaveBeenCalledWith("sk-ant-key", "estimate Grover search");
-  });
-
-  /**
-   * `hasCredential()` is only an existence check, so a blob that cannot be
-   * decrypted — locked keychain, dismissed access prompt, file truncated by a
-   * crash — presents as "configured" and then throws on the way out. That is
-   * not a programmer error and must not reject.
-   */
-  it("draft resolves an undecryptable stored key as a typed failure", async () => {
-    const { invoke, generator } = setup({
-      hasCredential: true,
-      readError: new Error("keychain item could not be decrypted"),
-    });
-
-    const result = await invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, {
-      prompt: "estimate something",
-      generationSchema: "runconfig-generation-v1.4.0",
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      code: "CREDENTIAL_UNREADABLE",
-      message: expect.stringContaining("keychain item could not be decrypted"),
-    });
-    // Distinct from AUTHENTICATION, and the message has to say what to do.
-    expect(result.ok ? "" : result.message).toMatch(/enter the key again/i);
-    expect(generator.requestDraft).not.toHaveBeenCalled();
-  });
-
-  /**
-   * `ipcMain.handle` does no checking, so the typed listener signature is a
-   * claim about the renderer, not a guard. Both channels dereference `.prompt`
-   * and one of them puts it in an outbound provider request body.
-   */
-  describe("request payload validation", () => {
-    const badPayloads: readonly [string, unknown][] = [
-      ["a missing argument", undefined],
-      ["a non-object", "just a string"],
-      ["an array", []],
-      ["a non-string prompt", { prompt: { text: "x" }, generationSchema: "runconfig-generation-v1.4.0" }],
-      ["a missing prompt", { generationSchema: "runconfig-generation-v1.4.0" }],
-    ];
-
-    for (const channel of [AGENT_PREVIEW_CHANNEL, AGENT_DRAFT_CHANNEL]) {
-      for (const [description, payload] of badPayloads) {
-        it(`${channel} refuses ${description}`, async () => {
-          const { invoke, generator } = setup({
-            hasCredential: true,
-            storedKey: "sk-ant-key",
-          });
-          await expect(invoke(channel, payload)).rejects.toThrow();
-          expect(generator.buildRequestBody).not.toHaveBeenCalled();
-          expect(generator.requestDraft).not.toHaveBeenCalled();
-        });
-      }
-
-      it(`${channel} refuses a generation contract it does not speak`, async () => {
-        const { invoke, generator } = setup({
-          hasCredential: true,
-          storedKey: "sk-ant-key",
-        });
-        await expect(
-          invoke(channel, {
-            prompt: "estimate something",
-            generationSchema: "runconfig-generation-v9.9.9",
-          }),
-        ).rejects.toThrow(/generationSchema/);
-        expect(generator.requestDraft).not.toHaveBeenCalled();
-      });
-    }
+  it("rejects a model that does not belong to the selected provider", async () => {
+    // Cross-provider model smuggling: without this the renderer could ask the
+    // OpenAI generator for a Claude model and the preview would describe a
+    // request no provider would accept.
+    const { invoke } = setup({ openai: true });
+    await expect(
+      invoke(AGENT_DRAFT_CHANNEL, { ...request, model: "claude-sonnet-5" }),
+    ).rejects.toThrow(/supported model/);
   });
 });

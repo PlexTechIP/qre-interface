@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { AgentProviderStatus, AgentService } from "../shared/agentTypes";
+import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/agentTypes";
+import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { AgentInterface } from "./agent/AgentInterface";
 import { demoAgentService } from "./agent/demoAgentService";
@@ -15,14 +16,16 @@ import { RunConfiguration } from "./RunConfiguration";
 import { ThemeToggle, type Theme } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
+const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
 
 type Page = "config" | "agent" | "results" | "history" | "comparison";
 
 const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
   available: false,
   networkEnabled: false,
-  provider: null,
-  model: null,
+  providers: (Object.entries(PROVIDER_MODELS) as [ProviderId, (typeof PROVIDER_MODELS)[ProviderId]][]).map(
+    ([provider, details]) => ({ provider, configured: false, ...details }),
+  ),
   mode: "unavailable",
   message: "No model provider is configured. The rest of the app remains available offline.",
 };
@@ -41,6 +44,32 @@ function getInitialTheme(): Theme {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function getInitialAgentSelection(): { provider: ProviderId; model: string } {
+  const fallback = {
+    provider: "anthropic" as const,
+    model: PROVIDER_MODELS.anthropic.defaultModel,
+  };
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(AGENT_SELECTION_STORAGE_KEY) ?? "null",
+    ) as unknown;
+    // `isProviderId` rather than `provider in PROVIDER_MODELS`: `in` walks the
+    // prototype chain, so a stored value of "constructor" or "toString" would
+    // pass and then blow up on the `.models` lookup below.
+    if (
+      typeof stored === "object" && stored !== null &&
+      "provider" in stored && "model" in stored &&
+      isProviderId(stored.provider) &&
+      isModelForProvider(stored.provider, stored.model)
+    ) {
+      return { provider: stored.provider, model: stored.model };
+    }
+  } catch {
+    // A malformed non-secret preference must not block the page.
+  }
+  return fallback;
+}
+
 interface NavItem {
   page: Page;
   label: string;
@@ -49,10 +78,10 @@ interface NavItem {
 
 const NAV_ITEMS: readonly NavItem[] = [
   { page: "config", label: "Run Configuration", icon: <TargetIcon /> },
-  { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
   { page: "results", label: "Results", icon: <ActivityIcon /> },
   { page: "history", label: "Run History", icon: <ClockIcon /> },
   { page: "comparison", label: "Comparison", icon: <BarsIcon /> },
+  { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
 ];
 
 export function App({ agentService }: { agentService?: AgentService } = {}) {
@@ -60,6 +89,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState<Page>("config");
+  const [agentSelection, setAgentSelection] = useState(getInitialAgentSelection);
 
   // The most recent finished run, surfaced on the Results page. The Run flow
   // (useRunFlow) already persists every finished run to the real SQLite store
@@ -79,6 +109,13 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      AGENT_SELECTION_STORAGE_KEY,
+      JSON.stringify(agentSelection),
+    );
+  }, [agentSelection]);
 
   // Provider status drives the permanent header indicator, so it is re-read
   // on mount and again whenever a key is stored — the indicator would
@@ -168,7 +205,11 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           </span>
         </div>
         <div className="top-header__right">
-          <NetworkStatus status={agentStatus} />
+          <NetworkStatus
+            status={agentStatus}
+            provider={agentSelection.provider}
+            model={agentSelection.model}
+          />
           <ThemeToggle theme={theme} onToggle={() => setTheme((current) => (current === "dark" ? "light" : "dark"))} />
         </div>
       </header>
@@ -210,6 +251,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             <AgentInterface
               service={resolvedAgentService}
               status={agentStatus}
+              provider={agentSelection.provider}
+              model={agentSelection.model}
+              onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
               onCredentialConfigured={refreshAgentStatus}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);

@@ -1,6 +1,7 @@
 import type { IpcMain } from "electron";
 
-import type { CredentialConfigureResult } from "../shared/agentTypes.js";
+import type { CredentialConfigureResult, ProviderId } from "../shared/agentTypes.js";
+import { isProviderId } from "../shared/providerModels.js";
 import type { CredentialBackendCheck, CredentialStore } from "./credentialStore.js";
 import type {
   CredentialValidationResult,
@@ -18,21 +19,35 @@ import { CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL } from "./ipcCh
  * `status` never argues with the renderer about *why* — it is a boolean,
  * nothing else. There is no channel here, or anywhere, that returns the key.
  */
+type CredentialVault = Record<
+  ProviderId,
+  Pick<CredentialStore, "hasCredential" | "checkBackend" | "write">
+>;
+type CredentialValidators = Record<ProviderId, CredentialValidator>;
+
 export function registerCredentialHandlers(
   ipcMain: Pick<IpcMain, "handle">,
-  store: Pick<CredentialStore, "hasCredential" | "checkBackend" | "write">,
-  validator: CredentialValidator,
+  vault: CredentialVault,
+  validators: CredentialValidators,
 ): void {
-  ipcMain.handle(CREDENTIAL_STATUS_CHANNEL, (): boolean => store.hasCredential());
+  ipcMain.handle(CREDENTIAL_STATUS_CHANNEL, (): Record<ProviderId, boolean> => ({
+    anthropic: vault.anthropic.hasCredential(),
+    openai: vault.openai.hasCredential(),
+  }));
 
   ipcMain.handle(
     CREDENTIAL_CONFIGURE_CHANNEL,
-    async (_event, apiKey: unknown): Promise<CredentialConfigureResult> => {
+    async (_event, provider: unknown, apiKey: unknown): Promise<CredentialConfigureResult> => {
+      if (!isProviderId(provider)) {
+        throw new Error("credential:configure requires a supported provider id.");
+      }
       if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
         throw new Error(
           "credential:configure requires a non-empty API key string.",
         );
       }
+      const store = vault[provider];
+      const validator = validators[provider];
 
       // `checkBackend` and `validate` both reach outside this process — the OS
       // key store and the provider's API — and either can throw for reasons
@@ -44,6 +59,13 @@ export function registerCredentialHandlers(
       // write below.
       let backend: CredentialBackendCheck;
       try {
+        // Ask the store we are about to write to. The check happens to be
+        // provider-independent today (it reads `safeStorage`, never the file
+        // path), but the vault type permits per-provider stores, so
+        // interrogating one provider's store to authorise a write to another's
+        // is a trap: the day `checkBackend` gains a path-dependent check, or a
+        // provider is constructed with a different safeStorage, that shape
+        // approves a write it never examined.
         backend = store.checkBackend();
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);

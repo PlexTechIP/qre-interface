@@ -28,7 +28,7 @@ describe("AnthropicDraftGenerator request body", () => {
   it("carries the lowered generation schema as the structured-output format", () => {
     const body = new AnthropicDraftGenerator().buildRequestBody(PROMPT);
 
-    expect(body.model).toBe("claude-opus-5");
+    expect(body.model).toBe("claude-sonnet-5");
     expect(body.messages).toEqual([{ role: "user", content: PROMPT }]);
     expect(body.output_config.format.type).toBe("json_schema");
     // The schema shipped is the real artifact, not a copy that can drift from

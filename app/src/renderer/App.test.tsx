@@ -25,6 +25,12 @@ describe("App shell wiring", () => {
     ).toBeVisible();
   });
 
+  it("places Describe a Run after Comparison in the sidebar", () => {
+    render(<App />);
+    const labels = screen.getAllByRole("button").map((button) => button.textContent);
+    expect(labels.indexOf("Describe a Run")).toBeGreaterThan(labels.indexOf("Comparison"));
+  });
+
   it("moves an offline demo proposal into the existing editable form without running", async () => {
     const estimatorRun = vi.fn(window.estimator.run);
     window.estimator = { run: estimatorRun };

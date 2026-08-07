@@ -209,7 +209,7 @@ const VALID_GENERATED_DRAFT = {
 } satisfies GeneratedRunDraft;
 
 describe("lowered RunConfig generation schema", () => {
-  it("uses only the documented strict-output subset", () => {
+  it("uses only the documented strict-output subset shared by both providers", () => {
     const unsupported = new Set([
       "if",
       "then",
@@ -239,7 +239,6 @@ describe("lowered RunConfig generation schema", () => {
       "required",
       "items",
       "enum",
-      "const",
       "anyOf",
       "additionalProperties",
     ]);
@@ -312,7 +311,7 @@ describe("generation-schema drift protection", () => {
     const benchmarkBranch = appBranches.map(asObject).find((branch) => {
       const branchProperties = branch ? asObject(branch["properties"]) : null;
       const type = branchProperties ? asObject(branchProperties["type"]) : null;
-      return type?.["const"] === "benchmark";
+      return Array.isArray(type?.["enum"]) && type?.["enum"][0] === "benchmark";
     });
     const benchmarkProperties = benchmarkBranch
       ? asObject(benchmarkBranch["properties"])

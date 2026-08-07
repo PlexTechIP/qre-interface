@@ -1,68 +1,97 @@
 // @vitest-environment node
-
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
-import type { CredentialConfigureResult } from "../shared/agentTypes.js";
+import type { CredentialConfigureResult, ProviderId } from "../shared/agentTypes.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
-import type { CredentialBackendCheck, CredentialStore } from "./credentialStore.js";
-import type { CredentialValidator } from "./credentialValidator.js";
+import type { CredentialBackendCheck } from "./credentialStore.js";
+import type { CredentialValidationResult } from "./credentialValidator.js";
 import { CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL } from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
-type StorePick = Pick<CredentialStore, "hasCredential" | "checkBackend" | "write">;
+/**
+ * Each provider gets its OWN store and validator double. That matters: the
+ * handler must reach for the store belonging to the provider being configured,
+ * and shared doubles would make a cross-provider mix-up invisible.
+ */
+function makeStore() {
+  return {
+    hasCredential: vi.fn((): boolean => false),
+    checkBackend: vi.fn((): CredentialBackendCheck => ({ ok: true })),
+    write: vi.fn((): void => {}),
+  };
+}
 
-function setup(options: {
-  hasCredential?: boolean;
-  backend?: CredentialBackendCheck;
-  backendError?: Error;
-  validation?: Awaited<ReturnType<CredentialValidator["validate"]>>;
-  validationError?: Error;
-  writeImpl?: () => void;
-} = {}) {
+function makeValidator() {
+  return { validate: vi.fn(async (): Promise<CredentialValidationResult> => ({ ok: true })) };
+}
+
+function setup() {
   const handlers = new Map<string, Listener>();
   const ipcMain: Pick<IpcMain, "handle"> = {
     handle(channel, listener) {
       handlers.set(channel, listener as Listener);
     },
   };
+  const vault = { anthropic: makeStore(), openai: makeStore() };
+  const validators = { anthropic: makeValidator(), openai: makeValidator() };
 
-  const write = vi.fn(options.writeImpl ?? (() => {}));
-  // The return annotations are load-bearing: without them `{ ok: true }` widens
-  // to `{ ok: boolean }`, which no longer narrows against the discriminated
-  // unions these fakes stand in for.
-  const store: StorePick = {
-    hasCredential: vi.fn(() => options.hasCredential ?? false),
-    checkBackend: vi.fn((): CredentialBackendCheck => {
-      if (options.backendError) throw options.backendError;
-      return options.backend ?? { ok: true };
-    }),
-    write,
+  registerCredentialHandlers(ipcMain, vault, validators);
+
+  const invoke = <T>(provider: unknown, apiKey: unknown): Promise<T> => {
+    const handler = handlers.get(CREDENTIAL_CONFIGURE_CHANNEL);
+    if (!handler) return Promise.reject(new Error("configure channel not registered"));
+    try {
+      return Promise.resolve(
+        handler(undefined as unknown as IpcMainInvokeEvent, provider, apiKey) as T,
+      );
+    } catch (error) {
+      return Promise.reject(error);
+    }
   };
-  const validator: CredentialValidator = {
-    validate: vi.fn(
-      async (): Promise<Awaited<ReturnType<CredentialValidator["validate"]>>> => {
-        if (options.validationError) throw options.validationError;
-        return options.validation ?? { ok: true };
-      },
-    ),
-  };
-
-  registerCredentialHandlers(ipcMain, store, validator);
-
-  const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
-    const handler = handlers.get(channel);
-    if (!handler) throw new Error(`no handler registered for ${channel}`);
-    return Promise.resolve(
-      handler(undefined as unknown as IpcMainInvokeEvent, ...args) as T,
+  const invokeStatus = (): Promise<Record<ProviderId, boolean>> =>
+    Promise.resolve(
+      handlers.get(CREDENTIAL_STATUS_CHANNEL)!(
+        undefined as unknown as IpcMainInvokeEvent,
+      ) as Record<ProviderId, boolean>,
     );
-  };
 
-  return { invoke, handlers, store, validator, write };
+  return { handlers, invoke, invokeStatus, vault, validators };
 }
 
 describe("registerCredentialHandlers", () => {
+  it("validates and stores only the selected provider's key", async () => {
+    const { invoke, vault, validators } = setup();
+
+    await expect(invoke<CredentialConfigureResult>("openai", "sk-openai-key")).resolves.toEqual({
+      ok: true,
+    });
+    expect(validators.openai.validate).toHaveBeenCalledWith("sk-openai-key");
+    expect(vault.openai.write).toHaveBeenCalledWith("sk-openai-key");
+    expect(vault.anthropic.write).not.toHaveBeenCalled();
+    expect(validators.anthropic.validate).not.toHaveBeenCalled();
+  });
+
+  it("checks the backend of the store it is about to write, not another provider's", async () => {
+    // Interrogating one provider's store to authorise a write to another's is
+    // the trap here: an OpenAI key must be gated on the OpenAI store's check.
+    const { invoke, vault } = setup();
+    await invoke("openai", "sk-openai-key");
+
+    expect(vault.openai.checkBackend).toHaveBeenCalledOnce();
+    expect(vault.anthropic.checkBackend).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid provider, a blank key, and a non-string key", async () => {
+    const { invoke } = setup();
+    await expect(invoke("other", "key")).rejects.toThrow(/provider id/);
+    await expect(invoke("anthropic", "  ")).rejects.toThrow(/non-empty API key/);
+    await expect(invoke("anthropic", 12345)).rejects.toThrow(/non-empty API key/);
+  });
+
+  // The channel set IS the no-getter guarantee: a third channel is where a
+  // "read the key back" would appear, so it is asserted exactly.
   it("registers exactly the status and configure channels — no getter", () => {
     const { handlers } = setup();
     expect([...handlers.keys()].sort()).toEqual(
@@ -70,124 +99,77 @@ describe("registerCredentialHandlers", () => {
     );
   });
 
-  it("status reflects hasCredential as a plain boolean", async () => {
-    const configured = setup({ hasCredential: true });
-    await expect(configured.invoke<boolean>(CREDENTIAL_STATUS_CHANNEL)).resolves.toBe(true);
+  it("status reports plain per-provider booleans, never a key", async () => {
+    const { invokeStatus, vault } = setup();
+    vault.anthropic.hasCredential.mockReturnValue(true);
 
-    const unconfigured = setup({ hasCredential: false });
-    await expect(unconfigured.invoke<boolean>(CREDENTIAL_STATUS_CHANNEL)).resolves.toBe(false);
+    await expect(invokeStatus()).resolves.toEqual({ anthropic: true, openai: false });
   });
 
-  it("configure rejects a non-string key as a programmer error", async () => {
-    const { invoke } = setup();
-    await expect(invoke(CREDENTIAL_CONFIGURE_CHANNEL, 12345)).rejects.toThrow(
-      /non-empty API key/,
-    );
-  });
-
-  it("configure rejects an empty key as a programmer error", async () => {
-    const { invoke } = setup();
-    await expect(invoke(CREDENTIAL_CONFIGURE_CHANNEL, "   ")).rejects.toThrow();
-  });
-
-  it("configure resolves the backend refusal as data without calling the validator or writing", async () => {
-    const backend: CredentialBackendCheck = {
+  it("refuses the plaintext-fallback backend as data, without validating or writing", async () => {
+    // safeStorage's basic_text fallback "encrypts" with a hardcoded password.
+    // Nothing may be validated or written under it.
+    const { invoke, vault, validators } = setup();
+    vault.anthropic.checkBackend.mockReturnValue({
       ok: false,
       code: "BACKEND_UNAVAILABLE",
-      message: "no real secret store",
-    };
-    const { invoke, validator, write } = setup({ backend });
-    const result = await invoke<CredentialConfigureResult>(
-      CREDENTIAL_CONFIGURE_CHANNEL,
-      "sk-ant-key",
-    );
-    expect(result).toEqual(backend);
-    expect(validator.validate).not.toHaveBeenCalled();
-    expect(write).not.toHaveBeenCalled();
-  });
-
-  it("configure resolves a provider validation failure as data without writing", async () => {
-    const validation = {
-      ok: false as const,
-      code: "AUTHENTICATION" as const,
-      message: "bad key",
-    };
-    const { invoke, write } = setup({ validation });
-    const result = await invoke<CredentialConfigureResult>(
-      CREDENTIAL_CONFIGURE_CHANNEL,
-      "sk-ant-key",
-    );
-    expect(result).toEqual(validation);
-    expect(write).not.toHaveBeenCalled();
-  });
-
-  it("configure resolves a write failure as data rather than throwing", async () => {
-    const { invoke } = setup({
-      writeImpl: () => {
-        throw new Error("disk full");
-      },
+      message: "no OS secret store; encryption would be theatre",
     });
-    const result = await invoke<CredentialConfigureResult>(
-      CREDENTIAL_CONFIGURE_CHANNEL,
-      "sk-ant-key",
-    );
-    expect(result).toEqual({
+
+    await expect(
+      invoke<CredentialConfigureResult>("anthropic", "sk-ant-key"),
+    ).resolves.toMatchObject({ ok: false, code: "BACKEND_UNAVAILABLE" });
+    expect(validators.anthropic.validate).not.toHaveBeenCalled();
+    expect(vault.anthropic.write).not.toHaveBeenCalled();
+  });
+
+  it("resolves a provider validation failure as data without writing", async () => {
+    const { invoke, vault, validators } = setup();
+    validators.anthropic.validate.mockResolvedValue({
       ok: false,
-      code: "WRITE_FAILED",
-      message: expect.stringContaining("disk full"),
+      code: "AUTHENTICATION",
+      message: "The provider rejected this key.",
     });
+
+    await expect(
+      invoke<CredentialConfigureResult>("anthropic", "sk-ant-bad"),
+    ).resolves.toMatchObject({ ok: false, code: "AUTHENTICATION" });
+    expect(vault.anthropic.write).not.toHaveBeenCalled();
   });
 
-  /**
-   * The regression that made this whole surface unusable off Linux:
-   * `checkBackend` calls `safeStorage.getSelectedStorageBackend()`, which
-   * Electron implements on Linux only, so on macOS and Windows it threw a
-   * TypeError straight out of the handler. The store no longer makes that call
-   * blind, and the handler no longer lets a throw from it reject the channel —
-   * two independent guards, because either alone leaves the analyst with a raw
-   * stack instead of a message.
-   */
-  it("configure resolves a throwing backend check as data rather than rejecting", async () => {
-    const { invoke, validator, write } = setup({
-      backendError: new Error("safeStorage.getSelectedStorageBackend is not a function"),
+  // The three containment paths. Each reaches outside this process, each can
+  // throw for reasons that are not programmer errors, and none may reject the
+  // channel and strand the analyst with a raw stack instead of a message.
+  it("resolves a throwing backend check as data rather than rejecting", async () => {
+    const { invoke, vault } = setup();
+    vault.anthropic.checkBackend.mockImplementation(() => {
+      throw new TypeError("getSelectedStorageBackend is not a function");
     });
-    const result = await invoke<CredentialConfigureResult>(
-      CREDENTIAL_CONFIGURE_CHANNEL,
-      "sk-ant-key",
-    );
-    expect(result).toEqual({
-      ok: false,
-      code: "BACKEND_UNAVAILABLE",
-      message: expect.stringContaining("is not a function"),
-    });
-    expect(validator.validate).not.toHaveBeenCalled();
-    expect(write).not.toHaveBeenCalled();
+
+    await expect(
+      invoke<CredentialConfigureResult>("anthropic", "sk-ant-key"),
+    ).resolves.toMatchObject({ ok: false, code: "BACKEND_UNAVAILABLE" });
+    expect(vault.anthropic.write).not.toHaveBeenCalled();
   });
 
-  it("configure resolves a throwing validator as data rather than rejecting", async () => {
-    const { invoke, write } = setup({
-      validationError: new Error("getaddrinfo ENOTFOUND api.anthropic.com"),
-    });
-    const result = await invoke<CredentialConfigureResult>(
-      CREDENTIAL_CONFIGURE_CHANNEL,
-      "sk-ant-key",
-    );
-    expect(result).toEqual({
-      ok: false,
-      code: "NETWORK",
-      message: expect.stringContaining("ENOTFOUND"),
-    });
-    expect(write).not.toHaveBeenCalled();
+  it("resolves a throwing validator as data rather than rejecting", async () => {
+    const { invoke, vault, validators } = setup();
+    validators.anthropic.validate.mockRejectedValue(new Error("socket hang up"));
+
+    await expect(
+      invoke<CredentialConfigureResult>("anthropic", "sk-ant-key"),
+    ).resolves.toMatchObject({ ok: false, code: "NETWORK" });
+    expect(vault.anthropic.write).not.toHaveBeenCalled();
   });
 
-  it("configure validates then writes and resolves ok on the happy path", async () => {
-    const { invoke, validator, write } = setup();
-    const result = await invoke<CredentialConfigureResult>(
-      CREDENTIAL_CONFIGURE_CHANNEL,
-      "sk-ant-key",
-    );
-    expect(result).toEqual({ ok: true });
-    expect(validator.validate).toHaveBeenCalledWith("sk-ant-key");
-    expect(write).toHaveBeenCalledWith("sk-ant-key");
+  it("resolves a write failure as data rather than throwing", async () => {
+    const { invoke, vault } = setup();
+    vault.anthropic.write.mockImplementation(() => {
+      throw new Error("EACCES: permission denied");
+    });
+
+    await expect(
+      invoke<CredentialConfigureResult>("anthropic", "sk-ant-key"),
+    ).resolves.toMatchObject({ ok: false, code: "WRITE_FAILED" });
   });
 });

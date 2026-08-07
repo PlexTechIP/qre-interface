@@ -5,9 +5,24 @@ import {
   type AgentDraftRequest,
   type AgentProviderStatus,
   type AgentService,
+  type ProviderId,
 } from "../../shared/agentTypes";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
 import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
+
+/**
+ * Field-by-field, so adding a field to `AgentDraftRequest` without handling it
+ * here is a compile error rather than a silently stale preview. `JSON.stringify`
+ * would have been shorter and would have quietly tolerated key reordering.
+ */
+function sameRequest(a: AgentDraftRequest, b: AgentDraftRequest): boolean {
+  return (
+    a.prompt === b.prompt &&
+    a.generationSchema === b.generationSchema &&
+    a.provider === b.provider &&
+    a.model === b.model
+  );
+}
 
 interface AgentInterfaceProps {
   service: AgentService;
@@ -15,6 +30,9 @@ interface AgentInterfaceProps {
   onReviewDraft: (handoff: DraftHandoff) => void;
   /** Re-read provider status once a key is stored. */
   onCredentialConfigured: () => void;
+  provider: ProviderId;
+  model: string;
+  onSelectionChange: (provider: ProviderId, model: string) => void;
 }
 
 export function AgentInterface({
@@ -22,25 +40,42 @@ export function AgentInterface({
   status,
   onReviewDraft,
   onCredentialConfigured,
+  provider,
+  model,
+  onSelectionChange,
 }: AgentInterfaceProps): React.JSX.Element {
   const [prompt, setPrompt] = useState("");
-  const [reviewing, setReviewing] = useState(false);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  // The literal body the main process would send, fetched when review begins.
-  // Null until then: rendering a hand-assembled guess of the payload would
-  // defeat the point of showing it at all.
-  const [outboundPreview, setOutboundPreview] = useState<unknown>(null);
   const request = useMemo<AgentDraftRequest>(
-    () => ({ prompt, generationSchema: GENERATION_SCHEMA_ID }),
-    [prompt],
+    () => ({ prompt, generationSchema: GENERATION_SCHEMA_ID, provider, model }),
+    [prompt, provider, model],
   );
+
+  /**
+   * The reviewed payload is stored *with the request that produced it*, and the
+   * review step counts as current only while the two still match.
+   *
+   * A separate `reviewing` boolean is what made this unsafe: only the textarea
+   * cleared it, so changing provider or model left the panel showing the old
+   * provider's body while Send used the new one — the analyst approving payload
+   * A and payload B going out. Pairing them makes that unrepresentable rather
+   * than merely handled: any input that changes `request` invalidates the
+   * review by construction, and no future field can be added to
+   * `AgentDraftRequest` and forgotten here.
+   */
+  const [reviewed, setReviewed] = useState<{
+    request: AgentDraftRequest;
+    body: unknown;
+  } | null>(null);
+  const reviewing =
+    reviewed !== null && sameRequest(reviewed.request, request);
+  const outboundPreview = reviewed?.body ?? null;
 
   const beginReview = async (): Promise<void> => {
     setMessage(null);
     try {
-      setOutboundPreview(await service.previewRequest(request));
-      setReviewing(true);
+      setReviewed({ request, body: await service.previewRequest(request) });
     } catch (error) {
       // Refuse to advance rather than send something we couldn't show first.
       setMessage(
@@ -52,6 +87,11 @@ export function AgentInterface({
   };
 
   const send = async (): Promise<void> => {
+    // Belt and braces for the invariant above: the button is only rendered
+    // while `reviewing` is true, but sending a request the analyst has not seen
+    // is the one failure this surface must never have, so it is also checked
+    // here rather than trusted to the render path.
+    if (!reviewing) return;
     setSending(true);
     setMessage(null);
     try {
@@ -89,6 +129,9 @@ export function AgentInterface({
       <ProviderCredentialPanel
         service={service}
         status={status}
+        provider={provider}
+        model={model}
+        onSelectionChange={onSelectionChange}
         onConfigured={onCredentialConfigured}
       />
 
@@ -115,8 +158,9 @@ export function AgentInterface({
           rows={7}
           value={prompt}
           onChange={(event) => {
+            // No `setReviewing(false)` needed: changing the prompt changes
+            // `request`, which invalidates the stored review on its own.
             setPrompt(event.target.value);
-            setReviewing(false);
             setMessage(null);
           }}
           placeholder="Estimate Grover search for a 20-qubit search space on a gate-based QPU with 50 ns gates…"
@@ -133,7 +177,11 @@ export function AgentInterface({
           <button
             type="button"
             className="run-button agent-primary"
-            disabled={!status.available || prompt.trim().length === 0}
+            disabled={
+              !status.providers.some(
+                (candidate) => candidate.provider === provider && candidate.configured,
+              ) || prompt.trim().length === 0
+            }
             onClick={() => void beginReview()}
           >
             Review request
@@ -154,7 +202,7 @@ export function AgentInterface({
                 type="button"
                 className="agent-secondary"
                 disabled={sending}
-                onClick={() => setReviewing(false)}
+                onClick={() => setReviewed(null)}
               >
                 Edit description
               </button>

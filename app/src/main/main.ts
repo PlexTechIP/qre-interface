@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { registerAgentHandlers } from "./agentHandler.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
-import { CredentialStore } from "./credentialStore.js";
-import { AnthropicCredentialValidator } from "./credentialValidator.js";
+import { CredentialStore, migrateLegacyAnthropicCredential } from "./credentialStore.js";
+import { OpenAiDraftGenerator } from "./openAiDraftGenerator.js";
+import { AnthropicCredentialValidator, OpenAiCredentialValidator } from "./credentialValidator.js";
 import { killLiveEngineProcesses } from "./engine/execute.js";
 import { resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
@@ -64,14 +65,31 @@ app.whenReady().then(() => {
 
   // A separate, non-SQLite file for the encrypted provider key — never in
   // the same store as run history, never JSON.
-  const credentialPath = path.join(app.getPath("userData"), "provider-credential.enc");
-  const credentialStore = new CredentialStore(credentialPath, safeStorage);
-  registerCredentialHandlers(ipcMain, credentialStore, new AnthropicCredentialValidator());
+  const legacyCredentialPath = path.join(app.getPath("userData"), "provider-credential.enc");
+  const anthropicCredentialPath = path.join(
+    app.getPath("userData"),
+    "provider-credential-anthropic.enc",
+  );
+  migrateLegacyAnthropicCredential(legacyCredentialPath, anthropicCredentialPath);
+  const vault = {
+    anthropic: new CredentialStore(anthropicCredentialPath, safeStorage),
+    openai: new CredentialStore(
+      path.join(app.getPath("userData"), "provider-credential-openai.enc"),
+      safeStorage,
+    ),
+  };
+  registerCredentialHandlers(ipcMain, vault, {
+    anthropic: new AnthropicCredentialValidator(),
+    openai: new OpenAiCredentialValidator(),
+  });
 
   // The agent surface reads the key only here, in main, to attach it to an
   // outbound request. The store is passed whole; the renderer's window.agent
   // can reach neither `readForRequest` nor the value it returns.
-  registerAgentHandlers(ipcMain, credentialStore, new AnthropicDraftGenerator());
+  registerAgentHandlers(ipcMain, vault, {
+    anthropic: { create: (model) => new AnthropicDraftGenerator(model) },
+    openai: { create: (model) => new OpenAiDraftGenerator(model) },
+  });
 
   createWindow();
   app.on("activate", () => {

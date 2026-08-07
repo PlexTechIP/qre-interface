@@ -27,7 +27,7 @@
           "additionalProperties": false,
           "required": ["type", "benchmarkId"],
           "properties": {
-            "type": { "type": "string", "const": "benchmark" },
+            "type": { "type": "string", "enum": ["benchmark"] },
             "benchmarkId": {
               "type": "string",
               "enum": [
@@ -55,7 +55,7 @@
             "measurementCount"
           ],
           "properties": {
-            "type": { "type": "string", "const": "manualCounts" },
+            "type": { "type": "string", "enum": ["manualCounts"] },
             "numQubits": {
               "type": "integer",
               "description": "Logical qubit count. Must be at least 1."
@@ -102,7 +102,7 @@
             "twoQubitGateTime"
           ],
           "properties": {
-            "type": { "type": "string", "const": "gateBased" },
+            "type": { "type": "string", "enum": ["gateBased"] },
             "errorRate": {
               "type": "number",
               "description": "Physical error rate. Must be greater than 0 and less than 0.01; default 0.0001."
@@ -132,7 +132,7 @@
             "targetYear"
           ],
           "properties": {
-            "type": { "type": "string", "const": "majorana" },
+            "type": { "type": "string", "enum": ["majorana"] },
             "errorRate": {
               "type": "number",
               "enum": [0.0001, 0.00001, 0.000001],
@@ -173,7 +173,7 @@
             "targetYear"
           ],
           "properties": {
-            "type": { "type": "string", "const": "neutralAtom" },
+            "type": { "type": "string", "enum": ["neutralAtom"] },
             "rydbergTime": {
               "type": "integer",
               "description": "Rydberg time in ns. Whole number greater than 0; default 500."
@@ -351,7 +351,7 @@
           "description": "Whether PSSPC synthesizes CCX from magic states; default false."
         },
         "slowDownFactor": {
-          "const": 1,
+          "enum": [1],
           "description": "Fixed Lattice Surgery slowdown factor. Always 1."
         },
         "dynamicMemoryCompute": {

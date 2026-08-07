@@ -140,3 +140,17 @@ export class CredentialStore {
     return this.safeStorage.decryptString(readFileSync(this.filePath));
   }
 }
+
+/**
+ * Week 4 stored Anthropic's key under a provider-neutral name. Preserve that
+ * one existing encrypted blob during the split rather than making an analyst
+ * re-enter a valid key. Never overwrite a newly-entered Anthropic credential.
+ */
+export function migrateLegacyAnthropicCredential(
+  legacyPath: string,
+  anthropicPath: string,
+): void {
+  if (existsSync(legacyPath) && !existsSync(anthropicPath)) {
+    renameSync(legacyPath, anthropicPath);
+  }
+}

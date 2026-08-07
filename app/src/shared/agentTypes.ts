@@ -9,6 +9,9 @@
 
 import type { Application, Architecture, RunConfig } from "./types";
 
+export const PROVIDER_IDS = ["anthropic", "openai"] as const;
+export type ProviderId = (typeof PROVIDER_IDS)[number];
+
 type RequiredNullable<T, K extends keyof T> = Omit<T, K> & {
   [P in K]-?: Exclude<T[P], undefined> | null;
 };
@@ -91,22 +94,32 @@ export interface AgentDraftRequest {
   prompt: string;
   /** Identifies the lowered structured-output contract used for generation. */
   generationSchema: typeof GENERATION_SCHEMA_ID;
+  /** Provider and model travel with every request, never as main-process state. */
+  provider: ProviderId;
+  model: string;
+}
+
+export interface ProviderAvailability {
+  readonly provider: ProviderId;
+  readonly displayName: string;
+  /** A key is stored for this provider — never the key itself. */
+  readonly configured: boolean;
+  readonly models: readonly string[];
+  readonly defaultModel: string;
 }
 
 export type AgentProviderStatus =
   | {
       available: true;
       networkEnabled: boolean;
-      provider: string;
-      model: string;
+      providers: readonly ProviderAvailability[];
       /** Local demo is deterministic and makes no network request. */
       mode: "provider" | "local_demo";
     }
   | {
       available: false;
       networkEnabled: false;
-      provider: null;
-      model: null;
+      providers: readonly ProviderAvailability[];
       mode: "unavailable";
       message: string;
     };
@@ -168,5 +181,8 @@ export interface AgentService {
   /** The exact request body `requestDraft` would send. Carries no credential. */
   previewRequest(request: AgentDraftRequest): Promise<unknown>;
   requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult>;
-  configureCredential(apiKey: string): Promise<CredentialConfigureResult>;
+  configureCredential(
+    provider: ProviderId,
+    apiKey: string,
+  ): Promise<CredentialConfigureResult>;
 }

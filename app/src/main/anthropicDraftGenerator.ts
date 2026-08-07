@@ -23,7 +23,7 @@ import type { DraftGenerator } from "./agentHandler.js";
 const MAX_TOKENS = 16_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 const ANTHROPIC_VERSION = "2023-06-01";
-const DEFAULT_MODEL = "claude-opus-5";
+const DEFAULT_MODEL = "claude-sonnet-5";
 const DEFAULT_BASE_URL = "https://api.anthropic.com/v1/messages";
 
 /**

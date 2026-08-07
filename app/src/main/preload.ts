@@ -86,9 +86,13 @@ const agent: AgentService = {
   requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult> {
     return ipcRenderer.invoke(AGENT_DRAFT_CHANNEL, request) as Promise<AgentDraftResult>;
   },
-  configureCredential(apiKey: string): Promise<CredentialConfigureResult> {
+  configureCredential(
+    provider: Parameters<AgentService["configureCredential"]>[0],
+    apiKey: string,
+  ): Promise<CredentialConfigureResult> {
     return ipcRenderer.invoke(
       CREDENTIAL_CONFIGURE_CHANNEL,
+      provider,
       apiKey,
     ) as Promise<CredentialConfigureResult>;
   },

@@ -1,12 +1,12 @@
 // @vitest-environment node
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { CredentialStore, type SafeStorageLike } from "./credentialStore.js";
+import { CredentialStore, migrateLegacyAnthropicCredential, type SafeStorageLike } from "./credentialStore.js";
 
 /**
  * A fake OS keychain: reversible, and lets tests flip availability/backend.
@@ -59,6 +59,26 @@ afterEach(() => {
 });
 
 describe("CredentialStore", () => {
+  it("migrates the legacy encrypted key into Anthropic's provider-specific path", () => {
+    const legacyPath = join(dir, "provider-credential.enc");
+    const anthropicPath = join(dir, "provider-credential-anthropic.enc");
+    writeFileSync(legacyPath, "encrypted-legacy-key");
+
+    migrateLegacyAnthropicCredential(legacyPath, anthropicPath);
+
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(readFileSync(anthropicPath, "utf8")).toBe("encrypted-legacy-key");
+  });
+
+  it("does not overwrite a provider-specific key during migration", () => {
+    const legacyPath = join(dir, "provider-credential.enc");
+    const anthropicPath = join(dir, "provider-credential-anthropic.enc");
+    writeFileSync(legacyPath, "old");
+    writeFileSync(anthropicPath, "new");
+    migrateLegacyAnthropicCredential(legacyPath, anthropicPath);
+    expect(readFileSync(anthropicPath, "utf8")).toBe("new");
+    expect(existsSync(legacyPath)).toBe(true);
+  });
   it("has no credential until one is written", () => {
     const store = new CredentialStore(filePath, fakeSafeStorage());
     expect(store.hasCredential()).toBe(false);
