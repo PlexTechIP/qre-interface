@@ -31,7 +31,17 @@ function setup(options: {
   const generator: DraftGenerator = {
     provider: "Test Provider",
     model: "test-model",
-    requestDraft: vi.fn(async () => options.draftResult ?? { ok: true, draft: {} as never, provider: "Test Provider", model: "test-model" }),
+    // The return annotation is load-bearing: without it `ok: true` widens to
+    // `ok: boolean` and no longer narrows against AgentDraftResult.
+    requestDraft: vi.fn(
+      async (): Promise<AgentDraftResult> =>
+        options.draftResult ?? {
+          ok: true,
+          draft: {} as never,
+          provider: "Test Provider",
+          model: "test-model",
+        },
+    ),
   };
 
   registerAgentHandlers(ipcMain, credentialStore, generator);

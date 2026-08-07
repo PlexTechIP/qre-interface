@@ -540,20 +540,72 @@ resource requirements.*
 
 The control is present but disabled, and the field is recorded on `RunConfig`.
 
-> ⚠️ **Read this before measuring anything: the yoked codes do not currently
-> reach the engine at all.** `memoryOptimization` appears in **no** engine file —
-> not `configToInvocation.ts`, not `invocation.ts`, not `estimate.py`. The
-> existing test states it outright:
+> 🟡 **PARTLY CLOSED 2026-08-06; wording corrected 2026-08-07.** This block used
+> to warn that `memoryOptimization` reached **no** engine file, so the "identical
+> estimates" result was evidence the yoked codes were never *sent* rather than
+> evidence they do nothing. That half has been acted on.
 >
-> ```ts
-> describe("Memory Optimization does not reach the estimator")
->   expect(Object.keys(result.invocation)).not.toContain("memoryOptimization")
-> ```
+> The field now flows `QreInvocation` → `configToInvocation` → `build_isa_query`,
+> layered as `query * TwoDimensionalYokedSurfaceCode.q()` after the factories,
+> with `resolve_yoked_code` raising a named `ValueError` rather than a bare
+> `KeyError`, and `configToInvocation` refusing an out-of-contract id with
+> INVALID_CONFIG. The old `not.toContain("memoryOptimization")` assertion was
+> **inverted in the same change**.
 >
-> So the "identical estimates" result on record is **not evidence that the yoked
-> codes do nothing** — it is evidence that they were never sent. Anyone who
-> enables Dynamic Memory Compute and re-runs the same comparison will still see
-> no change, and would draw exactly the wrong conclusion from it.
+> **Measured on qdk 1.30.0, Ising Model (2D) 3×3:**
+>
+> | Pipeline | Physical qubits | Runtime (ns) |
+> |---|---|---|
+> | `PSSPC × LatticeSurgery` | 477 | 1,363,950 |
+> | + `yoked_2d` | 477 | 1,363,950 |
+> | `DMC × PSSPC × LatticeSurgery` | **256** | **1,852,200** |
+> | + `yoked_2d` | 256 | 1,852,200 |
+>
+> Dynamic Memory Compute moves the estimate; the yoked codes do not move it,
+> **with or without** the memory demand DMC supplies.
+>
+> ⚠️ **That is *consistent with* the yoked codes being inert; it does not prove
+> it** — and this block claimed otherwise for a day. An unchanged estimate has a
+> second explanation: `query * YokedSurfaceCode.q()` may not put the code
+> anywhere qdk applies, since `build_qec` has already fixed the QEC by the time
+> the yoked transform is multiplied in after the factories. A null result gives
+> the same numbers under either explanation, and the source graph cannot
+> arbitrate it either — an applied-but-unused ISATransform contributes no node.
+>
+> ✅ **Query introspection done — 2026-08-07, qdk 1.30.0.** The second
+> explanation is ruled out **at construction**: comparing the composed query
+> objects (not the estimates), `SurfaceCode * factories` reprs at 419 chars with
+> no "Yoked", while adding `* Yoked1D` or `* Yoked2D` gives 544 chars containing
+> "Yoked", and the 1D and 2D forms differ from each other. The transform really
+> is in the `_ProductNode` handed to `qre.estimate`.
+>
+> ⚠️ **But holding the workload fixed turned up something sharper:**
+>
+> | ISA query | Result |
+> |---|---|
+> | `SurfaceCode × factories` | 477 q / 1,363,950 ns (256 with DMC) |
+> | `SurfaceCode × factories × Yoked2D` | **identical**, with and without DMC |
+> | `Yoked2D × factories` | **no feasible frontier point**, either way |
+>
+> The yoked codes are QEC transforms — `qdk.qre.models.qec._yoked`, subclassing
+> `ISATransform` exactly as `SurfaceCode` does. **Substituting** one changes the
+> outcome drastically; **layering** one onto an already-fixed QEC changes nothing.
+> So they are not globally inert, and "the yoked codes do nothing" would be as
+> wrong as the claim this block already walked back.
+>
+> **What is open is now narrower and better posed:** is `query * Yoked.q()` after
+> the factories the right composition point at all, when `build_qec` has already
+> fixed the QEC? The week-5 brief said these "compose exactly like the secondary
+> factories do" — but those are factory *modifiers*, while these are QEC codes,
+> and the surrounding code uses `+` for alternatives of one kind and `*` across
+> kinds. **That premise is the question for Microsoft**, not another estimate
+> comparison. Until it is answered the control stays disabled and labelled
+> unavailable — the right outcome under every explanation — and the copy reads
+> "consistent with" everywhere it appears.
+>
+> Pinned by `memoryOptimization.test.ts`, which also guards the premise: if DMC
+> ever stops moving the estimate the comparison becomes vacuous, and that test
+> fails rather than continuing to report no change.
 
 **The reasoning for why they were expected to be inert still stands**, and is
 worth keeping: the yoked codes *provide* a `MEMORY` instruction, and nothing in

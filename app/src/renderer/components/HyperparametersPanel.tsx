@@ -4,8 +4,25 @@ import {
   type HyperparamField,
   type HyperparamValue,
 } from "../constants/hyperparameters";
+import {
+  EKERA_HASTAD_GENERATOR_DEFINITION,
+  HYPERPARAMETER_DEFINITIONS,
+} from "../constants/configDefinitions";
 import type { BenchmarkId } from "../../shared/types";
 import { findBenchmark } from "../constants/staticOptions";
+import { DefinitionTip, definitionId } from "./DefinitionTip";
+
+/**
+ * Tooltip copy for one hyperparameter, or undefined when the source doc has
+ * none. `generator` is shared by Shor's and Ekerå-Håstad and the doc gives each
+ * its own wording, so the benchmark disambiguates it.
+ */
+function definitionFor(benchmarkId: string, key: string): string | undefined {
+  if (key === "generator" && benchmarkId === "ekera-hastad-factoring") {
+    return EKERA_HASTAD_GENERATOR_DEFINITION;
+  }
+  return HYPERPARAMETER_DEFINITIONS[key];
+}
 
 interface HyperparametersPanelProps {
   benchmarkId: string;
@@ -47,11 +64,26 @@ export function HyperparametersPanel({
       <div className="hparams__grid">
         {fields.map((field) => {
           const message = field.kind === "computed" ? undefined : errorFor(field.key);
+          const definition = definitionFor(benchmarkId, field.key);
           return (
             <div key={field.key} className={`hparam${message ? " hparam--error" : ""}`}>
-              <label className="hparam__label" htmlFor={`hparam-${field.key}`}>
-                {field.label}
-              </label>
+              <div className="field__label-row">
+                <label className="hparam__label" htmlFor={`hparam-${field.key}`}>
+                  {field.label}
+                </label>
+                {/* Only render a tip where the Config Descriptions tab actually
+                    has copy. Falling back to `help` or the label would put a "?"
+                    on every field that says nothing the user cannot already
+                    read. */}
+                {definition ? (
+                  <DefinitionTip
+                    id={definitionId(`hparam-${field.key}`)}
+                    label={field.label}
+                  >
+                    {definition}
+                  </DefinitionTip>
+                ) : null}
+              </div>
               <HyperparamControl
                 field={field}
                 value={values[field.key]}

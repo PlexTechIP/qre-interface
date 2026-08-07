@@ -114,6 +114,10 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
     "numTsPerRotation",
     {
       key: "numTsPerRotation",
+      // Renamed 2026-08-07 to match the configuration surface. Display only: the
+      // metric key, the contract's `tStatesPerRotation` and qdk's
+      // `num_ts_per_rotation` are unchanged. The unit stays "T states" — that is
+      // what the number counts.
       label: T_COUNT_PER_ROTATION_LABEL,
       unitLabel: "T states",
       description: "T states used to synthesize each arbitrary rotation.",
@@ -204,6 +208,18 @@ export function getFieldDefinition(key: string, unit: string): ResultFieldDefini
   );
 }
  
+/*
+ * Renamed from "Max Error" 2026-08-07, so the results recap and the
+ * configuration form call the same number by the same name — the form had been
+ * renamed on its own, leaving the app showing two names for one field.
+ *
+ * The label is a single exported constant in history/historyLabels.ts rather
+ * than a literal per call site: it appears in both arms of summarizeConfig
+ * below and on History, Comparison and the Markdown export, and renaming one
+ * surface and not the others is exactly how they drifted. The contract field is
+ * still `maxError`.
+ */
+
 export function summarizeConfig(config: RunConfig | null | undefined, qreVersion: string) {
   if (!config) {
     return [

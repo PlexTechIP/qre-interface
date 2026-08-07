@@ -27,13 +27,19 @@ function setup(options: {
   };
 
   const write = vi.fn(options.writeImpl ?? (() => {}));
+  // The return annotations are load-bearing: without them `{ ok: true }` widens
+  // to `{ ok: boolean }`, which no longer narrows against the discriminated
+  // unions these fakes stand in for.
   const store: StorePick = {
     hasCredential: vi.fn(() => options.hasCredential ?? false),
-    checkBackend: vi.fn(() => options.backend ?? { ok: true }),
+    checkBackend: vi.fn((): CredentialBackendCheck => options.backend ?? { ok: true }),
     write,
   };
   const validator: CredentialValidator = {
-    validate: vi.fn(async () => options.validation ?? { ok: true }),
+    validate: vi.fn(
+      async (): Promise<Awaited<ReturnType<CredentialValidator["validate"]>>> =>
+        options.validation ?? { ok: true },
+    ),
   };
 
   registerCredentialHandlers(ipcMain, store, validator);

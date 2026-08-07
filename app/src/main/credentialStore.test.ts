@@ -8,15 +8,29 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { CredentialStore, type SafeStorageLike } from "./credentialStore.js";
 
-/** A fake OS keychain: reversible, and lets tests flip availability/backend. */
+/**
+ * A fake OS keychain: reversible, and lets tests flip availability/backend.
+ *
+ * It must also OBSCURE, not just wrap. The point of the write test below is
+ * that the plaintext key is absent from the file on disk, and a fake that
+ * prefixes the plaintext cannot demonstrate that — the assertion and the
+ * fixture contradict each other, and the file genuinely does contain the key.
+ * Base64 is the cheapest transform that is both reversible and non-identity.
+ */
 function fakeSafeStorage(overrides: Partial<SafeStorageLike> = {}): SafeStorageLike {
   return {
     isEncryptionAvailable: () => true,
     getSelectedStorageBackend: () => "gnome_libsecret",
-    encryptString: (plainText: string) => Buffer.from(`enc:${plainText}`),
-    decryptString: (encrypted: Buffer) => encrypted.toString("utf8").replace(/^enc:/, ""),
+    encryptString: (plainText: string) => Buffer.from(fakeEncrypt(plainText)),
+    decryptString: (encrypted: Buffer) =>
+      Buffer.from(encrypted.toString("utf8").replace(/^enc:/, ""), "base64").toString("utf8"),
     ...overrides,
   };
+}
+
+/** The fake's on-disk form, so tests assert against it without a magic string. */
+function fakeEncrypt(plainText: string): string {
+  return `enc:${Buffer.from(plainText, "utf8").toString("base64")}`;
 }
 
 let dir: string;
@@ -44,7 +58,7 @@ describe("CredentialStore", () => {
     expect(store.hasCredential()).toBe(true);
     const onDisk = readFileSync(filePath, "utf8");
     expect(onDisk).not.toContain("sk-ant-secret-value");
-    expect(onDisk).toBe("enc:sk-ant-secret-value");
+    expect(onDisk).toBe(fakeEncrypt("sk-ant-secret-value"));
   });
 
   it("readForRequest decrypts the stored key, and is null when unset", () => {

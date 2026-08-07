@@ -12,6 +12,8 @@ export function RunNameSection({
 }: RunNameSectionProps): React.JSX.Element {
   return (
     <div className="field-block run-name-block">
+      {/* No tooltip: Run Name is not in the Config Descriptions tab, and the
+          help line below already says the only thing there is to say. */}
       <label className="field-eyebrow" htmlFor="run-name">
         Run Name <span className="field-eyebrow__optional">(optional)</span>
       </label>

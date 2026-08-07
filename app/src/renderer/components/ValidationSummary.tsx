@@ -32,8 +32,12 @@ const LABELS: Record<Exclude<keyof FieldErrors, "hyperparams">, string> = {
   maxAcceleration: "Max acceleration",
   surfaceCodeOneQubitTimeFactor: "Surface code 1-qubit time factor",
   surfaceCodeTwoQubitTimeFactor: "Surface code 2-qubit time factor",
-  tStatesPerRotation: "T states per rotation",
-  maxError: "Max error",
+  tErrorRate: "T Error Rate",
+  targetYear: "Target Year",
+  dataQubitSpacing: "Data Qubit Spacing",
+  tStatesPerRotation: "T Count Per Rotation",
+  computeCapacityPercentage: "Compute Capacity Percentage",
+  maxError: "Total Fault Tolerant Execution Error",
 };
  
 /** Inline error box — lists every unresolved field so there's no dead end. */

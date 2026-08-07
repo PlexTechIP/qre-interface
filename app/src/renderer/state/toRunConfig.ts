@@ -15,13 +15,15 @@ import {
   type BenchmarkId,
   type HyperparameterValues,
   type MagicStateFactoryId,
+  type MajoranaArchitecture,
+  type NeutralAtomArchitecture,
   type RunConfig,
   type SecondaryFactoryId,
 } from "../../shared/types";
 import { ARCHITECTURE_LABELS, QEC_LABELS } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
-import { deriveQecCode } from "./formState";
+import { buildTraceTransform, deriveQecCode } from "./formState";
 import type {
   ApplicationForm,
   ArchitectureForm,
@@ -117,16 +119,26 @@ function buildArchitecture(arch: ArchitectureForm): Architecture | null {
   }
   if (arch.type === "majorana") {
     if (arch.majorana.operationTime === null) return null;
-    return {
+    const majorana: MajoranaArchitecture = {
       type: "majorana",
       errorRate: arch.majorana.errorRate,
       operationTime: arch.majorana.operationTime,
     };
+    // v1.4.0 optionals are OMITTED when unset, never written as null. An absent
+    // tErrorRate is what makes qdk derive it from errorRate, so writing one in
+    // would silently replace a derived value with a fixed one.
+    if (arch.majorana.tErrorRate !== null) {
+      majorana.tErrorRate = arch.majorana.tErrorRate;
+    }
+    if (arch.majorana.targetYear !== null) {
+      majorana.targetYear = arch.majorana.targetYear;
+    }
+    return majorana;
   }
   // Neutral Atom: every field is defaulted in the form, so nothing gates
   // serialization — the draft is always structurally complete.
   const n = arch.neutralAtom;
-  return {
+  const neutralAtom: NeutralAtomArchitecture = {
     type: "neutralAtom",
     rydbergTime: n.rydbergTime,
     rydbergError: n.rydbergError,
@@ -141,7 +153,17 @@ function buildArchitecture(arch: ArchitectureForm): Architecture | null {
     surfaceCodeOneQubitTimeFactor: n.surfaceCodeOneQubitTimeFactor,
     surfaceCodeTwoQubitTimeFactor: n.surfaceCodeTwoQubitTimeFactor,
   };
+  // v1.4.0 optionals stay OMITTED until set, keeping a default Neutral Atom
+  // record byte-identical to the twelve-field v1.1.0 shape.
+  if (n.dataQubitSpacing !== null) {
+    neutralAtom.dataQubitSpacing = n.dataQubitSpacing;
+  }
+  if (n.targetYear !== null) {
+    neutralAtom.targetYear = n.targetYear;
+  }
+  return neutralAtom;
 }
+
  
 /**
  * The primary factory SET that survives serialization. A non-round_based member
@@ -263,7 +285,13 @@ function buildParameters(state: FormState): HyperparameterValues | null {
 export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null {
   const application = buildApplication(state.application);
   const architecture = buildArchitecture(state.architecture);
-  if (application === null || architecture === null || state.maxError === null) {
+  const traceTransform = buildTraceTransform(state.traceTransform);
+  if (
+    application === null ||
+    architecture === null ||
+    traceTransform === null ||
+    state.maxError === null
+  ) {
     return null;
   }
  
@@ -285,9 +313,7 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
     architecture,
     qecCode: expectedQecCode(architecture),
     magicStateFactories: effectiveFactories(state.magicStateFactories, architecture),
-    // The form draft IS the contract shape now that the transform is one
-    // pipeline object, so there is nothing left to build — just copy it.
-    traceTransform: { ...state.traceTransform },
+    traceTransform,
     maxError: state.maxError,
     qreVersion: QRE_VERSION,
   };

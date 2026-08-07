@@ -52,8 +52,8 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
 }
 
 /**
- * Memory Optimization is recorded on the config but cannot influence an estimate
- * in this build, and the UI says so. These tests hold that claim to account.
+ * Memory Optimization is recorded on the config, REACHES the estimator as of
+ * week 5, and still does not move an estimate.
  *
  * The yoked codes are ISATransforms that PROVIDE a MEMORY instruction. MEMORY
  * demand comes only from READ_FROM_MEMORY / WRITE_TO_MEMORY trace gates, which
@@ -61,17 +61,89 @@ function config(memoryOptimization?: MemoryOptimizationId): RunConfig {
  * keys the contract does not carry (numComputeQubits, readFromMemoryCount,
  * writeToMemoryCount).
  *
- * ⚠️ TWO THINGS HAVE CHANGED SINCE THIS WAS WRITTEN, and both matter before
- * anyone reads the assertions below as evidence about the yoked codes:
+ * ## What changed in week 5, and why the old result was not evidence
  *
- *  1. DynamicMemoryCompute IS in our pipeline as of contract v1.4.0, as an
- *     optional stage 0. The demand this file says nothing supplies now exists.
- *  2. More importantly, `memoryOptimization` has never reached the engine at
- *     all — see the first test. So "identical estimates" below is NOT evidence
- *     that the yoked codes do nothing; it is evidence that they were never sent.
+ * Until now `memoryOptimization` appeared in NO engine file — not
+ * configToInvocation.ts, not invocation.ts, not estimate.py — and this file
+ * asserted exactly that. So the "identical estimates" result on record was not
+ * evidence that the yoked codes do nothing; it was evidence that they were
+ * never sent. Anyone who enabled DynamicMemoryCompute, re-ran the comparison
+ * and saw no change would have confirmed the wrong conclusion with real numbers
+ * behind it.
  *
- * Week-5 Team 3 (§G) wires the field through and then measures for real. Until
- * that lands, do not cite this file as showing Memory Optimization is inert.
+ * §G wired the field through (QreInvocation -> configToInvocation ->
+ * build_isa_query, layered as `query * TwoDimensionalYokedSurfaceCode.q()`) and
+ * only THEN measured.
+ *
+ * ## The measurement — qdk 1.30.0, Ising Model (2D) 3x3, 2026-08-06
+ *
+ * | Pipeline                       | Physical qubits | Runtime (ns) |
+ * |--------------------------------|-----------------|--------------|
+ * | PSSPC x LatticeSurgery         | 477             | 1,363,950    |
+ * | + yoked_2d                     | 477             | 1,363,950    |
+ * | DMC x PSSPC x LatticeSurgery   | 256             | 1,852,200    |
+ * | + yoked_2d                     | 256             | 1,852,200    |
+ *
+ * Dynamic Memory Compute moves the estimate; the yoked code does not move it,
+ * with or without DMC.
+ *
+ * ## ⚠️ What this file does NOT establish — §G's remaining step
+ *
+ * An unchanged estimate has TWO explanations, and nothing here separates them:
+ *
+ *   1. The yoked codes are inert on this workload — the conclusion we want.
+ *   2. `query * YokedSurfaceCode.q()` does not put them anywhere qdk applies.
+ *      `build_qec` has already fixed the code by the time the yoked transform is
+ *      multiplied in after the factories, so (2) is not a remote possibility.
+ *
+ * The assertions below prove the id reaches the invocation JSON. They do NOT
+ * prove it reaches the ISA qdk executes, which is what §G's "prove it is
+ * actually in the query" asks for — and a null result cannot substitute, because
+ * (2) predicts the same null. Nor can the source graph settle it: an applied-
+ * but-unused ISATransform legitimately contributes no node.
+ *
+ * So the claim this file supports is "consistent with inert", not "measured, not
+ * assumed". The control stays disabled either way — a control that changes
+ * nothing is worse than one that says why.
+ *
+ * ## Query introspection — 2026-08-07, qdk 1.30.0
+ *
+ * The step above was taken. Composing the three ISA queries and comparing the
+ * objects (not the estimates):
+ *
+ *   SurfaceCode * factories             -> repr 419 chars, no "Yoked"
+ *   SurfaceCode * factories * Yoked1D   -> repr 544 chars, contains "Yoked"
+ *   SurfaceCode * factories * Yoked2D   -> repr 544 chars, contains "Yoked",
+ *                                          and differs from the 1D form
+ *
+ * So explanation (2) is ruled out AT CONSTRUCTION: the yoked transform really is
+ * in the `_ProductNode` handed to `qre.estimate`. It is not silently dropped.
+ *
+ * Then, holding the workload fixed (Ising Model (2D) 3x3):
+ *
+ *   A  SurfaceCode * factories            477 q / 1,363,950 ns  (256 with DMC)
+ *   B  SurfaceCode * factories * Yoked2D  IDENTICAL to A, both with and without DMC
+ *   C  Yoked2D     * factories            NO FEASIBLE FRONTIER POINT, either way
+ *
+ * C is the finding that matters. The yoked codes are QEC transforms — they live
+ * in `qdk.qre.models.qec._yoked` and subclass `ISATransform` exactly as
+ * `SurfaceCode` does. Substituting one changes the outcome drastically; layering
+ * one onto an already-fixed QEC changes nothing at all. They are therefore NOT
+ * globally inert, and "the yoked codes do nothing" would be as wrong as the
+ * claim this block already walked back.
+ *
+ * What is still open is narrower and better posed than §G's original question:
+ * **is `query * Yoked.q()` after the factories the right composition point at
+ * all, when the QEC is already fixed by `build_qec`?** The week-5 brief said the
+ * yoked codes "compose exactly like the secondary factories do" — but the
+ * secondary factories are factory MODIFIERS, whereas these are QEC codes, and
+ * the surrounding code uses `+` for alternatives of one kind and `*` for
+ * composition across kinds. That premise is what needs confirming with
+ * Microsoft, not another estimate comparison.
+ *
+ * Nothing user-facing rides on it today: the control is disabled, the form
+ * always serializes "none", and `configToInvocation` omits the key, so this
+ * wiring is dormant.
  */
 /**
  * The frontier with `evaluationTime` dropped. That field is how long the
@@ -86,9 +158,36 @@ function resources(result: { frontier: FrontierRow[] | null }): unknown {
   });
 }
 
-describe("Memory Optimization does not reach the estimator", () => {
-  it("is absent from the engine invocation", () => {
+/** The same config with Dynamic Memory Compute (stage 0) switched on. */
+function withDynamicMemoryCompute(base: RunConfig): RunConfig {
+  return {
+    ...base,
+    traceTransform: {
+      ...base.traceTransform,
+      dynamicMemoryCompute: {
+        computeCapacityPercentage: 0.5,
+        evictionStrategy: "least_recently_used",
+      },
+    },
+  };
+}
+
+describe("Memory Optimization reaches the estimator", () => {
+  // INVERTED in week 5, deliberately, in the same change that wired the field.
+  // Leaving the old `not.toContain` green while the field now reaches the
+  // engine would mean the suite was lying in the other direction.
+  it("is present in the engine invocation when one is selected", () => {
     const result = configToInvocation(config("yoked_2d"), 30_000);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.keys(result.invocation)).toContain("memoryOptimization");
+      expect(result.invocation.memoryOptimization).toBe("yoked_2d");
+    }
+  });
+
+  it("is omitted when none is selected", () => {
+    const result = configToInvocation(config(), 30_000);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -96,6 +195,23 @@ describe("Memory Optimization does not reach the estimator", () => {
     }
   });
 
+  // "none" is a contract value the analyst can hold, but it is not something to
+  // send: an unselected optimization stays ABSENT all the way to Python, the
+  // same rule the optional trace stages follow.
+  it('omits the key for an explicit "none" rather than forwarding it', () => {
+    const result = configToInvocation(config("none"), 30_000);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.keys(result.invocation)).not.toContain("memoryOptimization");
+    }
+  });
+});
+
+// NOT "is inert — measured, not assumed". These tests establish that the
+// estimate does not move; see the header for why that is consistent with
+// inertness rather than proof of it.
+describe("Memory Optimization leaves the estimate unchanged", () => {
   it("produces an identical estimate whether set or not", async () => {
     const engine = new QreEngine(PYTHON_BIN);
     const plain = await engine.run(config());
@@ -113,4 +229,31 @@ describe("Memory Optimization does not reach the estimator", () => {
 
     expect(resources(oneD)).toEqual(resources(twoD));
   }, 120_000);
+
+  /**
+   * THE test this file exists for. Dynamic Memory Compute is what emits the
+   * READ_FROM_MEMORY / WRITE_TO_MEMORY demand the yoked codes supply, so this
+   * is the only configuration in which "no change" carries any information at
+   * all — and even here it only narrows the answer, it does not settle it
+   * (header, "What this file does NOT establish").
+   *
+   * Measured on qdk 1.30.0: DMC alone moves Ising Model (2D) 3x3 from
+   * 477 qubits / 1,363,950 ns to 256 / 1,852,200; adding the yoked code on top
+   * leaves it at 256 / 1,852,200.
+   */
+  it("does not move the estimate even with Dynamic Memory Compute supplying MEMORY demand", async () => {
+    const engine = new QreEngine(PYTHON_BIN);
+    const dmcOnly = await engine.run(withDynamicMemoryCompute(config()));
+    const dmcYoked = await engine.run(withDynamicMemoryCompute(config("yoked_2d")));
+
+    expect(dmcOnly.status).toBe("succeeded");
+    expect(dmcYoked.status).toBe("succeeded");
+    expect(resources(dmcYoked)).toEqual(resources(dmcOnly));
+
+    // And guard the premise: if DMC ever stops moving the estimate, the
+    // comparison above becomes vacuous and this test should fail loudly rather
+    // than keep reporting "inert".
+    const plain = await engine.run(config());
+    expect(resources(dmcOnly)).not.toEqual(resources(plain));
+  }, 240_000);
 });

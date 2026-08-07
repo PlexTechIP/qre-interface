@@ -250,13 +250,20 @@ describe("QreEngine", () => {
   );
 
   it.runIf(QRE_AVAILABLE)(
-    "pins the QDK NeutralAtom defaults the contract does not model",
+    "pins the QDK NeutralAtom defaults inherited when both fields are blank",
     () => {
-      // data_qubit_spacing and target_year are absent from the field spec, so
-      // the wrapper never sets them and we inherit whatever QDK defaults to.
-      // They are inert on 1.30.0 — that is a property of this version, not a
-      // guarantee. Pinning them makes a future bump fail here, loudly, instead
-      // of silently moving every Neutral Atom estimate.
+      // COMMENT CORRECTED 2026-08-06 — the test is unchanged and still passes.
+      //
+      // It used to say data_qubit_spacing and target_year were "absent from the
+      // field spec, so the wrapper never sets them". Both are in the spec AND in
+      // the contract as of v1.4.0, and the wrapper DOES set them when present.
+      //
+      // What keeps the test worth having is that its fixture sets NEITHER, which
+      // is still the default path: the form leaves both blank, `toRunConfig`
+      // omits them, and qdk's own defaults apply. So this pins the values we
+      // INHERIT. They are inert on 1.30.0 — a property of this version, not a
+      // guarantee — and a future bump that moves them fails here, loudly,
+      // instead of silently moving every Neutral Atom estimate.
       const probe = spawnSync(
         PYTHON_BIN,
         [

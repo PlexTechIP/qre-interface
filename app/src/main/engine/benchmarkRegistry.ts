@@ -41,7 +41,7 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
   },
   "quantum-dynamics": {
     id: "quantum-dynamics",
-    name: "Quantum Dynamics",
+    name: "Ising Model (2D)",
     description:
       "Simulation-style benchmark for quantum dynamics workloads and the default baseline for week-2 contract fixtures.",
     sourcePath: QSHARP_PROJECT_ROOT,

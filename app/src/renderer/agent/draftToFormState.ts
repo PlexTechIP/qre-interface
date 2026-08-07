@@ -20,6 +20,18 @@ export interface DraftHandoff {
 export type DraftMappingResult =
   { ok: true; handoff: DraftHandoff } | { ok: false; message: string };
 
+/**
+ * Fields the lowered generation schema lets the model propose but this mapping
+ * does not carry into the form. A proposal touching any of them is REFUSED
+ * whole rather than partially applied: silently dropping a field the analyst
+ * asked for is the one failure mode a review step cannot catch, because the
+ * form then looks like a complete answer to a different question.
+ *
+ * Team 3 landed real controls for the first six on 2026-08-07, so each is now a
+ * deliberate scope line rather than a missing control — mapping them is
+ * follow-up work, not a blocker. `slowDownFactor` is different and permanent:
+ * the contract pins it to `const: 1`.
+ */
 function unsupportedFields(draft: GeneratedRunDraft): string[] {
   const unsupported: string[] = [];
   if (draft.architecture.type === "majorana") {
@@ -38,6 +50,12 @@ function unsupportedFields(draft: GeneratedRunDraft): string[] {
     unsupported.push("Dynamic Memory Compute");
   }
   if (draft.traceTransform.unmemory) unsupported.push("Unmemory");
+  // Lattice Surgery's slow-down factor is `const: 1` in the contract and
+  // read-only in the form. Refuse rather than normalize, so a model that
+  // proposed a different value is not silently overruled.
+  if (draft.traceTransform.slowDownFactor !== 1) {
+    unsupported.push("Slow Down Factor");
+  }
   return unsupported;
 }
 
@@ -51,8 +69,8 @@ export function draftToFormState(
     return {
       ok: false,
       message:
-        `The proposal uses fields the current configuration form cannot edit yet: ${unsupported.join(", ")}. ` +
-        "Nothing was applied. Ask for a proposal without those fields or wait for the form integration.",
+        `The proposal sets fields this draft path does not carry into the form: ${unsupported.join(", ")}. ` +
+        "Nothing was applied — ask for a proposal without those fields, or set them yourself in Run Configuration.",
     };
   }
 
@@ -109,12 +127,18 @@ export function draftToFormState(
     return { ok: false, message: "The proposal named an unknown benchmark." };
   }
 
+  // Each branch spreads the initial sub-form before overriding. The model owns
+  // only the fields the lowered schema generates; anything Team 3 adds to a
+  // *Form later (v1.4.0 added Majorana tErrorRate/targetYear and Neutral Atom
+  // dataQubitSpacing/targetYear) has to keep its default rather than vanish —
+  // replacing the object wholesale silently drops fields the form requires.
   const architecture: FormState["architecture"] =
     draft.architecture.type === "gateBased"
       ? {
           ...initial.architecture,
           type: "gateBased",
           gateBased: {
+            ...initial.architecture.gateBased,
             errorRate: draft.architecture.errorRate,
             gateTime: draft.architecture.gateTime,
             measurementTime: draft.architecture.measurementTime,
@@ -126,6 +150,7 @@ export function draftToFormState(
             ...initial.architecture,
             type: "majorana",
             majorana: {
+              ...initial.architecture.majorana,
               errorRate: draft.architecture.errorRate,
               operationTime: draft.architecture.operationTime,
             },
@@ -134,6 +159,7 @@ export function draftToFormState(
             ...initial.architecture,
             type: "neutralAtom",
             neutralAtom: {
+              ...initial.architecture.neutralAtom,
               rydbergTime: draft.architecture.rydbergTime,
               rydbergError: draft.architecture.rydbergError,
               singleQubitTime: draft.architecture.singleQubitTime,
@@ -162,10 +188,16 @@ export function draftToFormState(
         magicStateFactories: [...draft.magicStateFactories],
         secondaryFactories: [...draft.secondaryFactories],
         memoryOptimization: draft.memoryOptimization,
+        // Same spread rule as the architecture branches above. Stages 0 and 3
+        // keep their initial values (off) rather than being omitted: a draft
+        // that proposed either was already refused by unsupportedFields, so
+        // "off" is the only state that can reach here — and `dynamicMemoryCompute`
+        // must be present-and-null, not absent, because validateForm reads
+        // through it.
         traceTransform: {
+          ...initial.traceTransform,
           tStatesPerRotation: draft.traceTransform.tStatesPerRotation,
           ccxMagicStates: draft.traceTransform.ccxMagicStates,
-          slowDownFactor: 1,
         },
         maxError: draft.maxError,
       }),
