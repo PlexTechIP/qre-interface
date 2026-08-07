@@ -60,6 +60,51 @@ describe("draftToFormState", () => {
     });
   });
 
+  /**
+   * `parameters` is now one variant per benchmark rather than every key with
+   * the irrelevant ones nulled, so the consumer can be handed a variant that
+   * does not match the benchmark the model chose.
+   */
+  it("takes only the selected benchmark's parameters from the proposal", () => {
+    const proposal = gateBasedDraft();
+    proposal.parameters = { searchQubits: 42 };
+
+    const result = draftToFormState(proposal, "provider/model");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.handoff.state.application.hyperparams["grovers-search"]?.searchQubits,
+    ).toBe(42);
+  });
+
+  it("falls back to form defaults when the variant is for another benchmark", () => {
+    const initial = createInitialFormState();
+    const proposal = gateBasedDraft();
+    // Shor's variant against a Grover application: nothing to take, and
+    // taking the wrong values would be far worse than taking none.
+    proposal.parameters = { bitSize: 2048, generator: 7 };
+
+    const result = draftToFormState(proposal, "provider/model");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handoff.state.application.hyperparams["grovers-search"]).toEqual(
+      initial.application.hyperparams["grovers-search"],
+    );
+  });
+
+  it("ignores the no-parameters variant's marker rather than storing it", () => {
+    const initial = createInitialFormState();
+    const proposal = gateBasedDraft();
+    proposal.parameters = { none: true };
+
+    const result = draftToFormState(proposal, "provider/model");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const params = result.handoff.state.application.hyperparams["grovers-search"];
+    expect(params).toEqual(initial.application.hyperparams["grovers-search"]);
+    expect(params).not.toHaveProperty("none");
+  });
+
   it("refuses a slow-down factor the contract pins to 1", () => {
     const proposal = gateBasedDraft();
     // The cast is the point: `slowDownFactor` is the literal type 1, but this

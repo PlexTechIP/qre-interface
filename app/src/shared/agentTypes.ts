@@ -54,13 +54,22 @@ export type GeneratedTraceTransform = Omit<
 };
 
 /**
- * The lowered schema requires every known benchmark-parameter key. Parameters
- * irrelevant to the selected benchmark are null and are discarded when Part E
- * maps the proposal into FormState.
+ * Benchmark parameters, as one variant per benchmark rather than a flat record
+ * of every key with the irrelevant ones nulled.
+ *
+ * The flat shape was not merely untidy: each nullable field is a union, and the
+ * API caps a structured-output schema at 16 union-typed parameters. Twelve
+ * nullable parameters spent most of that budget and the request was rejected
+ * with a 400 before the model ever saw it. One variant per benchmark costs a
+ * single union and says the true thing — parameters *are* per-benchmark.
+ *
+ * Consumers still index by key: `draftToFormState` reads only the keys the
+ * selected benchmark declares, so a variant that does not match the chosen
+ * benchmark yields no parameters rather than wrong ones — the same outcome the
+ * all-null shape produced, without the union cost.
  */
-export type GeneratedBenchmarkParameters = Record<
-  string,
-  number | string | null
+export type GeneratedBenchmarkParameters = Partial<
+  Record<string, number | string | boolean>
 >;
 
 /** Model-owned fields only. This shape can never mint a runnable identity. */

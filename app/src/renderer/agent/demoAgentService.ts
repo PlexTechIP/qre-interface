@@ -22,20 +22,9 @@ const DEMO_DRAFT: GeneratedRunDraft = {
   magicStateFactories: ["round_based"],
   secondaryFactories: [],
   memoryOptimization: "none",
-  parameters: {
-    bitSize: null,
-    generator: null,
-    rsaInstance: null,
-    latticeN1: null,
-    latticeN2: null,
-    totalTime: null,
-    trotterStep: null,
-    couplingJ: null,
-    fieldG: null,
-    searchQubits: 20,
-    precision: null,
-    registerSize: null,
-  },
+  // The Grover variant only — the schema is one variant per benchmark now,
+  // not every key with the irrelevant ones nulled.
+  parameters: { searchQubits: 20 },
   traceTransform: {
     tStatesPerRotation: 20,
     ccxMagicStates: false,

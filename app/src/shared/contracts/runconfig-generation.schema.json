@@ -17,7 +17,14 @@
   "properties": {
     "name": {
       "description": "Optional analyst-facing run name. Use null to let the app generate one.",
-      "anyOf": [{ "type": "string" }, { "type": "null" }]
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "application": {
       "description": "A bundled benchmark or manual logical-count input. Uploaded files are selected locally by the analyst and cannot be proposed here.",
@@ -25,9 +32,17 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "benchmarkId"],
+          "required": [
+            "type",
+            "benchmarkId"
+          ],
           "properties": {
-            "type": { "type": "string", "enum": ["benchmark"] },
+            "type": {
+              "type": "string",
+              "enum": [
+                "benchmark"
+              ]
+            },
             "benchmarkId": {
               "type": "string",
               "enum": [
@@ -55,7 +70,12 @@
             "measurementCount"
           ],
           "properties": {
-            "type": { "type": "string", "enum": ["manualCounts"] },
+            "type": {
+              "type": "string",
+              "enum": [
+                "manualCounts"
+              ]
+            },
             "numQubits": {
               "type": "integer",
               "description": "Logical qubit count. Must be at least 1."
@@ -102,7 +122,12 @@
             "twoQubitGateTime"
           ],
           "properties": {
-            "type": { "type": "string", "enum": ["gateBased"] },
+            "type": {
+              "type": "string",
+              "enum": [
+                "gateBased"
+              ]
+            },
             "errorRate": {
               "type": "number",
               "description": "Physical error rate. Must be greater than 0 and less than 0.01; default 0.0001."
@@ -117,7 +142,14 @@
             },
             "twoQubitGateTime": {
               "description": "Optional two-qubit gate time in ns. Use null to let qdk derive it; otherwise use a whole number greater than 0.",
-              "anyOf": [{ "type": "integer" }, { "type": "null" }]
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -132,10 +164,19 @@
             "targetYear"
           ],
           "properties": {
-            "type": { "type": "string", "enum": ["majorana"] },
+            "type": {
+              "type": "string",
+              "enum": [
+                "majorana"
+              ]
+            },
             "errorRate": {
               "type": "number",
-              "enum": [0.0001, 0.00001, 0.000001],
+              "enum": [
+                0.0001,
+                1e-05,
+                1e-06
+              ],
               "description": "Majorana physical error rate."
             },
             "operationTime": {
@@ -144,11 +185,25 @@
             },
             "tErrorRate": {
               "description": "Optional T error rate. Use null to let qdk derive it; otherwise greater than 0 and at most 0.05.",
-              "anyOf": [{ "type": "number" }, { "type": "null" }]
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "targetYear": {
               "description": "Optional non-negative target year. Use null to omit it. This value is recorded but currently inert.",
-              "anyOf": [{ "type": "integer" }, { "type": "null" }]
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -173,7 +228,12 @@
             "targetYear"
           ],
           "properties": {
-            "type": { "type": "string", "enum": ["neutralAtom"] },
+            "type": {
+              "type": "string",
+              "enum": [
+                "neutralAtom"
+              ]
+            },
             "rydbergTime": {
               "type": "integer",
               "description": "Rydberg time in ns. Whole number greater than 0; default 500."
@@ -208,7 +268,14 @@
             },
             "dataQubitSpacing": {
               "description": "Optional data-qubit spacing in micrometers. Use null to omit it; otherwise greater than 0.",
-              "anyOf": [{ "type": "number" }, { "type": "null" }]
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "maxVelocity": {
               "type": "number",
@@ -228,7 +295,14 @@
             },
             "targetYear": {
               "description": "Optional non-negative target year. Use null to omit it. This value is recorded but currently inert.",
-              "anyOf": [{ "type": "integer" }, { "type": "null" }]
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         }
@@ -239,7 +313,11 @@
       "description": "Non-empty unique factory set. round_based is always allowed; litinski19 and gsj24 have architecture/error-rate coupling rules checked by the app.",
       "items": {
         "type": "string",
-        "enum": ["round_based", "litinski19", "gsj24"]
+        "enum": [
+          "round_based",
+          "litinski19",
+          "gsj24"
+        ]
       }
     },
     "secondaryFactories": {
@@ -247,88 +325,156 @@
       "description": "Secondary factory set. Use an empty array for none. magic_up_to_clifford is incompatible with Majorana; gsj24_ccx tracks CCX magic-state synthesis.",
       "items": {
         "type": "string",
-        "enum": ["magic_up_to_clifford", "gsj24_ccx"]
+        "enum": [
+          "magic_up_to_clifford",
+          "gsj24_ccx"
+        ]
       }
     },
     "memoryOptimization": {
       "type": "string",
-      "enum": ["none", "yoked_1d", "yoked_2d"],
+      "enum": [
+        "none",
+        "yoked_1d",
+        "yoked_2d"
+      ],
       "description": "Memory optimization selection. Use none unless the requested pipeline supports a yoked code."
     },
     "parameters": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Known bundled-benchmark parameters. Fill parameters for the selected benchmark and use null for every irrelevant parameter.",
-      "required": [
-        "bitSize",
-        "generator",
-        "rsaInstance",
-        "latticeN1",
-        "latticeN2",
-        "totalTime",
-        "trotterStep",
-        "couplingJ",
-        "fieldG",
-        "searchQubits",
-        "precision",
-        "registerSize"
-      ],
-      "properties": {
-        "bitSize": {
-          "description": "Shor bit size, whole number from 2 through 8192; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
-        },
-        "generator": {
-          "description": "Factoring generator, whole number from 2 through 65535; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
-        },
-        "rsaInstance": {
-          "description": "Ekera-Hastad RSA instance; otherwise null.",
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": ["rsa-100", "rsa-1024", "rsa-2048"]
+      "description": "Parameters for the benchmark named in application.benchmarkId. Choose the variant that matches it; use the 'none' variant for manual logical counts or when proposing no parameters. Modelled as one variant per benchmark rather than twelve nullable fields because the API caps a structured-output schema at 16 union-typed parameters and the flat shape spent twelve of them.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Shor's factoring.",
+          "required": [
+            "bitSize",
+            "generator"
+          ],
+          "properties": {
+            "bitSize": {
+              "description": "Shor bit size, whole number from 2 through 8192.",
+              "type": "integer"
             },
-            { "type": "null" }
-          ]
+            "generator": {
+              "description": "Factoring generator, whole number from 2 through 65535.",
+              "type": "integer"
+            }
+          }
         },
-        "latticeN1": {
-          "description": "Ising-model first lattice dimension, whole number from 1 through 1000; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Ekera-Hastad factoring.",
+          "required": [
+            "rsaInstance",
+            "generator"
+          ],
+          "properties": {
+            "rsaInstance": {
+              "description": "Ekera-Hastad RSA instance.",
+              "type": "string",
+              "enum": [
+                "rsa-100",
+                "rsa-1024",
+                "rsa-2048"
+              ]
+            },
+            "generator": {
+              "description": "Factoring generator, whole number from 2 through 65535.",
+              "type": "integer"
+            }
+          }
         },
-        "latticeN2": {
-          "description": "Ising-model second lattice dimension, whole number from 1 through 1000; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Ising Model (2D) dynamics.",
+          "required": [
+            "latticeN1",
+            "latticeN2",
+            "totalTime",
+            "trotterStep",
+            "couplingJ",
+            "fieldG"
+          ],
+          "properties": {
+            "latticeN1": {
+              "description": "Ising-model first lattice dimension, whole number from 1 through 1000.",
+              "type": "integer"
+            },
+            "latticeN2": {
+              "description": "Ising-model second lattice dimension, whole number from 1 through 1000.",
+              "type": "integer"
+            },
+            "totalTime": {
+              "description": "Ising-model total time, greater than 0 and at most 1e6.",
+              "type": "number"
+            },
+            "trotterStep": {
+              "description": "Ising-model Trotter step, at least 1e-6 and no greater than totalTime.",
+              "type": "number"
+            },
+            "couplingJ": {
+              "description": "Ising-model coupling J, any finite real number.",
+              "type": "number"
+            },
+            "fieldG": {
+              "description": "Ising-model field g, any finite real number.",
+              "type": "number"
+            }
+          }
         },
-        "totalTime": {
-          "description": "Ising-model total time, greater than 0 and at most 1e6; otherwise null.",
-          "anyOf": [{ "type": "number" }, { "type": "null" }]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Grover's search.",
+          "required": [
+            "searchQubits"
+          ],
+          "properties": {
+            "searchQubits": {
+              "description": "Grover search-qubit count, whole number from 1 through 63.",
+              "type": "integer"
+            }
+          }
         },
-        "trotterStep": {
-          "description": "Ising-model Trotter step, at least 1e-6 and no greater than totalTime; otherwise null.",
-          "anyOf": [{ "type": "number" }, { "type": "null" }]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Phase estimation.",
+          "required": [
+            "precision",
+            "registerSize"
+          ],
+          "properties": {
+            "precision": {
+              "description": "Phase-estimation precision, whole number from 1 through 63.",
+              "type": "integer"
+            },
+            "registerSize": {
+              "description": "Phase-estimation register size, whole number from 1 through 1000.",
+              "type": "integer"
+            }
+          }
         },
-        "couplingJ": {
-          "description": "Ising-model coupling J, any finite real number; otherwise null.",
-          "anyOf": [{ "type": "number" }, { "type": "null" }]
-        },
-        "fieldG": {
-          "description": "Ising-model field g, any finite real number; otherwise null.",
-          "anyOf": [{ "type": "number" }, { "type": "null" }]
-        },
-        "searchQubits": {
-          "description": "Grover search-qubit count, whole number from 1 through 63; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
-        },
-        "precision": {
-          "description": "Phase-estimation precision, whole number from 1 through 63; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
-        },
-        "registerSize": {
-          "description": "Phase-estimation register size, whole number from 1 through 1000; otherwise null.",
-          "anyOf": [{ "type": "integer" }, { "type": "null" }]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "No benchmark parameters are being proposed.",
+          "required": [
+            "none"
+          ],
+          "properties": {
+            "none": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "traceTransform": {
       "type": "object",
@@ -351,7 +497,9 @@
           "description": "Whether PSSPC synthesizes CCX from magic states; default false."
         },
         "slowDownFactor": {
-          "enum": [1],
+          "enum": [
+            1
+          ],
           "description": "Fixed Lattice Surgery slowdown factor. Always 1."
         },
         "dynamicMemoryCompute": {
@@ -360,7 +508,10 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["computeCapacityPercentage", "evictionStrategy"],
+              "required": [
+                "computeCapacityPercentage",
+                "evictionStrategy"
+              ],
               "properties": {
                 "computeCapacityPercentage": {
                   "type": "number",
@@ -376,7 +527,9 @@
                 }
               }
             },
-            { "type": "null" }
+            {
+              "type": "null"
+            }
           ]
         },
         "unmemory": {

@@ -184,20 +184,9 @@ const VALID_GENERATED_DRAFT = {
   magicStateFactories: ["round_based"],
   secondaryFactories: [],
   memoryOptimization: "none",
-  parameters: {
-    bitSize: 31,
-    generator: 11,
-    rsaInstance: null,
-    latticeN1: null,
-    latticeN2: null,
-    totalTime: null,
-    trotterStep: null,
-    couplingJ: null,
-    fieldG: null,
-    searchQubits: null,
-    precision: null,
-    registerSize: null,
-  },
+  // One variant, matching the benchmark above — not every key with the
+  // irrelevant ones nulled.
+  parameters: { bitSize: 31, generator: 11 },
   traceTransform: {
     tStatesPerRotation: 20,
     ccxMagicStates: false,
@@ -323,21 +312,64 @@ describe("generation-schema drift protection", () => {
       sorted(BENCHMARK_IDS),
     );
 
-    const parameters = asObject(properties["parameters"]);
-    const parameterProperties = parameters
-      ? asObject(parameters["properties"])
-      : null;
-    expect(sorted(Object.keys(parameterProperties ?? {}))).toEqual(
-      sorted(KNOWN_PARAMETER_KEYS),
-    );
+    // `parameters` is one variant per benchmark, so the check is per-benchmark
+    // reachability rather than a flat key list: every benchmark must have a
+    // variant offering exactly its editable parameters. That is strictly
+    // stronger than the old union-of-keys assertion, which would have passed
+    // even if one benchmark's parameters were unreachable in every variant.
+    const parameterVariants = variants(asObject(properties["parameters"]) ?? {})
+      .map(asObject)
+      .filter((variant): variant is Record<string, unknown> => variant !== null);
 
     for (const benchmarkIdValue of BENCHMARK_IDS) {
       const id: BenchmarkId = benchmarkIdValue;
-      expect(
-        editableParams(id).every((parameter) =>
-          KNOWN_PARAMETER_KEYS.has(parameter.key),
-        ),
-      ).toBe(true);
+      const wanted = sorted(editableParams(id).map((parameter) => parameter.key));
+      const match = parameterVariants.find(
+        (variant) =>
+          JSON.stringify(sorted((variant["required"] as string[]) ?? [])) ===
+          JSON.stringify(wanted),
+      );
+      expect(match, `no parameters variant offers exactly ${id}'s keys`).toBeDefined();
     }
+
+    // Every key offered anywhere must still be a real editable parameter — the
+    // other direction, so a variant cannot invent a field the form ignores.
+    const offered = new Set(
+      parameterVariants.flatMap((variant) =>
+        Object.keys(asObject(variant["properties"]) ?? {}),
+      ),
+    );
+    offered.delete("none"); // the explicit no-parameters variant's marker
+    expect(sorted(offered)).toEqual(sorted(KNOWN_PARAMETER_KEYS));
+  });
+
+  /**
+   * The regression guard for a live 400. Structured-output schemas are capped
+   * at 16 union-typed parameters ("type arrays or anyOf"); the flat parameters
+   * shape put us at 21 and every request was rejected before the model saw it.
+   *
+   * This counts the same way the API does, so the budget is visible in review
+   * rather than discovered in production. Nullable fields are the usual way to
+   * spend it: each `X | null` is one union.
+   */
+  it("stays within the provider cap on union-typed parameters", () => {
+    const unions: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      const record = asObject(node);
+      if (record === null) return;
+      for (const [key, value] of Object.entries(asObject(record["properties"]) ?? {})) {
+        const child = asObject(value);
+        const here = path ? `${path}.${key}` : key;
+        if (Array.isArray(child?.["anyOf"]) || Array.isArray(child?.["type"])) {
+          unions.push(here);
+        }
+        walk(value, here);
+      }
+      for (const branch of variants(record)) walk(branch, path);
+      if (record["items"] !== undefined) walk(record["items"], `${path}[]`);
+    };
+    walk(generationSchema, "");
+
+    expect(unions.length, `union-typed parameters:\n${unions.join("\n")}`).toBeLessThanOrEqual(16);
   });
 });

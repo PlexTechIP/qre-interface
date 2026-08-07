@@ -102,10 +102,16 @@ export function draftToFormState(
       ? {}
       : { ...initial.application.hyperparams[benchmarkId] };
   if (benchmarkId !== null) {
+    // Only the selected benchmark's keys are read, so a proposal carrying some
+    // other benchmark's parameter variant contributes nothing rather than
+    // wrong values — the same outcome the old all-null shape produced. The
+    // boolean guard rejects the no-parameters variant's `none: true` marker,
+    // which is a schema-level sentinel and never a hyperparameter value.
     for (const field of BENCHMARK_HYPERPARAMS[benchmarkId]) {
       const value = draft.parameters[field.key];
-      if (value !== null && value !== undefined)
+      if (value !== undefined && value !== null && typeof value !== "boolean") {
         proposedParameters[field.key] = value;
+      }
     }
   }
   let application: FormState["application"];
