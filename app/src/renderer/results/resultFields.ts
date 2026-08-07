@@ -110,7 +110,11 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
     "numTsPerRotation",
     {
       key: "numTsPerRotation",
-      label: "T States / Rotation",
+      // Renamed 2026-08-07 to match the configuration surface. Display only: the
+      // metric key, the contract's `tStatesPerRotation` and qdk's
+      // `num_ts_per_rotation` are unchanged. The unit stays "T states" — that is
+      // what the number counts.
+      label: "T Count Per Rotation",
       unitLabel: "T states",
       description: "T states used to synthesize each arbitrary rotation.",
     },
@@ -200,6 +204,17 @@ export function getFieldDefinition(key: string, unit: string): ResultFieldDefini
   );
 }
  
+/**
+ * Renamed from "Max Error" 2026-08-07, so the results recap and the
+ * configuration form call the same number by the same name — the form had been
+ * renamed on its own, leaving the app showing two names for one field.
+ *
+ * A constant rather than a literal in each branch: the label appears in both the
+ * known- and unknown-config arms below, and renaming one arm is exactly how they
+ * drifted. The contract field is still `maxError`.
+ */
+const MAX_ERROR_LABEL = "Total Fault Tolerant Execution Error";
+
 export function summarizeConfig(config: RunConfig | null | undefined, qreVersion: string) {
   if (!config) {
     return [
@@ -208,7 +223,7 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       { label: "QEC Code", value: "Unknown" },
       { label: "Factory", value: "Unknown" },
       { label: "Trace Transform", value: "Unknown" },
-      { label: "Max Error", value: "Unknown" },
+      { label: MAX_ERROR_LABEL, value: "Unknown" },
       { label: "QRE Version", value: qreVersion },
     ];
   }
@@ -234,7 +249,7 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
       label: "Trace Transform",
       value: describeTraceTransform(normalizeTraceTransform(config.traceTransform)),
     },
-    { label: "Max Error", value: String(config.maxError) },
+    { label: MAX_ERROR_LABEL, value: String(config.maxError) },
     { label: "QRE Version", value: qreVersion },
   ];
 }

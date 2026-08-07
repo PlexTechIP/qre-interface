@@ -482,10 +482,43 @@ def build_primary_factory_query(magic_state_factories: list[str]):
     return query
  
  
+# Contract id -> the qdk yoked-surface-code CLASS NAME. Strings resolved at call
+# time, for the same reason EVICTION_STRATEGY_MEMBERS below is lazy: a class qdk
+# renames in a future release then fails only the run that asked for it, instead
+# of raising at import and turning EVERY run into an ENGINE_CRASH.
+YOKED_CODE_CLASSES = {
+    "yoked_1d": "OneDimensionalYokedSurfaceCode",
+    "yoked_2d": "TwoDimensionalYokedSurfaceCode",
+}
+
+
+def resolve_yoked_code(name: str):
+    """Map a contract memoryOptimization id onto its qdk yoked-code class.
+
+    Raises ValueError — not KeyError — for both failure modes, matching
+    `build_isa_query`'s "Unknown secondary factory" convention, so the message
+    that reaches the analyst names the value rather than being a bare key.
+    """
+    class_name = YOKED_CODE_CLASSES.get(name)
+    if class_name is None:
+        raise ValueError(
+            f"Unknown memory optimization: {name!r}. "
+            f"Expected one of {', '.join(sorted(YOKED_CODE_CLASSES))}."
+        )
+    yoked = getattr(qdk.qre.models, class_name, None)
+    if yoked is None:
+        raise ValueError(
+            f"This qdk release does not expose {class_name}; "
+            "the memory-optimization mapping needs updating."
+        )
+    return yoked
+
+
 def build_isa_query(
     qec_code: str,
     magic_state_factories: list[str],
     secondary_factories: list[str] | None = None,
+    memory_optimization: str | None = None,
 ):
     qec = build_qec(qec_code)
     query = qec * build_primary_factory_query(magic_state_factories)
@@ -498,6 +531,12 @@ def build_isa_query(
             query = query * GSJ24CCXFactory.q()
         else:
             raise ValueError(f"Unknown secondary factory: {secondary}")
+    # Memory optimization, layered after the factories — the yoked codes compose
+    # exactly like the secondary factories do. None means the analyst selected
+    # no optimization: the adapter omits the key rather than sending "none", so
+    # nothing is multiplied in.
+    if memory_optimization is not None:
+        query = query * resolve_yoked_code(memory_optimization).q()
     return query
  
  
@@ -749,6 +788,7 @@ def main() -> int:
             invocation["qecCode"],
             invocation["magicStateFactories"],
             invocation.get("secondaryFactories"),
+            invocation.get("memoryOptimization"),
         )
         trace_query = build_trace_query(invocation["traceTransform"])
         table = qre.estimate(

@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 
 import type { UploadedProgramFormat } from "../../shared/types";
+import {
+  MANUAL_COUNTS_SECTION,
+  MANUAL_COUNT_DEFINITIONS,
+} from "../constants/configDefinitions";
 import { BENCHMARKS } from "../constants/staticOptions";
 import type { HyperparamValue } from "../constants/hyperparameters";
 import type {
@@ -36,7 +40,11 @@ const MANUAL_COUNT_FIELDS: readonly {
   label: string;
   help: string;
 }[] = [
-  { key: "numQubits", label: "Number of Qubits", help: "Required · integer ≥ 1" },
+  // Renamed from "Number of Qubits" in the 2026-07-31 update. Display only —
+  // `numQubits` stays as the contract id, schema description and validation key.
+  // The new name earns its place: this counts LOGICAL qubits, and the results
+  // surface reports physical qubit counts on the same screen.
+  { key: "numQubits", label: "Logical Qubit Count", help: "Required · integer ≥ 1" },
   { key: "tCount", label: "T Count", help: "Required · integer ≥ 0" },
   { key: "rotationCount", label: "Rotation Count", help: "Required · integer ≥ 0" },
   { key: "rotationDepth", label: "Rotation Depth", help: "Required · 0 ≤ depth ≤ Rotation Count" },
@@ -200,6 +208,9 @@ export function ApplicationSection({
       </header>
 
       <div className="field-block">
+        {/* No tooltip: the Config Descriptions tab has no copy for the type
+            selector, and an invented one would read as reviewed product copy.
+            Requested in the PR description. */}
         <span className="field-eyebrow" id="application-type-label">
           Application Type
         </span>
@@ -346,6 +357,7 @@ export function ApplicationSection({
         </div>
       ) : value.type === "uploaded" ? (
         <div className="upload-picker">
+          <span className="field-eyebrow">Upload Program</span>
           <label
             className={`dropzone${dragging ? " dropzone--active" : ""}`}
             onDragOver={(event) => {
@@ -427,17 +439,16 @@ export function ApplicationSection({
           <span className="field-eyebrow" id="manual-counts-label">
             Logical Resource Counts
           </span>
-          <p className="dropzone__formats">
-            Estimate directly from logical counts — no source program. Fields map
-            to the engine's LogicalCounts.
-          </p>
+          <p className="dropzone__formats">{MANUAL_COUNTS_SECTION}</p>
           <div className="form-grid" role="group" aria-labelledby="manual-counts-label">
             {MANUAL_COUNT_FIELDS.map((field) => (
               <NumberField
                 key={field.key}
                 id={`manual-${field.key}`}
                 label={field.label}
+                definition={MANUAL_COUNT_DEFINITIONS[field.key]}
                 placeholder="None"
+                integer
                 value={value.manualCounts[field.key]}
                 onChange={(next) => setManualCount(field.key, next)}
                 error={errors[field.key]}

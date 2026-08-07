@@ -157,6 +157,7 @@ export function RunConfiguration({
             maxError={state.maxError}
             maxErrorError={errors.maxError}
             onMaxErrorChange={(maxError) => update((s) => ({ ...s, maxError }))}
+            computeCapacityError={errors.computeCapacityPercentage}
           />
         </div>
  

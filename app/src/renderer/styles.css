@@ -1218,9 +1218,84 @@ select {
   font-weight: 700;
 }
 
+.field__label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .field__req {
   color: var(--color-danger-text);
   font-weight: 800;
+}
+
+.definition-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  line-height: 1;
+}
+
+.definition-tip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+  padding: 0;
+  background: var(--color-well-bg);
+  color: var(--color-muted);
+  cursor: help;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.definition-tip__trigger:hover,
+.definition-tip__trigger:focus-visible {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.definition-tip__bubble {
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: min(290px, 72vw);
+  transform: translateX(-50%) translateY(4px);
+  border: 1px solid var(--color-card-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--color-surface);
+  box-shadow: 0 12px 40px var(--color-shadow-soft);
+  color: var(--color-body);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+  visibility: hidden;
+}
+
+/* Driven by state, not by :hover/:focus-within — the trigger owns hover, focus,
+   click and Escape, so the tooltip is genuinely dismissible. A CSS-only :hover
+   rule would reopen it the instant the pointer moved, defeating Escape. */
+.definition-tip__bubble--open {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  visibility: visible;
 }
 
 .field__optional,
@@ -1448,6 +1523,16 @@ input[type="range"]:focus-visible,
   text-transform: uppercase;
 }
 
+/* The 6px gap matches `.field__label-row`, so an eyebrow's "?" sits the same
+   distance from its label as every other tooltip trigger on the surface. The
+   flex `gap` is the whole spacing rule — a `.field-eyebrow .definition-tip`
+   margin on top of it put this one trigger at 12px. */
+.field-eyebrow--with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* QPU + Micro field labels adopt the uppercase eyebrow treatment from the mockup. */
 .qpu-section .field__label,
 .micro-section .field__label {
@@ -1569,6 +1654,19 @@ input[type="range"]:focus-visible,
 .micro-subgroup--private {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* An optional pipeline stage that is switched off. Greyed, but NOT
+   pointer-events: none — the stage's own toggle has to stay operable, and the
+   tooltip has to stay readable, so only the parameters below are dimmed (the
+   controls' own `disabled` is what actually blocks interaction).
+
+   Scoped to `.field` deliberately: the subgroup's own help line is what explains
+   WHY the stage is off ("Needs Dynamic Memory Compute — there is no memory model
+   to reverse without it"), and dimming the one sentence the user most needs to
+   read is the opposite of the intent. */
+.micro-subgroup--off .field {
+  opacity: 0.55;
 }
 
 .private-badge {
@@ -1696,6 +1794,21 @@ input[type="range"]:focus-visible,
 
 .toggle--on .toggle__knob {
   transform: translateX(18px);
+}
+
+/* A gated stage's switch. `.micro-subgroup--off` dims `.field` descendants only,
+   and Stage 3 · Unmemory has none — it is a toggle and a help line — so without
+   this the disabled switch painted at full strength and looked operable while
+   ignoring every click. The On/Off state text travels with it; the "Enable
+   stage" label and the subgroup's help line stay at full strength on purpose,
+   because they are what says WHICH stage this is and WHY it is unavailable. */
+.toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.toggle:disabled ~ .toggle-field__state {
+  opacity: 0.55;
 }
 
 /* --- Search field with leading icon --------------------------------*/
@@ -2095,14 +2208,37 @@ input[type="range"]:focus-visible,
 
 .checkbox-field {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
-  cursor: pointer;
 }
 
 .checkbox-field input {
   margin-top: 2px;
   accent-color: var(--color-accent);
+}
+
+/* The row is a <div> wrapping an explicit <label>, not a wrapping <label> — a
+   nested tooltip trigger would otherwise be folded into the checkbox's
+   accessible name. The pointer affordance moves to the label with it. */
+.checkbox-field > label {
+  cursor: pointer;
+}
+
+.checkbox-field input:disabled + label {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Why an option is unselectable. A greyed-out checkbox with no reason is its own
+   bug — these rules are architecture- and error-rate-dependent and are not
+   guessable from the screen. */
+.checkbox-field__reason {
+  flex-basis: 100%;
+  padding-left: 26px;
+  color: var(--color-label-soft);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .checkbox-field__label {

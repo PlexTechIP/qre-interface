@@ -18,10 +18,11 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       verbatim. Rotation Depth is defined by the second 2026-07-31 revision, so
       there is no longer an escalation path for it
 - [ ] **The *Number of Qubits* → *Logical Qubit Count* rename is live**, with
-      `numQubits` untouched on the wire. *(The Ising Model (2D) rename is a
-      PM-made one-line edit to `benchmarks.json`; verify it landed rather than
-      applying it — that file is contract territory, and the same edit covers
-      Team 2's surfaces.)*
+      `numQubits` untouched on the wire. Preston's reasoning: it names *which*
+      qubits, since the results surface reports physical counts on the same
+      screen. *(The Ising Model (2D) rename is PM-made and landed 2026-08-02 —
+      verify it rather than applying it. It touched `benchmarks.json` **and**
+      `benchmarkRegistry.ts`, which mirrors the name under a test.)*
 - [ ] **The trace transform is a four-stage ordered pipeline in the UI.**
       The two optional stages are toggleable and greyed out when off. *(The
       contract, adapter, and `estimate.py` composition landed with v1.4.0 — your
@@ -72,9 +73,14 @@ Field names, types, ranges, defaults, and tooltip copy are graded against
       with the *right* reason per field: T Error Rate is **derived**, not inert,
       while both Target Years and Data Qubit Spacing are recorded-not-influential
       (technical brief § Deliverable 5 has the table)
-- [ ] **Commit `6dce3ca`'s pinned-defaults test was updated deliberately**, in the
-      same commit as the field it covers, with a stated reason — not deleted, not
-      skipped
+- [ ] **Commit `6dce3ca`'s pinned-defaults test still passes and its comment was
+      corrected**, in the same commit as the fields it covers — not deleted, not
+      skipped. It does not fail on this change; its claim that both fields are
+      "absent from the field spec" is what went stale at v1.4.0
+- [ ] **The four integer-only time fields reject a fractional value in the form**
+      — `gateTime`, `measurementTime`, `twoQubitGateTime`, `operationTime` are
+      `integer` in the schema as of 2026-08-02, so `50.5` must surface under the
+      field, not as an `INVALID_CONFIG` at Run-click
 - [ ] **Tooltip copy is verbatim** from `features-and-fields.md` for every field
       where copy already exists
 - [ ] **Existing behaviour is unregressed:** Superconducting, Majorana, and

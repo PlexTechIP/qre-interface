@@ -32,9 +32,14 @@ model proposes, and presses Run — with the key never leaving the main process.
 
 ## B. Face the schema problem before you build on it
 
-- [ ] **Re-count the unsupported keywords** in `runconfig.schema.json` after
-      v1.4.0 — `if`/`then`, `not`, `allOf`, `exclusiveMinimum`, `format` are all
-      rejected by strict structured-output modes
+- [ ] **Re-count the unsupported keywords** in `runconfig.schema.json` — the
+      brief's table was re-counted 2026-08-02 and the numbers moved again; verify
+      it rather than trusting it. `maximum` (22) and `minimum` (16) are now the
+      largest unsupported groups, ahead of `exclusiveMinimum` (15), with
+      `if`/`then`, `not`, `allOf` and `format` also rejected. Count keywords
+      **positionally** — skip anything directly under a `properties` object, or
+      you will over-count `format`, `enum`, `items` and `not`, which are all
+      legal property names too
 - [ ] Decide your approach: a **lowered generation schema** derived from the
       canonical one, or something else you can defend
 - [ ] **The canonical schema stays the real gate** via the existing
