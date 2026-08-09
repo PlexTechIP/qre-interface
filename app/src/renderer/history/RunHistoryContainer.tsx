@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { InMemoryRunStore } from "../../shared/runStore";
 import {
@@ -16,7 +16,7 @@ import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
 import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
 import type { SelectedRowByRunId } from "../results/selectedRows";
-import { compareSelectionWarning } from "./comparisonModel";
+import { COMPARE_MIN_SELECTION } from "./comparisonModel";
 import {
   createRerunRequest,
   type RerunRequest,
@@ -89,19 +89,30 @@ export function RunHistoryContainer({
   const [filter, setFilter] = useState<RunFilter>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Multi-select for Comparison: the set of record ids checked in History.
+  // The unified selection: the set of record ids checked in History. Both
+  // "Compare Selected" and "Delete Selected" operate on this one set.
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
-  // Counts below-threshold Compare presses. A COUNT rather than a flag for two
-  // reasons: it keeps the warning silent until the user actually asks, and it
-  // re-keys the live region so a repeat press is announced again instead of
-  // re-rendering an identical, silent node.
-  const [compareAttempts, setCompareAttempts] = useState(0);
-  // Destructive selection is deliberately separate from comparison selection:
-  // checking runs to compare must never make them eligible for deletion.
-  const [isDeleteSelectionMode, setIsDeleteSelectionMode] = useState(false);
-  const [deletionIds, setDeletionIds] = useState<string[]>([]);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Transient popup shown when an action is pressed with too small a selection.
+  // Keyed by an incrementing seq so a repeat press mounts a NEW live-region node
+  // — a screen reader does not re-announce an identical one — and it auto-clears.
+  const [toast, setToast] = useState<{ key: number; message: string } | null>(null);
+  const toastSeq = useRef(0);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((message: string) => {
+    toastSeq.current += 1;
+    setToast({ key: toastSeq.current, message });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 1400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
   const [internalSelectedRows, setInternalSelectedRows] = useState<SelectedRowByRunId>({});
   const selectedRowByRunId = controlledSelectedRows ?? internalSelectedRows;
   const selectRow = useCallback(
@@ -235,58 +246,10 @@ export function RunHistoryContainer({
     await deleteRunIds([id]);
   }, [deleteRunIds, pendingDeleteId]);
 
-  const startDeleteSelection = useCallback(() => {
-    setDeleteError(null);
-    setDeletionIds([]);
-    setIsDeleteSelectionMode(true);
-  }, []);
-
-  const cancelDeleteSelection = useCallback(() => {
-    setDeletionIds([]);
-    setIsDeleteSelectionMode(false);
-  }, []);
-
-  const toggleDeletion = useCallback((id: string) => {
-    setDeletionIds((current) =>
-      current.includes(id)
-        ? current.filter((existing) => existing !== id)
-        : [...current, id],
-    );
-  }, []);
-
-  const toggleAllVisibleForDeletion = useCallback(() => {
-    const ids = records.map((record) => record.id);
-    setDeletionIds((current) => {
-      const currentSet = new Set(current);
-      const areAllVisibleSelected =
-        ids.length > 0 && ids.every((id) => currentSet.has(id));
-      if (areAllVisibleSelected) {
-        const visibleSet = new Set(ids);
-        return current.filter((id) => !visibleSet.has(id));
-      }
-      return [...new Set([...current, ...ids])];
-    });
-  }, [records]);
-
-  const requestBulkDelete = useCallback(() => {
-    if (deletionIds.length > 0) setIsBulkDeleteConfirmOpen(true);
-  }, [deletionIds.length]);
-
   const cancelBulkDelete = useCallback(
     () => setIsBulkDeleteConfirmOpen(false),
     [],
   );
-
-  const confirmBulkDelete = useCallback(async () => {
-    const requestedIds = deletionIds;
-    if (requestedIds.length === 0) return;
-    setIsBulkDeleteConfirmOpen(false);
-    const deletedIds = await deleteRunIds(requestedIds);
-    const deletedSet = new Set(deletedIds);
-    const remainingIds = requestedIds.filter((id) => !deletedSet.has(id));
-    setDeletionIds(remainingIds);
-    setIsDeleteSelectionMode(remainingIds.length > 0);
-  }, [deleteRunIds, deletionIds]);
 
   const onRerun = useCallback(
     (record: RunRecord) => {
@@ -315,46 +278,50 @@ export function RunHistoryContainer({
 
   const clearComparison = useCallback(() => setComparisonIds([]), []);
 
-  // The records currently chosen for comparison, in selection order, filtered
-  // to those still present (a deleted record drops out of the set, and so does
-  // one the active filter hides). This — NOT comparisonIds — is what Comparison
-  // actually renders, so it is also what the threshold and the button's count
-  // have to be measured against.
+  const selectAllVisible = useCallback(() => {
+    // Union with the current set so a filter-hidden selection is preserved.
+    setComparisonIds((current) => [
+      ...new Set([...current, ...records.map((record) => record.id)]),
+    ]);
+  }, [records]);
+
+  // The selected records still present, in selection order (a deleted record
+  // drops out, and so does one the active filter hides). This — NOT comparisonIds
+  // — is what Compare/Delete actually operate on, so it is also what the
+  // thresholds and the button's count are measured against.
   const comparisonRecords = useMemo(
     () => comparisonIds.map((id) => records.find((r) => r.id === id)).filter((r): r is RunRecord => r != null),
     [comparisonIds, records],
   );
 
-  // Checked runs the active filter is currently hiding. They stay selected (a
-  // filter must not silently discard a selection) but cannot be compared while
-  // off-screen, so the warning has to say so — otherwise "(1)" after ticking two
-  // boxes just looks broken.
-  const hiddenComparisonCount = comparisonIds.length - comparisonRecords.length;
-
-  // "Compare Selected" must not strand the user on an empty Comparison page. Below
-  // the threshold we stay on History and SAY what is missing — the button stays
-  // enabled, because a disabled button with no explanation is the same bug in a
-  // different costume.
-  const pendingCompareWarning = compareSelectionWarning(
-    comparisonRecords.length,
-    hiddenComparisonCount,
-  );
-  const compareWarning = compareAttempts > 0 ? pendingCompareWarning : null;
-
-  // Reaching the threshold retires the warning for good: without this reset the
-  // flag would survive, and later dropping back below two would resurrect a
-  // warning the user never asked for a second time.
-  useEffect(() => {
-    if (pendingCompareWarning === null) setCompareAttempts(0);
-  }, [pendingCompareWarning]);
-
+  // "Compare Selected" needs at least two present runs; below that we stay on
+  // History and flash a transient popup rather than stranding the user on an
+  // empty Comparison page.
   const requestComparison = useCallback(() => {
-    if (pendingCompareWarning !== null) {
-      setCompareAttempts((attempts) => attempts + 1);
+    if (comparisonRecords.length < COMPARE_MIN_SELECTION) {
+      showToast("Select at least 2 runs to compare.");
       return;
     }
     setView("comparison");
-  }, [pendingCompareWarning, setView]);
+  }, [comparisonRecords.length, setView, showToast]);
+
+  // "Delete Selected" needs at least one present run; below that, the same
+  // transient popup rather than opening an empty confirm.
+  const requestDeleteSelected = useCallback(() => {
+    if (comparisonRecords.length < 1) {
+      showToast("Select at least 1 run to delete.");
+      return;
+    }
+    setIsBulkDeleteConfirmOpen(true);
+  }, [comparisonRecords.length, showToast]);
+
+  const confirmBulkDelete = useCallback(async () => {
+    const ids = comparisonRecords.map((record) => record.id);
+    if (ids.length === 0) return;
+    setIsBulkDeleteConfirmOpen(false);
+    // deleteRunIds prunes the deleted ids out of the selection on its own.
+    await deleteRunIds(ids);
+  }, [comparisonRecords, deleteRunIds]);
 
   const selectedRecord = useMemo(
     () => (selectedId == null ? null : records.find((r) => r.id === selectedId) ?? null),
@@ -394,28 +361,17 @@ export function RunHistoryContainer({
               : "Compare runs across result fields, configurations, timestamps, and QRE engine versions."}
           </p>
         </div>
-        {isControlled ? (
+        {/* Compare Selected now lives in the list toolbar beside Delete
+            Selected; the header keeps only the comparison→history cross-nav. */}
+        {isControlled && view === "comparison" ? (
           <div className="surface-header__actions">
-            {view === "history" ? (
-              <button
-                type="button"
-                className="surface-action"
-                onClick={requestComparison}
-                aria-describedby={compareWarning ? "compare-threshold-warning" : undefined}
-              >
-                {/* The count is the number that WOULD be compared, so it can
-                    never disagree with the threshold guard. */}
-                Compare Selected{comparisonRecords.length > 0 ? ` (${comparisonRecords.length})` : ""}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="surface-action"
-                onClick={() => setView("history")}
-              >
-                ← Back to History
-              </button>
-            )}
+            <button
+              type="button"
+              className="surface-action"
+              onClick={() => setView("history")}
+            >
+              ← Back to History
+            </button>
           </div>
         ) : null}
       </header>
@@ -458,23 +414,11 @@ export function RunHistoryContainer({
         detail view (View Details). Otherwise the search + filter bar + list show.
         The Comparison tab is a pure function of the checked records.
       */}
-      {/*
-        The warning sits ABOVE the loading/detail/list switch, not inside the
-        list branch: "Compare Selected" is reachable whenever History is showing
-        — including while the detail panel owns the branch — and a press that
-        produced no visible response would be exactly the silent no-op the
-        enabled button was chosen to avoid.
-      */}
-      {view === "history" && compareWarning ? (
-        // Keyed by attempt so a repeat press mounts a NEW live-region node —
-        // an identical one is not re-announced by a screen reader.
-        <p
-          key={compareAttempts}
-          role="alert"
-          id="compare-threshold-warning"
-          className="compare-warning"
-        >
-          {compareWarning}
+      {/* Transient popup for a too-small Compare/Delete selection. Keyed so a
+          repeat press re-announces; auto-dismisses on a timer. */}
+      {toast ? (
+        <p key={toast.key} role="alert" className="history-toast">
+          {toast.message}
         </p>
       ) : null}
 
@@ -517,21 +461,19 @@ export function RunHistoryContainer({
           <RunHistoryList
             records={records}
             selectedId={selectedId}
-            comparisonIds={comparisonIds}
-            deletionIds={deletionIds}
-            isDeleteSelectionMode={isDeleteSelectionMode}
+            selectedIds={comparisonIds}
+            selectedCount={comparisonRecords.length}
             selectedRowByRunId={selectedRowByRunId}
             hasActiveFilter={hasActiveFilter}
             onViewDetails={onViewDetails}
             onRerun={onRerun}
             onDelete={requestDelete}
             onExport={onExport}
-            onToggleComparison={toggleComparison}
-            onStartDeleteSelection={startDeleteSelection}
-            onCancelDeleteSelection={cancelDeleteSelection}
-            onToggleDeletion={toggleDeletion}
-            onToggleAllVisibleForDeletion={toggleAllVisibleForDeletion}
-            onRequestBulkDelete={requestBulkDelete}
+            onToggleSelection={toggleComparison}
+            onSelectAll={selectAllVisible}
+            onClearSelection={clearComparison}
+            onCompareSelected={requestComparison}
+            onDeleteSelected={requestDeleteSelected}
             {...(onNavigateToConfig ? { onNavigateToConfig } : {})}
           />
         </>
@@ -546,7 +488,7 @@ export function RunHistoryContainer({
       ) : null}
       {isBulkDeleteConfirmOpen ? (
         <BulkDeleteConfirmDialog
-          count={deletionIds.length}
+          count={comparisonRecords.length}
           onConfirm={confirmBulkDelete}
           onCancel={cancelBulkDelete}
         />

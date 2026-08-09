@@ -3108,45 +3108,37 @@ input[type="range"]:focus-visible,
   gap: 12px;
 }
 
-.bulk-delete-toolbar {
+/* Unified selection toolbar: Select all / Clear selection on the left,
+   Compare Selected / Delete Selected on the right. */
+.history-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 14px;
-  border: 1px solid var(--color-danger-border);
-  border-radius: 10px;
-  padding: 12px;
-  background: var(--color-danger-bg);
 }
 
-.bulk-delete-toolbar > div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.bulk-delete-toolbar strong {
-  color: var(--color-danger-text);
-  font-size: 13px;
-}
-
-.bulk-delete-toolbar span {
-  color: var(--color-body);
-  font-size: 12px;
-}
-
-.bulk-delete-toolbar__actions {
+.history-actions__group {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.bulk-delete-toolbar__count {
-  min-width: 72px;
-  text-align: center;
+.history-actions button {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font-size: 12px;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.history-actions button:hover {
+  border-color: var(--color-accent-border);
 }
 
 .history-table-scroll {
@@ -3251,10 +3243,17 @@ input[type="range"]:focus-visible,
   min-width: 180px;
 }
 
+/* Stack the four per-row actions in a 2x2 grid so the Actions column stays
+   narrow instead of forcing a wide single row of buttons. */
 .row-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
   white-space: nowrap;
+}
+
+.row-actions button {
+  width: 100%;
 }
 
 .row-actions button,
@@ -3727,14 +3726,43 @@ button.danger:hover {
 }
 
 /* Below-threshold "Compare Selected" explanation, shown in place on History. */
-.compare-warning {
-  margin: 12px 0 0;
+/* Floating overlay, not an in-flow banner: a fixed toast never reflows the page
+   as it appears and dismisses. */
+.history-toast {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 90;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
   border: 1px solid var(--color-accent-border);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 14px 20px;
   background: var(--color-accent-bg);
   color: var(--color-body);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 10px 30px var(--color-shadow-soft);
+  animation: history-toast-in 0.16s ease-out;
+}
+
+@keyframes history-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-toast {
+    animation: none;
+  }
 }
 
 .comparison-tooltip strong {
@@ -3791,13 +3819,9 @@ button.danger:hover {
   .comparison-actions,
   .detail-actions,
   .results-page-toolbar,
-  .bulk-delete-toolbar,
+  .history-actions,
   .run-flow__actions {
     flex-wrap: wrap;
-  }
-
-  .bulk-delete-toolbar {
-    align-items: stretch;
   }
 
   .results-page-toolbar {
