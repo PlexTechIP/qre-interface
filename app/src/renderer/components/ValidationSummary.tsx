@@ -38,6 +38,7 @@ const LABELS: Record<Exclude<keyof FieldErrors, "hyperparams">, string> = {
   tStatesPerRotation: "T Count Per Rotation",
   computeCapacityPercentage: "Compute Capacity Percentage",
   maxError: "Total Fault Tolerant Execution Error",
+  magicStateFactories: "Magic State Factory",
 };
  
 /** Inline error box — lists every unresolved field so there's no dead end. */

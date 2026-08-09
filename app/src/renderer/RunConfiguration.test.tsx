@@ -136,21 +136,29 @@ describe("Magic State Factory availability and multi-select", () => {
     expect(gsj24Checkbox()).toBeChecked();
   });
 
-  it("refuses to empty the set — the last checked factory cannot be unchecked", async () => {
+  it("lets the set be emptied, blocking Run with a message until one is re-selected", async () => {
     const user = userEvent.setup();
     render(<RunConfiguration />);
+    await fillRequiredTimes(user); // clear the unrelated required-time errors
 
-    // Round-Based alone: unchecking it would leave the set empty, which the
-    // contract forbids, so the control is disabled rather than silently repaired.
+    // Round-Based alone is now removable — unchecking it empties the set.
     expect(roundBasedCheckbox()).toBeChecked();
-    expect(roundBasedCheckbox()).toBeDisabled();
-
-    // Check a second one and Round-Based becomes removable again.
-    await user.click(litinski19Checkbox());
     expect(roundBasedCheckbox()).toBeEnabled();
+    expect(runButton()).toBeEnabled();
+
     await user.click(roundBasedCheckbox());
     expect(roundBasedCheckbox()).not.toBeChecked();
+    expect(
+      screen.getAllByText(
+        /at least one of round-based, litinski19 or gsj24 must stay selected/i,
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(runButton()).toBeDisabled();
+
+    // Re-selecting any primary clears the error and re-enables Run.
+    await user.click(litinski19Checkbox());
     expect(litinski19Checkbox()).toBeChecked();
+    expect(runButton()).toBeEnabled();
   });
 
   it("drops a now-disallowed factory from the set instead of leaving it selected", async () => {
@@ -381,11 +389,10 @@ describe("Configuration summary reflects the draft", () => {
       .getByRole("heading", { name: /configuration summary/i })
       .closest("section")!;
 
-    // Scope to the QEC cell in the summary grid.
+    // Scope to the QEC cell in the summary grid (each label/value pair is its
+    // own <div> inside the .config-grid).
     const qecValue = () =>
-      within(summary)
-        .getByText("QEC Code")
-        .closest(".summary-grid__cell") as HTMLElement;
+      within(summary).getByText("QEC Code").closest("div") as HTMLElement;
     expect(within(qecValue()).getByText("Surface Code")).toBeInTheDocument();
 
     await user.click(majoranaRadio());

@@ -1984,6 +1984,33 @@ input[type="range"]:focus-visible,
   text-transform: uppercase;
 }
 
+/* Boxed variant — the same card treatment the Configuration Summary's advanced
+   groups use, so the Magic State Factory reads as one clean panel rather than a
+   loose stack of checkboxes. */
+.micro-group--card {
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.micro-group--card:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 1px 3px var(--color-shadow-soft);
+}
+
+/* The title as an accent eyebrow with a hairline rule under it, matching
+   .advanced-details__group-title. It stretches to the card width as a flex item,
+   so the underline spans the whole card. */
+.micro-group--card .micro-group__title {
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-card-border);
+  color: var(--color-accent);
+  letter-spacing: 0.1em;
+}
+
 /* Two-column pairing for the micro-arch selects (prototype 2×2 layout). */
 .micro-grid {
   display: grid;
@@ -2014,12 +2041,17 @@ input[type="range"]:focus-visible,
   margin-top: 6px;
 }
 
+/* Each pipeline stage is its own nested box inside the Trace Transform card.
+   The card sits on --color-bg, so the stages use --color-surface to stand apart
+   as distinct panels. */
 .micro-subgroup {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-left: 2px solid var(--color-input-border);
-  padding: 14px 0 16px 18px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+  background: var(--color-surface);
 }
 
 .micro-subgroup__label {
@@ -2069,10 +2101,67 @@ input[type="range"]:focus-visible,
   display: flex;
   align-items: center;
   gap: 14px;
+  /* Room above the track for the value bubble that rides the thumb. */
+  padding-top: 30px;
 }
 
-.slider-row input[type="range"] {
+/* Positioning context for the thumb bubble; also the flex track that grows to
+   fill the row beside the number box. */
+.slider-shell {
+  position: relative;
   flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.slider-shell .slider {
+  width: 100%;
+}
+
+/* The current value, pinned over the thumb — shown only while the thumb is held
+   (pressed) or keyboard-focused, and hidden otherwise. `left` starts at the
+   thumb radius and scales the remaining track by --pos/100, so the bubble stays
+   centred on the thumb at both ends rather than overhanging the track (the thumb
+   centre never reaches 0% or 100%). --pos and --fill are set together on
+   .slider-shell. */
+.slider__bubble {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 9px;
+  left: calc(9px + (100% - 18px) * (var(--pos, 100) / 100));
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px var(--color-shadow-soft);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+
+.slider:active + .slider__bubble,
+.slider:focus-visible + .slider__bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Caret pointing down at the thumb. */
+.slider__bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--color-accent);
 }
 
 .slider-row__number {
@@ -2613,12 +2702,10 @@ input[type="range"]:focus-visible,
   opacity: 0.55;
 }
 
-/* Why an option is unselectable. A greyed-out checkbox with no reason is its own
-   bug — these rules are architecture- and error-rate-dependent and are not
-   guessable from the screen. */
-.checkbox-field__reason {
-  flex-basis: 100%;
-  padding-left: 26px;
+/* A factory's requirement, in parentheses to the right of its tooltip. Reads as
+   the reason the box is greyed out when the requirement is not met, and as an
+   at-a-glance capability note when it is. Muted so the option label leads. */
+.checkbox-field__requirement {
   color: var(--color-label-soft);
   font-size: 12px;
   line-height: 1.35;
@@ -2679,38 +2766,6 @@ input[type="range"]:focus-visible,
 .derived-field .form-section__intro {
   flex-basis: 100%;
   margin: 2px 0 0;
-}
-
-/* --- Summary panel (sidebar) ---------------------------------------*/
-/* Configuration summary — a horizontal grid of key facts (mockup). */
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px 24px;
-  margin: 0;
-}
-
-.summary-grid__cell {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-
-.summary-grid__cell dt {
-  color: var(--color-label);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.summary-grid__cell dd {
-  margin: 0;
-  color: var(--color-heading);
-  font-size: 14px;
-  font-weight: 700;
-  word-break: break-word;
 }
 
 /* Run name control inside the summary card. */
@@ -2947,18 +3002,6 @@ input[type="range"]:focus-visible,
   color: var(--color-body);
   font-size: 13px;
   white-space: pre-wrap;
-}
-
-@media (max-width: 900px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 520px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ==========================================================================
@@ -3728,7 +3771,8 @@ button.danger:hover {
 /* Below-threshold "Compare Selected" explanation, shown in place on History. */
 /* Floating overlay, not an in-flow banner: a fixed toast never reflows the page
    as it appears and dismisses. */
-.history-toast {
+.history-toast,
+.toast {
   position: fixed;
   left: 50%;
   top: 50%;
@@ -3760,7 +3804,8 @@ button.danger:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-toast {
+  .history-toast,
+  .toast {
     animation: none;
   }
 }

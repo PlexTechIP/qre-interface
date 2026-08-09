@@ -52,6 +52,8 @@ export interface FieldErrors {
   /** v1.4.0 trace pipeline stage 0, only present when the stage is enabled. */
   computeCapacityPercentage?: string;
   maxError?: string;
+  /** Set when the primary magic-state factory set is empty. */
+  magicStateFactories?: string;
   /** Per-benchmark hyperparameter errors (only present when non-empty). */
   hyperparams?: HyperparamError[];
 }
@@ -146,6 +148,14 @@ export function validateForm(state: FormState): FieldErrors {
   } else if (!(maxError > 0 && maxError <= 1)) {
     errors.maxError =
       "Total Fault Tolerant Execution Error must be between 0 and 1 (1.0 is allowed).";
+  }
+
+  // The primary factory set must hold at least one member. The UI lets the user
+  // uncheck the last one; this is what turns that empty state into a blocked Run
+  // with a message instead of a silent round_based repair.
+  if (state.magicStateFactories.length === 0) {
+    errors.magicStateFactories =
+      "At least one of Round-Based, Litinski19 or GSJ24 must stay selected.";
   }
 
   return errors;

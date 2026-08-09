@@ -177,6 +177,7 @@ export function RunConfiguration({
             onMagicStateFactoriesChange={(magicStateFactories) =>
               update((s) => ({ ...s, magicStateFactories }))
             }
+            magicStateFactoriesError={errors.magicStateFactories}
             secondaryFactories={state.secondaryFactories}
             onSecondaryFactoriesChange={(secondaryFactories) =>
               update((s) => ({ ...s, secondaryFactories }))

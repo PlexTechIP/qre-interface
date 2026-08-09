@@ -73,18 +73,18 @@ export const FACTORY_DEFINITIONS: Record<
 };
 
 /**
- * Memory Optimization — the SECTION's copy, which is all that has anywhere to
- * render.
+ * Memory Optimization — the SECTION's copy, shown in the field's tooltip. It
+ * carries the "why disabled" explanation that used to sit in a help paragraph
+ * under the control, so the field itself stays quiet and the reason is one hover
+ * away.
  *
  * The source doc also gives each yoked code its own sentence, but the control is
  * disabled and `<option>` cannot carry a tooltip, so there is no surface for
- * per-option copy. Those two strings lived here unread until 2026-08-07; a
- * transcribed string nothing displays reads like shipped copy and has to be
- * re-checked on every doc revision for no benefit. Re-transcribe them from
- * § Config Descriptions if the control is ever re-enabled with per-option help.
+ * per-option copy. Re-transcribe them from § Config Descriptions if the control
+ * is ever re-enabled with per-option help.
  */
 export const MEMORY_OPTIMIZATION_SECTION =
-  "Memory optimization techniques that reduce quantum memory resource requirements.";
+  "Yoked surface codes lower the cost of storing idle (memory) qubits, but on the current engine they don't change the estimate, so the control is disabled.";
 
 /** The four pipeline stages and their parameters. */
 export const TRACE_TRANSFORM_DEFINITIONS = {

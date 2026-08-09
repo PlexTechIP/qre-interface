@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { UploadedProgramFormat } from "../../shared/types";
 import {
@@ -85,6 +85,25 @@ export function ApplicationSection({
   const [dragging, setDragging] = useState(false);
   /** Why the last pick/drop could not be turned into a real path, if it couldn't. */
   const [pathError, setPathError] = useState<string | null>(null);
+
+  // Transient popup, e.g. when a Save targets a program already in the library.
+  // Keyed by an incrementing seq so a repeat action mounts a NEW live-region
+  // node (a screen reader re-announces it) and it auto-clears on a timer.
+  const [toast, setToast] = useState<{ key: number; message: string } | null>(null);
+  const toastSeq = useRef(0);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((message: string) => {
+    toastSeq.current += 1;
+    setToast({ key: toastSeq.current, message });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 1400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -174,6 +193,11 @@ export function ApplicationSection({
     const existing = value.savedPrograms.find(
       (p) => p.filePath === filePath && p.format === format,
     );
+    if (existing) {
+      // Already in the library — re-select it rather than duplicating, and say
+      // so, since the Save button otherwise looks like it did nothing new.
+      showToast("Saved program already exists.");
+    }
     const id = existing?.id ?? crypto.randomUUID();
     const savedPrograms: SavedProgram[] = existing
       ? value.savedPrograms
@@ -201,6 +225,13 @@ export function ApplicationSection({
 
   return (
     <section className="form-section application-section" aria-labelledby="application-heading">
+      {/* Transient popup, e.g. saving a program already in the library. Keyed so
+          a repeat action re-announces; auto-dismisses on a timer. */}
+      {toast ? (
+        <p key={toast.key} role="alert" className="toast">
+          {toast.message}
+        </p>
+      ) : null}
       <header className="form-section__head">
         <h2 id="application-heading" className="form-section__title">
           Application
@@ -436,10 +467,9 @@ export function ApplicationSection({
         </div>
       ) : (
         <div className="field-block">
-          <span className="field-eyebrow" id="manual-counts-label">
-            Logical Resource Counts
-          </span>
-          <p className="dropzone__formats">{MANUAL_COUNTS_SECTION}</p>
+          <p className="dropzone__formats" id="manual-counts-label">
+            {MANUAL_COUNTS_SECTION}
+          </p>
           <div className="form-grid" role="group" aria-labelledby="manual-counts-label">
             {MANUAL_COUNT_FIELDS.map((field) => (
               <NumberField

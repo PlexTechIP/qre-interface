@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MemoryOptimizationId } from "../../shared/types";
@@ -38,21 +38,40 @@ function memoryOptControl(): HTMLSelectElement {
 }
 
 describe("Memory Optimization is marked unavailable, not optional", () => {
-  it("disables the control", () => {
+  it("lists the yoked codes but disables them, leaving only None selectable", () => {
     // The yoked codes only PROVIDE a MEMORY instruction; nothing in this build
-    // demands one, so selecting them changes nothing. An enabled control that
-    // silently does nothing is the defect this replaces.
+    // demands one, so selecting them changes nothing. They stay visible in the
+    // dropdown so their existence is discoverable, but each is disabled — an
+    // enabled option that silently does nothing is the defect this replaces.
     renderSection();
 
-    expect(memoryOptControl()).toBeDisabled();
+    const control = memoryOptControl();
+    expect(control).toBeEnabled();
+
+    const options = within(control).getAllByRole("option") as HTMLOptionElement[];
+    const byLabel = (pattern: RegExp): HTMLOptionElement => {
+      const match = options.find((option) => pattern.test(option.textContent ?? ""));
+      if (!match) throw new Error(`No option matching ${pattern}`);
+      return match;
+    };
+
+    expect(byLabel(/^None$/i)).toBeEnabled();
+    expect(byLabel(/1D Yoked/i)).toBeDisabled();
+    expect(byLabel(/2D Yoked/i)).toBeDisabled();
   });
 
-  it("says why, rather than calling itself optional", () => {
+  it("flags itself unavailable, with the reason in the tooltip, not optional", () => {
     renderSection();
 
-    const help = screen.getByTestId("memory-opt-help");
-    expect(help).toHaveTextContent(/unavailable/i);
-    expect(help).not.toHaveTextContent(/defaults to None/i);
+    // The field's visible eyebrow says "(unavailable)", never "(optional)"...
+    const field = memoryOptControl().closest(".field") as HTMLElement;
+    expect(within(field).getByText(/unavailable/i)).toBeInTheDocument();
+    expect(field).not.toHaveTextContent(/optional/i);
+
+    // ...and the "why" lives in the tooltip now, not a help paragraph.
+    expect(
+      screen.getByText(/they don't change the estimate, so the control is disabled/i),
+    ).toBeInTheDocument();
   });
 
   it("still shows the value a stored record carries", () => {
