@@ -159,7 +159,8 @@ describe("App shell wiring", () => {
     const nameInput = screen.getByRole("textbox", {
       name: /optional/i,
     }) as HTMLInputElement;
-    expect(nameInput.value).toMatch(/rerun$/i);
+    // Rerun appends an incrementing "(n)" suffix, like a duplicate download.
+    expect(nameInput.value).toMatch(/\(\d+\)$/);
   });
 
   it("keeps each run's selected frontier row across Results, History, and Comparison", async () => {

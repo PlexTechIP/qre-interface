@@ -213,7 +213,8 @@ describe("Run History — per-run actions (Part D)", () => {
 
     const original = MOCK_RUN_RECORDS.find((r) => r.config.name === SUCCESS_NAME);
     expect(original).toBeDefined();
-    expect(reconstructed.name).toBe(SUCCESS_NAME);
+    // Rerunning a run appends "(1)" the way a duplicate download would.
+    expect(reconstructed.name).toBe(`${SUCCESS_NAME}(1)`);
     expect(reconstructed.id).not.toBe(original?.config.id);
   });
 });

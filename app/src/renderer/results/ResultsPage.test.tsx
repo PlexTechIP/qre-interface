@@ -63,7 +63,8 @@ describe("Results page saved-run actions", () => {
     expect(onRerunRequest).toHaveBeenCalledTimes(1);
     const request = onRerunRequest.mock.calls[0]?.[0];
     expect(request.sourceRecord.id).toBe(record.id);
-    expect(request.config.name).toBe(record.config.name);
+    // Rerun appends an incrementing "(n)" suffix to the source name.
+    expect(request.config.name).toBe(`${record.config.name}(1)`);
     expect(request.config.id).not.toBe(record.config.id);
     expect(request.config.createdAt).not.toBe(record.config.createdAt);
   });
