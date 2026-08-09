@@ -262,12 +262,23 @@ export function normalizeTraceTransform(value: unknown): TraceTransform {
  * in length, so listing only the stages present is what keeps it honest — a
  * reader can tell a two-stage run from a four-stage one.
  */
-export function describeTraceTransform(transform: TraceTransform): string {
+/**
+ * The pipeline stages that ACTUALLY RUN, in execution order. PSSPC and Lattice
+ * Surgery are always present; Dynamic Memory Compute and Unmemory bracket them
+ * only when enabled, so the length tells a two-stage run from a four-stage one.
+ */
+export function traceTransformStages(transform: TraceTransform): string[] {
   const stages = ["PSSPC", "Lattice Surgery"];
   if (transform.dynamicMemoryCompute) stages.unshift("Dynamic Memory Compute");
   if (transform.unmemory) stages.push("Unmemory");
+  return stages;
+}
 
-  const parts = [stages.join(" → "), `${transform.tStatesPerRotation} T/rotation`];
+export function describeTraceTransform(transform: TraceTransform): string {
+  const parts = [
+    traceTransformStages(transform).join(" → "),
+    `${transform.tStatesPerRotation} T/rotation`,
+  ];
   if (transform.ccxMagicStates) parts.push("CCX magic states");
   parts.push(`slowdown ${transform.slowDownFactor}`);
   return parts.join(" · ");

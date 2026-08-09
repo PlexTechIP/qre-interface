@@ -283,7 +283,9 @@ export function MicroArchitectureSection({
         </h2>
       </header>
  
-      <div className="micro-grid">
+      <div className="micro-group">
+        <span className="micro-group__title">Error Correction</span>
+        <div className="micro-grid">
         {/* QEC code is locked to the architecture — the value tracks the
             derivation and the control is inert. */}
         <Field
@@ -312,76 +314,12 @@ export function MicroArchitectureSection({
           </select>
         </Field>
  
-        {/* ONE control, five options — the 2026-07-31 POC ask. The analyst never
-            sees "primary" or "secondary"; the split lives at the boundary, where
-            it has to, because the estimator unions the first three into a single
-            factory query and multiplies the last two onto it as modifiers. */}
-        <fieldset className="field" aria-labelledby="micro-factory-label">
-          <legend className="field__label" id="micro-factory-label">
-            Magic State Factory
-          </legend>
-          {FACTORY_MEMBERS.map((id) => {
-            const checked = isSecondaryMember(id)
-              ? secondarySet.has(id)
-              : primarySet.has(id);
-            const disabledReason = memberDisabledReason(id);
-            // A <div> wrapper with an explicit htmlFor, NOT a wrapping <label>.
-            // Anything inside a label is walked by accessible-name computation,
-            // so a nested tooltip trigger would make this checkbox announce as
-            // "Litinski19 Litinski19 definition". The name stays exactly the
-            // factory's label; the definition arrives via aria-describedby.
-            return (
-              <div key={id} className="checkbox-field">
-                <input
-                  id={`micro-factory-${id}`}
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabledReason !== undefined}
-                  aria-describedby={definitionId(`micro-factory-${id}`)}
-                  onChange={() =>
-                    isSecondaryMember(id) ? toggleSecondary(id) : togglePrimary(id)
-                  }
-                />
-                <label htmlFor={`micro-factory-${id}`}>
-                  {FACTORY_MEMBER_LABELS[id]}
-                </label>
-                <DefinitionTip
-                  id={definitionId(`micro-factory-${id}`)}
-                  label={FACTORY_MEMBER_LABELS[id]}
-                >
-                  {FACTORY_DEFINITIONS[id]}
-                </DefinitionTip>
-                {disabledReason ? (
-                  <span className="checkbox-field__reason">{disabledReason}</span>
-                ) : null}
-              </div>
-            );
-          })}
-          <p className="field__help">{factoryHelp}</p>
-        </fieldset>
-      </div>
- 
-      <hr className="micro-divider" />
- 
-      <div className="micro-grid">
-        {/* The Secondary Factory fieldset that used to sit here was merged into
-            the single Magic State Factory control above (2026-07-31 POC ask).
-            `secondaryFactories` is unchanged on the wire — see the partition in
-            that control. */}
-
-        {/* Unavailable rather than optional. Week 5 wired the field through to
-            build_isa_query and measured: with Dynamic Memory Compute supplying
-            the READ_FROM_MEMORY / WRITE_TO_MEMORY demand the yoked codes exist
-            to serve, the estimate is still bit-identical
-            (memoryOptimization.test.ts).
-
-            The copy says "consistent with", NOT "measured, not assumed". An
-            unchanged estimate has two explanations — the codes are inert, or
-            `query * YokedSurfaceCode.q()` does not put them anywhere qdk
-            applies — and nothing yet distinguishes them. §G's "prove it is
-            actually in the query" is still open; see the checklist. Either way
-            an enabled control that silently changes nothing is worse than a
-            disabled one that says why, so the control stays off. */}
+        {/* Memory Optimization sits beside QEC — both are code-level error
+            correction choices. Unavailable rather than optional: the field is
+            wired through to build_isa_query, but on qdk 1.30.0 the yoked codes
+            leave the estimate unchanged even with Dynamic Memory Compute
+            supplying the memory demand they serve, so the control says why
+            instead of pretending to be optional. */}
         <div className="field">
           <div className="field__label-row">
             <label className="field__label" htmlFor="micro-memory-opt">
@@ -427,12 +365,59 @@ export function MicroArchitectureSection({
             disabled.
           </p>
         </div>
+        </div>
       </div>
- 
-      <hr className="micro-divider" />
- 
-      <div className="field-block">
-        <span className="field-eyebrow">Trace Transform</span>
+
+      {/* ONE control, five options — the 2026-07-31 POC ask. The analyst never
+          sees "primary" or "secondary"; the split lives at the boundary, where
+          it has to, because the estimator unions the first three into a single
+          factory query and multiplies the last two onto it as modifiers. */}
+      <fieldset className="field micro-group" aria-labelledby="micro-factory-label">
+        <legend className="micro-group__title" id="micro-factory-label">
+          Magic State Factory
+        </legend>
+          {FACTORY_MEMBERS.map((id) => {
+            const checked = isSecondaryMember(id)
+              ? secondarySet.has(id)
+              : primarySet.has(id);
+            const disabledReason = memberDisabledReason(id);
+            // A <div> wrapper with an explicit htmlFor, NOT a wrapping <label>.
+            // Anything inside a label is walked by accessible-name computation,
+            // so a nested tooltip trigger would make this checkbox announce as
+            // "Litinski19 Litinski19 definition". The name stays exactly the
+            // factory's label; the definition arrives via aria-describedby.
+            return (
+              <div key={id} className="checkbox-field">
+                <input
+                  id={`micro-factory-${id}`}
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabledReason !== undefined}
+                  aria-describedby={definitionId(`micro-factory-${id}`)}
+                  onChange={() =>
+                    isSecondaryMember(id) ? toggleSecondary(id) : togglePrimary(id)
+                  }
+                />
+                <label htmlFor={`micro-factory-${id}`}>
+                  {FACTORY_MEMBER_LABELS[id]}
+                </label>
+                <DefinitionTip
+                  id={definitionId(`micro-factory-${id}`)}
+                  label={FACTORY_MEMBER_LABELS[id]}
+                >
+                  {FACTORY_DEFINITIONS[id]}
+                </DefinitionTip>
+                {disabledReason ? (
+                  <span className="checkbox-field__reason">{disabledReason}</span>
+                ) : null}
+              </div>
+            );
+          })}
+          <p className="field__help">{factoryHelp}</p>
+        </fieldset>
+
+      <div className="micro-group">
+        <span className="micro-group__title">Trace Transform</span>
         {/* An ORDERED pipeline, not a choice. Two stages always run and two are
             optional; the order is a correctness property of qdk, not a
             presentation preference — PSSPC alone yields an empty frontier, and
@@ -686,10 +671,8 @@ export function MicroArchitectureSection({
         </div>
       </div>
  
-      <hr className="micro-divider" />
- 
-      <div className="field-block">
-        <span className="field-eyebrow field-eyebrow--with-tip">
+      <div className="micro-group">
+        <span className="micro-group__title field-eyebrow--with-tip">
           <span id="micro-max-error-label">Total Fault Tolerant Execution Error</span>
           <DefinitionTip
             id={definitionId("micro-max-error")}

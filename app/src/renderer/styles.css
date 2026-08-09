@@ -557,7 +557,13 @@ select {
   padding: 13px 16px;
 }
 
-.metric-card span {
+/* Scoped to the label (not `.metric-card span`) so the nested definition tip's
+   own spans keep their bubble typography instead of inheriting the uppercase
+   label treatment. inline-flex keeps the "?" trigger on the label's line. */
+.metric-card__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-label);
   font-size: 11px;
   font-weight: 800;
@@ -908,8 +914,21 @@ select {
   text-transform: uppercase;
 }
 
-.detail-item dt span {
-  display: block;
+/* dt stacks the label row over the unit; the label row holds the field name and
+   its definition tip inline. Scoping the unit to a class (not `dt span`) keeps
+   the tip's spans from picking up the block/faint unit styling. */
+.detail-item dt {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-item__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-item__unit {
   margin-top: 2px;
   color: var(--color-faint-label);
   font-size: 10px;
@@ -931,8 +950,113 @@ select {
 .config-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px 24px;
+  gap: 14px 24px;
   margin: 16px 0 0;
+}
+
+/* Each advanced group is its own card that lifts on hover; the top recap stays
+   flat against the panel so the drill-down reads as the boxed detail. */
+.advanced-details__group {
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.advanced-details__group:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 1px 3px var(--color-shadow-soft);
+}
+
+/* Tier 2: the category label leads its pair — dark and bold so it, not the
+   value, carries the emphasis. */
+.config-grid dt {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-body);
+}
+
+/* Tier 3: the value reads at the same size as its category but a lighter
+   weight, so it is never larger or bolder than the label above it. */
+.config-grid dd {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Configuration Summary: advanced (every value) -----------------*/
+.advanced-details {
+  margin-top: 18px;
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: 14px;
+}
+
+.advanced-details__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+  transition: background 0.15s ease;
+}
+
+/* Replace the default disclosure triangle with a chevron that rotates as the
+   panel opens. */
+.advanced-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-details__summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.advanced-details[open] .advanced-details__summary::before {
+  transform: rotate(45deg);
+}
+
+.advanced-details__summary:hover {
+  background: var(--color-accent-bg);
+}
+
+.advanced-details__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+/* Tier 1 of the hierarchy: an accent eyebrow that heads each card. The colour
+   sets it apart from the dark labels below without shouting, and the hairline
+   rule cleanly divides the header from the card body. */
+.advanced-details__group-title {
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-card-border);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Inside a card the box itself supplies the section separation; rows breathe
+   on whitespace. */
+.advanced-details__group .config-grid {
+  margin-top: 14px;
 }
 
 .sr-only {
@@ -1837,10 +1961,27 @@ input[type="range"]:focus-visible,
 }
 
 /* --- Micro Architecture Settings -----------------------------------*/
-.micro-divider {
-  margin: 22px 0;
-  border: 0;
-  border-top: 1px solid var(--color-border-soft);
+/* Each control cluster is its own labelled group. Consistent spacing between
+   groups replaces the old run of ad-hoc <hr> dividers. */
+.micro-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.micro-group + .micro-group {
+  margin-top: 26px;
+}
+
+/* Group heading — one level above the field labels: darker and slightly larger,
+   so "ERROR CORRECTION" reads as a heading over its "QEC CODE" / "MEMORY
+   OPTIMIZATION" fields rather than as a peer of them. */
+.micro-group__title {
+  color: var(--color-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* Two-column pairing for the micro-arch selects (prototype 2×2 layout). */

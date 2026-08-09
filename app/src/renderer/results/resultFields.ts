@@ -1,16 +1,22 @@
-import type { FieldMetric, FrontierRow, RunConfig } from "../../shared/types";
+import type {
+  Application,
+  Architecture,
+  FieldMetric,
+  FrontierRow,
+  RunConfig,
+} from "../../shared/types";
 import {
   ARCHITECTURE_LABELS,
   MAGIC_STATE_FACTORY_LABELS,
+  MEMORY_OPTIMIZATION_LABELS,
   QEC_LABELS,
+  SECONDARY_FACTORY_LABELS,
   T_COUNT_PER_ROTATION_LABEL,
   TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
 } from "../constants/labels";
 import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
-import {
-  describeTraceTransform,
-  normalizeTraceTransform,
-} from "../../shared/traceTransform";
+import { editableParams } from "../../shared/benchmarkParams";
+import { normalizeTraceTransform } from "../../shared/traceTransform";
 
 export interface ResultFieldDefinition {
   key: string;
@@ -218,22 +224,26 @@ export function getFieldDefinition(key: string, unit: string): ResultFieldDefini
  * `maxError`.
  */
 
-export function summarizeConfig(config: RunConfig | null | undefined, qreVersion: string) {
+export function summarizeConfig(config: RunConfig | null | undefined) {
   if (!config) {
     return [
       { label: "Application", value: "Unknown" },
       { label: "Architecture", value: "Unknown" },
+      { label: "Error Rate", value: "Unknown" },
       { label: "QEC Code", value: "Unknown" },
-      { label: "Factory", value: "Unknown" },
-      { label: "Trace Transform", value: "Unknown" },
+      { label: "Magic State Factory", value: "Unknown" },
       { label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL, value: "Unknown" },
-      { label: "QRE Version", value: qreVersion },
     ];
   }
- 
-  return [
-    { label: "Application", value: summarizeApplication(config.application) },
-    { label: "Architecture", value: summarizeArchitecture(config.architecture) },
+
+  const transform = normalizeTraceTransform(config.traceTransform);
+  const items = [
+    // 1. What's being estimated: the application and its primary sizing driver.
+    ...applicationSummaryItems(config.application, config.parameters),
+    // 2. Hardware: the profile and its headline error rate.
+    { label: "Architecture", value: ARCHITECTURE_LABELS[config.architecture.type] },
+    { label: "Error Rate", value: architectureErrorRate(config.architecture) },
+    // 3. Error correction: the QEC pairing and the selected factory/factories.
     {
       label: "QEC Code",
       value: QEC_LABELS[config.qecCode] ?? humanizeIdentifier(config.qecCode),
@@ -241,50 +251,128 @@ export function summarizeConfig(config: RunConfig | null | undefined, qreVersion
     {
       // A set as of v1.2.0 — every selected factory is named, so the summary
       // never implies a single choice the run did not make.
-      label: config.magicStateFactories.length > 1 ? "Factories" : "Factory",
+      label: config.magicStateFactories.length > 1 ? "Magic State Factories" : "Magic State Factory",
       value: config.magicStateFactories
         .map((factory) => MAGIC_STATE_FACTORY_LABELS[factory] ?? humanizeIdentifier(factory))
         .join(" + "),
     },
-    {
-      // Reads a stored config of any contract version: v1.1.0 records carry the
-      // old psspc/latticeSurgery union and still have to render.
-      label: "Trace Transform",
-      value: describeTraceTransform(normalizeTraceTransform(config.traceTransform)),
-    },
+    // 4. Accuracy: the target error to confirm before a run.
     {
       label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
       value: String(config.maxError),
     },
-    { label: "QRE Version", value: qreVersion },
   ];
+
+  // 5. Active optimizations: listed only when set away from the default, so the
+  // recap stays quiet for a stock configuration and flags the exceptions.
+  const memoryOptimization = config.memoryOptimization ?? "none";
+  if (memoryOptimization !== "none") {
+    items.push({
+      label: "Memory Optimization",
+      value: MEMORY_OPTIMIZATION_LABELS[memoryOptimization],
+    });
+  }
+  if (transform.dynamicMemoryCompute) {
+    items.push({ label: "Dynamic Memory Compute", value: "On" });
+  }
+  if (transform.unmemory) {
+    items.push({ label: "Unmemory", value: "On" });
+  }
+
+  return items;
 }
  
-function summarizeApplication(application: RunConfig["application"]): string {
+/**
+ * Section 1 of the recap: the application, then the hyperparameter (or two) that
+ * most drives its cost, so the biggest cost driver is always confirmable at a
+ * glance. Values fall back to the benchmark default when the run did not
+ * override them, matching what the engine actually used.
+ */
+function applicationSummaryItems(
+  application: Application,
+  parameters: RunConfig["parameters"],
+): { label: string; value: string }[] {
   if (application.type === "uploaded") {
     const fileName =
       application.filePath.split(/[\\/]/).pop() ?? application.filePath;
-    return `${fileName} (${FORMAT_LABELS[application.format]})`;
+    return [
+      { label: "Application", value: "Saved Program" },
+      { label: "Program", value: fileName },
+      { label: "Language", value: FORMAT_LABELS[application.format] },
+    ];
   }
- 
+
   if (application.type === "manualCounts") {
-    return `Manual Logical Counts (${application.numQubits} qubits, ${application.tCount} T)`;
+    return [
+      { label: "Application", value: "Manual Logical Counts" },
+      { label: "Logical Qubit Count", value: String(application.numQubits) },
+      { label: "T Count", value: String(application.tCount) },
+    ];
   }
- 
-  return (
+
+  const name =
     findBenchmark(application.benchmarkId)?.name ??
-    humanizeIdentifier(application.benchmarkId)
-  );
+    humanizeIdentifier(application.benchmarkId);
+  return [
+    { label: "Application", value: name },
+    ...benchmarkPrimaryItems(application.benchmarkId, parameters),
+  ];
 }
- 
-function summarizeArchitecture(architecture: RunConfig["architecture"]): string {
-  const label = ARCHITECTURE_LABELS[architecture.type];
-  if (architecture.type === "neutralAtom") {
-    // Neutral Atom has three distinct error rates rather than one; surface the
-    // Rydberg error as the representative figure, matching the QPU spec ordering.
-    return `${label}, Rydberg error ${architecture.rydbergError}`;
+
+/**
+ * The primary sizing hyperparameter(s) per benchmark, each chosen as the
+ * dominant cost driver. Unknown ids contribute nothing beyond the name.
+ */
+function benchmarkPrimaryItems(
+  benchmarkId: string,
+  parameters: RunConfig["parameters"],
+): { label: string; value: string }[] {
+  const show = (key: string) => resolveParamDisplay(benchmarkId, key, parameters);
+  switch (benchmarkId) {
+    case "shors-factoring":
+      return [{ label: "Bit Size", value: show("bitSize") }];
+    case "ekera-hastad-factoring":
+      return [{ label: "RSA Instance", value: show("rsaInstance") }];
+    case "quantum-dynamics":
+      return [
+        { label: "Lattice", value: `${show("latticeN1")} × ${show("latticeN2")}` },
+        { label: "Total Time", value: show("totalTime") },
+      ];
+    case "grovers-search":
+      return [{ label: "Search Qubits", value: show("searchQubits") }];
+    case "phase-estimation":
+      return [{ label: "Register Size", value: show("registerSize") }];
+    default:
+      return [];
   }
-  return `${label}, error ${architecture.errorRate}`;
+}
+
+/**
+ * Resolve one hyperparameter to its display string: the stored value, or the
+ * benchmark default when the run left it untouched; choice params render their
+ * option label rather than the raw enum id.
+ */
+function resolveParamDisplay(
+  benchmarkId: string,
+  key: string,
+  parameters: RunConfig["parameters"],
+): string {
+  const spec = editableParams(benchmarkId).find((param) => param.key === key);
+  const raw = parameters?.[key] ?? spec?.default;
+  if (raw === undefined || raw === null) return "—";
+  if (spec?.kind === "choice") {
+    return spec.options.find((option) => option.value === raw)?.label ?? String(raw);
+  }
+  return String(raw);
+}
+
+function architectureErrorRate(architecture: Architecture): string {
+  if (architecture.type === "neutralAtom") {
+    // Neutral Atom has three distinct error rates; the Rydberg error is the
+    // headline figure, matching how the recap named it before the split.
+    return String(architecture.rydbergError);
+  }
+  return String(architecture.errorRate);
 }
  
 function humanizeIdentifier(value: string): string {
@@ -300,4 +388,230 @@ export function humanizeKey(value: string): string {
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/**
+ * The "advanced details" breakdown of a config: every stored value, grouped for
+ * the Configuration Summary's expandable panel. `summarizeConfig` gives the
+ * seven-row recap; this is the exhaustive companion, so a value that lives on the
+ * config but not in the recap (every architecture parameter, each hyperparameter,
+ * the trace-transform stages, provenance) still has somewhere to be read.
+ */
+export interface AdvancedDetailItem {
+  label: string;
+  value: string;
+}
+export interface AdvancedDetailGroup {
+  title: string;
+  items: AdvancedDetailItem[];
+}
+
+const EVICTION_STRATEGY_LABELS: Record<string, string> = {
+  least_recently_used: "Least Recently Used",
+  least_frequently_used: "Least Frequently Used",
+  first_available: "First Available",
+};
+
+const yesNo = (value: boolean): string => (value ? "Yes" : "No");
+const ns = (value: number): string => `${value} ns`;
+
+function applicationDetailItems(
+  application: Application,
+  parameters: RunConfig["parameters"],
+): AdvancedDetailItem[] {
+  if (application.type === "uploaded") {
+    return [
+      { label: "Type", value: "Uploaded Program" },
+      { label: "File", value: application.filePath },
+      { label: "Format", value: FORMAT_LABELS[application.format] },
+      { label: "Add to Library", value: yesNo(application.addToLibrary) },
+    ];
+  }
+  if (application.type === "manualCounts") {
+    return [
+      { label: "Type", value: "Manual Logical Counts" },
+      { label: "Number of Qubits", value: String(application.numQubits) },
+      { label: "T Count", value: String(application.tCount) },
+      { label: "Rotation Count", value: String(application.rotationCount) },
+      { label: "Rotation Depth", value: String(application.rotationDepth) },
+      { label: "CCZ Count", value: String(application.cczCount) },
+      { label: "CCiX Count", value: String(application.ccixCount) },
+      { label: "Measurement Count", value: String(application.measurementCount) },
+    ];
+  }
+  // Benchmark: name it, then every hyperparameter the run actually carries, in
+  // the Q# argument order. Choice values resolve to their option label so the
+  // panel reads the way the form does, not the raw enum id.
+  const items: AdvancedDetailItem[] = [
+    { label: "Type", value: "Benchmark" },
+    {
+      label: "Benchmark",
+      value:
+        findBenchmark(application.benchmarkId)?.name ??
+        humanizeIdentifier(application.benchmarkId),
+    },
+  ];
+  for (const param of editableParams(application.benchmarkId)) {
+    const raw = parameters?.[param.key];
+    if (raw === undefined || raw === null) continue;
+    const value =
+      param.kind === "choice"
+        ? (param.options.find((option) => option.value === raw)?.label ?? String(raw))
+        : String(raw);
+    items.push({ label: param.label, value });
+  }
+  return items;
+}
+
+function architectureDetailItems(architecture: Architecture): AdvancedDetailItem[] {
+  const type = { label: "Type", value: ARCHITECTURE_LABELS[architecture.type] };
+  if (architecture.type === "gateBased") {
+    return [
+      type,
+      { label: "Error Rate", value: String(architecture.errorRate) },
+      { label: "Gate Time", value: ns(architecture.gateTime) },
+      { label: "Measurement Time", value: ns(architecture.measurementTime) },
+      {
+        label: "Two-Qubit Gate Time",
+        value:
+          architecture.twoQubitGateTime == null
+            ? "Engine default"
+            : ns(architecture.twoQubitGateTime),
+      },
+    ];
+  }
+  if (architecture.type === "majorana") {
+    return [
+      type,
+      { label: "Error Rate", value: String(architecture.errorRate) },
+      { label: "Operation Time", value: ns(architecture.operationTime) },
+      {
+        label: "T Error Rate",
+        value:
+          architecture.tErrorRate === undefined
+            ? "Derived from error rate"
+            : String(architecture.tErrorRate),
+      },
+      {
+        label: "Target Year",
+        value:
+          architecture.targetYear === undefined
+            ? "—"
+            : `${architecture.targetYear} (inert on this pipeline)`,
+      },
+    ];
+  }
+  return [
+    type,
+    { label: "Rydberg Time", value: ns(architecture.rydbergTime) },
+    { label: "Rydberg Error", value: String(architecture.rydbergError) },
+    { label: "Single-Qubit Time", value: ns(architecture.singleQubitTime) },
+    { label: "Single-Qubit Error", value: String(architecture.singleQubitError) },
+    { label: "Measurement Time", value: ns(architecture.measurementTime) },
+    { label: "Measurement Error", value: String(architecture.measurementError) },
+    { label: "Handoff Time", value: ns(architecture.handoffTime) },
+    { label: "Atom Spacing", value: `${architecture.atomSpacing} µm` },
+    {
+      label: "Data Qubit Spacing",
+      value:
+        architecture.dataQubitSpacing === undefined
+          ? "Engine default (12.0 µm)"
+          : `${architecture.dataQubitSpacing} µm`,
+    },
+    { label: "Max Velocity", value: `${architecture.maxVelocity} m/s` },
+    { label: "Max Acceleration", value: `${architecture.maxAcceleration} m/s²` },
+    {
+      label: "Surface Code 1-Qubit Time Factor",
+      value: String(architecture.surfaceCodeOneQubitTimeFactor),
+    },
+    {
+      label: "Surface Code 2-Qubit Time Factor",
+      value: String(architecture.surfaceCodeTwoQubitTimeFactor),
+    },
+    {
+      label: "Target Year",
+      value:
+        architecture.targetYear === undefined
+          ? "—"
+          : `${architecture.targetYear} (inert on this pipeline)`,
+    },
+  ];
+}
+
+export function advancedConfigDetails(config: RunConfig): AdvancedDetailGroup[] {
+  const factories = config.magicStateFactories.map(
+    (factory) => MAGIC_STATE_FACTORY_LABELS[factory] ?? humanizeIdentifier(factory),
+  );
+  const secondary = config.secondaryFactories ?? [];
+  const transform = normalizeTraceTransform(config.traceTransform);
+  const dmc = transform.dynamicMemoryCompute;
+
+  const traceItems: AdvancedDetailItem[] = [
+    { label: T_COUNT_PER_ROTATION_LABEL, value: String(transform.tStatesPerRotation) },
+    { label: "CCX Magic States", value: yesNo(transform.ccxMagicStates) },
+    { label: "Slow-Down Factor", value: String(transform.slowDownFactor) },
+    { label: "Dynamic Memory Compute", value: dmc ? "On" : "Off" },
+  ];
+  if (dmc) {
+    traceItems.push(
+      {
+        label: "Compute Capacity Percentage",
+        value: String(dmc.computeCapacityPercentage),
+      },
+      {
+        label: "Eviction Strategy",
+        value: EVICTION_STRATEGY_LABELS[dmc.evictionStrategy] ?? dmc.evictionStrategy,
+      },
+    );
+  }
+  traceItems.push({ label: "Unmemory", value: yesNo(transform.unmemory ?? false) });
+
+  return [
+    {
+      title: "Application",
+      items: applicationDetailItems(config.application, config.parameters),
+    },
+    { title: "Architecture", items: architectureDetailItems(config.architecture) },
+    {
+      title: "Error Correction & Factories",
+      items: [
+        {
+          label: "QEC Code",
+          value: QEC_LABELS[config.qecCode] ?? humanizeIdentifier(config.qecCode),
+        },
+        {
+          label: factories.length > 1 ? "Magic State Factories" : "Magic State Factory",
+          value: factories.join(", "),
+        },
+        {
+          label: "Secondary Factories",
+          value:
+            secondary.length > 0
+              ? secondary
+                  .map((f) => SECONDARY_FACTORY_LABELS[f] ?? humanizeIdentifier(f))
+                  .join(", ")
+              : "None",
+        },
+        {
+          label: "Memory Optimization",
+          value: MEMORY_OPTIMIZATION_LABELS[config.memoryOptimization ?? "none"],
+        },
+      ],
+    },
+    { title: "Trace Transform", items: traceItems },
+    {
+      title: "Run Metadata",
+      items: [
+        {
+          label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
+          value: String(config.maxError),
+        },
+        { label: "Config QRE Version", value: config.qreVersion },
+        { label: "Schema Version", value: config.schemaVersion },
+        { label: "Run Name", value: config.name },
+        { label: "Created At", value: config.createdAt },
+        { label: "Run ID", value: config.id },
+      ],
+    },
+  ];
 }
