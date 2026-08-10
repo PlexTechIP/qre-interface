@@ -1,11 +1,7 @@
-import {
-  ARCHITECTURE_LABELS,
-  MAGIC_STATE_FACTORY_LABELS,
-  QEC_LABELS,
-} from "../constants/labels";
-import { FORMAT_LABELS, findBenchmark } from "../constants/staticOptions";
-import { describeTraceTransform } from "../../shared/traceTransform";
-import { buildTraceTransform, deriveQecCode, type FormState } from "../state/formState";
+import { useState } from "react";
+
+import type { FormState } from "../state/formState";
+import { advancedConfigDetails, summarizeFormState } from "./configSummaryFields";
 
 interface ConfigurationSummaryProps {
   state: FormState;
@@ -13,91 +9,62 @@ interface ConfigurationSummaryProps {
   qreVersion: string;
 }
 
-function applicationSummary(app: FormState["application"]): string {
-  if (app.type === "benchmark") {
-    return findBenchmark(app.benchmarkId)?.name ?? app.benchmarkId ?? "—";
-  }
-  if (app.type === "saved") {
-    const chosen = app.savedPrograms.find((p) => p.id === app.selectedSavedId);
-    if (!chosen) return "no saved program chosen";
-    return `${chosen.name} (${FORMAT_LABELS[chosen.format]})`;
-  }
-  const file = app.upload.filePath || "no file chosen";
-  return `${file} (${FORMAT_LABELS[app.upload.format]})`;
-}
-
-function errorRateSummary(arch: FormState["architecture"]): string {
-  const rate =
-    arch.type === "gateBased" ? arch.gateBased.errorRate : arch.majorana.errorRate;
-  return rate === null ? "—" : String(rate);
-}
-
 /**
- * The pipeline the draft would run, described from what the serializer would
- * actually emit — so this row and the engine can never disagree.
- *
- * `buildTraceTransform` returns null in exactly one case: stage 0 enabled with
- * no capacity entered. This row used to fall back to a hand-copied
- * three-field object in that case, which rendered "PSSPC → Lattice Surgery" —
- * byte-identical to what it shows with the stage OFF. So the one place the
- * analyst reads back what will run silently dropped a stage they could see
- * switched on. Say the run is not ready instead; ValidationSummary names the
- * field to fix.
- */
-function traceTransformSummary(transform: FormState["traceTransform"]): string {
-  const built = buildTraceTransform(transform);
-  return built === null
-    ? "Dynamic Memory Compute is on but incomplete — enter a compute capacity"
-    : describeTraceTransform(built);
-}
-
-/**
- * Read-only configuration summary — a horizontal grid of the draft's key facts,
- * rendered at the bottom of the form. The run name lives in its own control
- * beneath this (see RunNameSection), so it is not repeated here.
+ * Read-only configuration summary at the bottom of the form. A flat, curated
+ * recap of the draft's headline facts, with an expandable panel that breaks out
+ * every value — the same shape and visuals as the results page's summary, so a
+ * draft and its saved run read identically. The run name lives in its own
+ * control beneath this (see RunNameSection), so it is not repeated here.
  */
 export function ConfigurationSummary({
   state,
+  generatedName,
   qreVersion,
 }: ConfigurationSummaryProps): React.JSX.Element {
-  const cells: readonly { label: string; value: string }[] = [
-    { label: "Application", value: applicationSummary(state.application) },
-    { label: "Architecture", value: ARCHITECTURE_LABELS[state.architecture.type] },
-    { label: "QEC Code", value: QEC_LABELS[deriveQecCode(state.architecture)] },
-    {
-      label: state.magicStateFactories.length > 1 ? "Factories" : "Factory",
-      value: state.magicStateFactories
-        .map((factory) => `${MAGIC_STATE_FACTORY_LABELS[factory]} Factory`)
-        .join(" + "),
-    },
-    {
-      // Every stage present, not a single name: the old row read as a selection.
-      label: "Trace Transform",
-      value: traceTransformSummary(state.traceTransform),
-    },
-    { label: "Error Rate", value: errorRateSummary(state.architecture) },
-    {
-      label: "Total Fault Tolerant Execution Error",
-      value: state.maxError === null ? "—" : String(state.maxError),
-    },
-    { label: "QRE Version", value: qreVersion },
-  ];
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const summaryItems = summarizeFormState(state);
+  const advancedGroups = advancedConfigDetails(state, generatedName, qreVersion);
 
   return (
-    <div className="summary-block">
+    <div className="config-summary">
       <header className="form-section__head">
         <h2 id="summary-heading" className="form-section__title">
           Configuration Summary
         </h2>
       </header>
-      <dl className="summary-grid">
-        {cells.map((cell) => (
-          <div key={cell.label} className="summary-grid__cell">
-            <dt>{cell.label}</dt>
-            <dd>{cell.value}</dd>
+
+      <dl className="config-grid">
+        {summaryItems.map((item) => (
+          <div key={item.label}>
+            <dt>{item.label}</dt>
+            <dd>{item.value}</dd>
           </div>
         ))}
       </dl>
+
+      <details
+        className="advanced-details"
+        onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+      >
+        <summary className="advanced-details__summary">Advanced details</summary>
+        {advancedOpen ? (
+          <div className="advanced-details__body">
+            {advancedGroups.map((group) => (
+              <div key={group.title} className="advanced-details__group">
+                <h3 className="advanced-details__group-title">{group.title}</h3>
+                <dl className="config-grid">
+                  {group.items.map((item) => (
+                    <div key={item.label}>
+                      <dt>{item.label}</dt>
+                      <dd>{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </details>
     </div>
   );
 }

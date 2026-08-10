@@ -590,23 +590,26 @@ export function isPrimaryFactoryAllowed(
 export function normalizeFormState(state: FormState): FormState {
   let next = state;
  
-  // Drop primary factories the current architecture disallows — raising an
-  // error rate or switching to Majorana can invalidate part of the set. The set
-  // must never end up empty, so an emptied one falls back to round_based, which
-  // every architecture accepts.
+  // Drop primary factories the current architecture disallows — raising an error
+  // rate or switching to Majorana can invalidate part of the set.
   //
-  // The fallback is compared against the CONTENT of the current set, not its
-  // length. Length alone read `0 !== 0` as "nothing to fix" for a set that was
-  // ALREADY empty, so the one input that most needs the fallback was the one
-  // input that skipped it — invisible while the checkbox group was the only
-  // writer (it can never empty the set), reachable the moment a model draft
-  // became a second writer. It also mis-read `["litinski19"] -> ["round_based"]`
-  // as unchanged, since both have length 1.
-  const allowedPrimaries = state.magicStateFactories.filter((factory) =>
+  // Two ways the result can be empty, and they mean different things:
+  //  - the set was ALREADY empty — the user cleared it in the checkbox group.
+  //    That is a legal-but-invalid draft state; `validateForm` flags it and the
+  //    Run gate blocks it, so it is left empty rather than silently repaired.
+  //  - filtering removed the last member because it was DISALLOWED (a switch to
+  //    Majorana with only litinski19 selected, or an agent draft naming a
+  //    factory this architecture forbids). There is a real factory to replace it
+  //    with, so it falls back to round_based, which every architecture accepts.
+  const filtered = state.magicStateFactories.filter((factory) =>
     isPrimaryFactoryAllowed(factory, state.architecture),
   );
   const primaries: MagicStateFactoryId[] =
-    allowedPrimaries.length > 0 ? allowedPrimaries : ["round_based"];
+    filtered.length === 0 && state.magicStateFactories.length > 0
+      ? ["round_based"]
+      : filtered;
+  // Compared by CONTENT, not length, so `["litinski19"] -> ["round_based"]` is
+  // seen as a change rather than mis-read as unchanged (both have length 1).
   const primariesUnchanged =
     primaries.length === state.magicStateFactories.length &&
     primaries.every((factory, index) => factory === state.magicStateFactories[index]);

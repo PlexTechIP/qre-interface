@@ -134,6 +134,23 @@ describe("upload pill", () => {
 
     expect(screen.getByText("shor.qs")).toHaveAttribute("title", ABSOLUTE);
   });
+
+  it("flashes a popup when Save targets a program already in the library", () => {
+    const value = uploadForm();
+    value.upload = { ...value.upload, filePath: ABSOLUTE, format: "qsharp" };
+    // The same file+format is already saved, so Save re-selects rather than
+    // duplicating — and says so instead of looking like it did nothing.
+    value.savedPrograms = [
+      { id: "saved-1", name: "shor.qs", filePath: ABSOLUTE, format: "qsharp" },
+    ];
+
+    render(<ApplicationSection value={value} errors={{}} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save Program" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /saved program already exists/i,
+    );
+  });
 });
 
 /**

@@ -1,4 +1,5 @@
 import { formatMetric } from "../results/formatMetric";
+import { DefinitionTip, definitionId } from "../components/DefinitionTip";
 import { buildComparisonRows, type ComparisonColumn } from "./comparisonModel";
 
 /**
@@ -54,11 +55,17 @@ export function ComparisonTable({ columns, hiddenKeys }: ComparisonTableProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const tipId = definitionId(`comparison-field-${row.key}`);
+            return (
             <tr key={row.key}>
-              <th scope="row" className="field-col">
-                {row.label}
-                {row.unitLabel ? <small className="muted"> · {row.unitLabel}</small> : null}
+              <th scope="row" className="field-col" aria-describedby={tipId}>
+                <span className="comparison-field-head">
+                  {row.label}
+                  <DefinitionTip id={tipId} label={row.label} portal>
+                    {row.description}
+                  </DefinitionTip>
+                </span>
               </th>
               {row.metrics.map((metric, index) => {
                 // A failed run reports no frontier at all, so EVERY cell in its
@@ -81,7 +88,8 @@ export function ComparisonTable({ columns, hiddenKeys }: ComparisonTableProps) {
                 );
               })}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

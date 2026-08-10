@@ -557,7 +557,13 @@ select {
   padding: 13px 16px;
 }
 
-.metric-card span {
+/* Scoped to the label (not `.metric-card span`) so the nested definition tip's
+   own spans keep their bubble typography instead of inheriting the uppercase
+   label treatment. inline-flex keeps the "?" trigger on the label's line. */
+.metric-card__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-label);
   font-size: 11px;
   font-weight: 800;
@@ -594,12 +600,6 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-}
-
-/* Embedded comparison view: no inner heading, so the actions sit alone at the
-   right (the shell's surface header carries the title). */
-.panel-header--actions-only {
-  justify-content: flex-end;
 }
 
 .panel-header p {
@@ -689,11 +689,6 @@ select {
   color: var(--color-body);
   font-size: 13px;
   cursor: pointer;
-}
-
-.field-filter-list small {
-  color: var(--color-faint-label);
-  font-size: 10px;
 }
 
 .chart-help {
@@ -908,8 +903,21 @@ select {
   text-transform: uppercase;
 }
 
-.detail-item dt span {
-  display: block;
+/* dt stacks the label row over the unit; the label row holds the field name and
+   its definition tip inline. Scoping the unit to a class (not `dt span`) keeps
+   the tip's spans from picking up the block/faint unit styling. */
+.detail-item dt {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-item__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-item__unit {
   margin-top: 2px;
   color: var(--color-faint-label);
   font-size: 10px;
@@ -931,8 +939,113 @@ select {
 .config-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px 24px;
+  gap: 14px 24px;
   margin: 16px 0 0;
+}
+
+/* Each advanced group is its own card that lifts on hover; the top recap stays
+   flat against the panel so the drill-down reads as the boxed detail. */
+.advanced-details__group {
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.advanced-details__group:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 1px 3px var(--color-shadow-soft);
+}
+
+/* Tier 2: the category label leads its pair — dark and bold so it, not the
+   value, carries the emphasis. */
+.config-grid dt {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-body);
+}
+
+/* Tier 3: the value reads at the same size as its category but a lighter
+   weight, so it is never larger or bolder than the label above it. */
+.config-grid dd {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Configuration Summary: advanced (every value) -----------------*/
+.advanced-details {
+  margin-top: 18px;
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: 14px;
+}
+
+.advanced-details__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+  transition: background 0.15s ease;
+}
+
+/* Replace the default disclosure triangle with a chevron that rotates as the
+   panel opens. */
+.advanced-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-details__summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.advanced-details[open] .advanced-details__summary::before {
+  transform: rotate(45deg);
+}
+
+.advanced-details__summary:hover {
+  background: var(--color-accent-bg);
+}
+
+.advanced-details__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+/* Tier 1 of the hierarchy: an accent eyebrow that heads each card. The colour
+   sets it apart from the dark labels below without shouting, and the hairline
+   rule cleanly divides the header from the card body. */
+.advanced-details__group-title {
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-card-border);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Inside a card the box itself supplies the section separation; rows breathe
+   on whitespace. */
+.advanced-details__group .config-grid {
+  margin-top: 14px;
 }
 
 .sr-only {
@@ -1521,6 +1634,10 @@ select {
   font-weight: 500;
   letter-spacing: normal;
   line-height: 1.35;
+  /* A tooltip is a wrapped block, always — never let a nowrap ancestor (e.g. the
+     comparison table's sticky field column) flatten it into one overflowing
+     line. The box grows as tall as the text needs. */
+  white-space: normal;
   opacity: 0;
   pointer-events: none;
   text-transform: none;
@@ -1837,10 +1954,54 @@ input[type="range"]:focus-visible,
 }
 
 /* --- Micro Architecture Settings -----------------------------------*/
-.micro-divider {
-  margin: 22px 0;
-  border: 0;
-  border-top: 1px solid var(--color-border-soft);
+/* Each control cluster is its own labelled group. Consistent spacing between
+   groups replaces the old run of ad-hoc <hr> dividers. */
+.micro-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.micro-group + .micro-group {
+  margin-top: 26px;
+}
+
+/* Group heading — one level above the field labels: darker and slightly larger,
+   so "ERROR CORRECTION" reads as a heading over its "QEC CODE" / "MEMORY
+   OPTIMIZATION" fields rather than as a peer of them. */
+.micro-group__title {
+  color: var(--color-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Boxed variant — the same card treatment the Configuration Summary's advanced
+   groups use, so the Magic State Factory reads as one clean panel rather than a
+   loose stack of checkboxes. */
+.micro-group--card {
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.micro-group--card:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 1px 3px var(--color-shadow-soft);
+}
+
+/* The title as an accent eyebrow with a hairline rule under it, matching
+   .advanced-details__group-title. It stretches to the card width as a flex item,
+   so the underline spans the whole card. */
+.micro-group--card .micro-group__title {
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-card-border);
+  color: var(--color-accent);
+  letter-spacing: 0.1em;
 }
 
 /* Two-column pairing for the micro-arch selects (prototype 2×2 layout). */
@@ -1873,12 +2034,17 @@ input[type="range"]:focus-visible,
   margin-top: 6px;
 }
 
+/* Each pipeline stage is its own nested box inside the Trace Transform card.
+   The card sits on --color-bg, so the stages use --color-surface to stand apart
+   as distinct panels. */
 .micro-subgroup {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-left: 2px solid var(--color-input-border);
-  padding: 14px 0 16px 18px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+  background: var(--color-surface);
 }
 
 .micro-subgroup__label {
@@ -1928,10 +2094,67 @@ input[type="range"]:focus-visible,
   display: flex;
   align-items: center;
   gap: 14px;
+  /* Room above the track for the value bubble that rides the thumb. */
+  padding-top: 30px;
 }
 
-.slider-row input[type="range"] {
+/* Positioning context for the thumb bubble; also the flex track that grows to
+   fill the row beside the number box. */
+.slider-shell {
+  position: relative;
   flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.slider-shell .slider {
+  width: 100%;
+}
+
+/* The current value, pinned over the thumb — shown only while the thumb is held
+   (pressed) or keyboard-focused, and hidden otherwise. `left` starts at the
+   thumb radius and scales the remaining track by --pos/100, so the bubble stays
+   centred on the thumb at both ends rather than overhanging the track (the thumb
+   centre never reaches 0% or 100%). --pos and --fill are set together on
+   .slider-shell. */
+.slider__bubble {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 9px;
+  left: calc(9px + (100% - 18px) * (var(--pos, 100) / 100));
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px var(--color-shadow-soft);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+
+.slider:active + .slider__bubble,
+.slider:focus-visible + .slider__bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Caret pointing down at the thumb. */
+.slider__bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--color-accent);
 }
 
 .slider-row__number {
@@ -2472,12 +2695,10 @@ input[type="range"]:focus-visible,
   opacity: 0.55;
 }
 
-/* Why an option is unselectable. A greyed-out checkbox with no reason is its own
-   bug — these rules are architecture- and error-rate-dependent and are not
-   guessable from the screen. */
-.checkbox-field__reason {
-  flex-basis: 100%;
-  padding-left: 26px;
+/* A factory's requirement, in parentheses to the right of its tooltip. Reads as
+   the reason the box is greyed out when the requirement is not met, and as an
+   at-a-glance capability note when it is. Muted so the option label leads. */
+.checkbox-field__requirement {
   color: var(--color-label-soft);
   font-size: 12px;
   line-height: 1.35;
@@ -2540,38 +2761,6 @@ input[type="range"]:focus-visible,
   margin: 2px 0 0;
 }
 
-/* --- Summary panel (sidebar) ---------------------------------------*/
-/* Configuration summary — a horizontal grid of key facts (mockup). */
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px 24px;
-  margin: 0;
-}
-
-.summary-grid__cell {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-
-.summary-grid__cell dt {
-  color: var(--color-label);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.summary-grid__cell dd {
-  margin: 0;
-  color: var(--color-heading);
-  font-size: 14px;
-  font-weight: 700;
-  word-break: break-word;
-}
-
 /* Run name control inside the summary card. */
 .run-name-block {
   gap: 7px;
@@ -2630,6 +2819,59 @@ input[type="range"]:focus-visible,
 
 .validation-box__field {
   font-weight: 700;
+}
+
+/* Each issue is a button that scrolls to and flashes its field. It reads as
+   plain list text until hovered, so the box stays a summary, not a toolbar. */
+.validation-box__jump {
+  display: block;
+  width: 100%;
+  border: 0;
+  margin: 0;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.validation-box__jump:hover,
+.validation-box__jump:focus-visible {
+  background: var(--color-danger-border);
+  text-decoration: underline;
+}
+
+.validation-box--pending .validation-box__jump:hover,
+.validation-box--pending .validation-box__jump:focus-visible {
+  background: var(--color-input-border);
+}
+
+/* Transient highlight on the field a jump lands on. */
+.field--flash {
+  animation: field-flash 1.2s ease-out;
+  border-radius: 8px;
+}
+
+@keyframes field-flash {
+  0%,
+  35% {
+    box-shadow: 0 0 0 3px var(--color-accent-border);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .validation-box__jump {
+    scroll-behavior: auto;
+  }
+  .field--flash {
+    animation: none;
+  }
 }
 
 /* --- Run button (primary CTA) + secondary --------------------------*/
@@ -2808,18 +3050,6 @@ input[type="range"]:focus-visible,
   white-space: pre-wrap;
 }
 
-@media (max-width: 900px) {
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 520px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ==========================================================================
    Run History + Comparison surfaces (Team 1, week 3)
    ========================================================================== */
@@ -2967,45 +3197,37 @@ input[type="range"]:focus-visible,
   gap: 12px;
 }
 
-.bulk-delete-toolbar {
+/* Unified selection toolbar: Select all / Clear selection on the left,
+   Compare Selected / Delete Selected on the right. */
+.history-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 14px;
-  border: 1px solid var(--color-danger-border);
-  border-radius: 10px;
-  padding: 12px;
-  background: var(--color-danger-bg);
 }
 
-.bulk-delete-toolbar > div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.bulk-delete-toolbar strong {
-  color: var(--color-danger-text);
-  font-size: 13px;
-}
-
-.bulk-delete-toolbar span {
-  color: var(--color-body);
-  font-size: 12px;
-}
-
-.bulk-delete-toolbar__actions {
+.history-actions__group {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.bulk-delete-toolbar__count {
-  min-width: 72px;
-  text-align: center;
+.history-actions button {
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font-size: 12px;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.history-actions button:hover {
+  border-color: var(--color-accent-border);
 }
 
 .history-table-scroll {
@@ -3110,10 +3332,17 @@ input[type="range"]:focus-visible,
   min-width: 180px;
 }
 
+/* Stack the four per-row actions in a 2x2 grid so the Actions column stays
+   narrow instead of forcing a wide single row of buttons. */
 .row-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
   white-space: nowrap;
+}
+
+.row-actions button {
+  width: 100%;
 }
 
 .row-actions button,
@@ -3381,6 +3610,14 @@ button.danger:hover {
   gap: 10px;
 }
 
+.comparison-summary__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .comparison-summary__line {
   display: flex;
   flex-wrap: wrap;
@@ -3404,6 +3641,68 @@ button.danger:hover {
 .comparison-chip--failed {
   border-color: var(--color-danger-border);
   background: var(--color-danger-bg);
+}
+
+.comparison-field-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The comparison table clips its own overflow (horizontal scroll) and its
+   sticky field column traps z-index, so a bubble positioned inside it can never
+   fully overlay the page. These tips render in a PORTAL instead (see
+   `DefinitionTip portal`): the bubble is `position: fixed`, placed beside the
+   trigger by script, and immune to both the clip and the stacking context. */
+.definition-tip__bubble--portal {
+  position: fixed;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  /* Fit the box to its own (fixed) description: as wide as the text wants, up to
+     a readable cap, then wrap. `text-wrap: balance` evens the line lengths and
+     `fit-content` shrinks the box to the longest balanced line, so a wrapped
+     definition sits in a neat rectangle with equal whitespace on every side —
+     no ragged gap left over on the right. */
+  width: fit-content;
+  max-width: min(340px, 80vw);
+  padding: 10px 13px;
+  text-wrap: balance;
+}
+
+.definition-tip__bubble--portal.definition-tip__bubble--open {
+  transform: none;
+}
+
+/* The boxed card look shared with Run Configuration and the Configuration
+   Summary's advanced-details groups: an accent eyebrow title over a hairline
+   and an accent border + soft shadow on hover. These panels sit directly on the
+   page background, so the card keeps the surface fill (not --color-bg, which
+   would blend into the page and wash out the title and description). */
+.panel--card {
+  background: var(--color-surface);
+  border-color: var(--color-card-border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.panel--card:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 2px 10px var(--color-shadow-soft);
+}
+
+.panel--card > .panel-header {
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+.panel--card > .panel-header h3 {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .comparison-table-scroll {
@@ -3528,6 +3827,17 @@ button.danger:hover {
   margin-bottom: 6px;
 }
 
+/* Recharts makes its SVG surface and shapes focusable, so a click paints a stray
+   focus outline across the chart. These figures are decorative — the comparison
+   table above is their keyboard/screen-reader equivalent — so drop the outline
+   on the chart internals. */
+.comparison-chart .recharts-wrapper,
+.comparison-chart .recharts-surface,
+.comparison-chart :focus,
+.comparison-chart :focus-visible {
+  outline: none;
+}
+
 .comparison-tooltip {
   display: flex;
   flex-direction: column;
@@ -3566,7 +3876,8 @@ button.danger:hover {
   color: var(--color-heading);
 }
 
-.comparison-curves__empty {
+.comparison-curves__empty,
+.comparison-charts__empty {
   margin: 0;
   padding: 24px 0;
   text-align: center;
@@ -3586,14 +3897,45 @@ button.danger:hover {
 }
 
 /* Below-threshold "Compare Selected" explanation, shown in place on History. */
-.compare-warning {
-  margin: 12px 0 0;
+/* Floating overlay, not an in-flow banner: a fixed toast never reflows the page
+   as it appears and dismisses. */
+.history-toast,
+.toast {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 90;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0;
   border: 1px solid var(--color-accent-border);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 14px 20px;
   background: var(--color-accent-bg);
   color: var(--color-body);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 10px 30px var(--color-shadow-soft);
+  animation: history-toast-in 0.16s ease-out;
+}
+
+@keyframes history-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-toast,
+  .toast {
+    animation: none;
+  }
 }
 
 .comparison-tooltip strong {
@@ -3650,13 +3992,9 @@ button.danger:hover {
   .comparison-actions,
   .detail-actions,
   .results-page-toolbar,
-  .bulk-delete-toolbar,
+  .history-actions,
   .run-flow__actions {
     flex-wrap: wrap;
-  }
-
-  .bulk-delete-toolbar {
-    align-items: stretch;
   }
 
   .results-page-toolbar {

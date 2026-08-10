@@ -163,11 +163,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   }, []);
 
   const handleRerunRequest = useCallback(
-    ({ sourceRecord, config }: RerunRequest): void => {
-      setRerunConfig({
-        ...config,
-        name: `${sourceRecord.config.name} · rerun`,
-      });
+    ({ config }: RerunRequest): void => {
+      // `config.name` already carries the incrementing "(n)" rerun suffix from
+      // createRerunRequest, so the shell just uses it verbatim.
+      setRerunConfig(config);
       setDraftHandoff(null);
       setActivePage("config");
     },

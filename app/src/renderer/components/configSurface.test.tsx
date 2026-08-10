@@ -26,7 +26,10 @@ import { MicroArchitectureSection } from "./MicroArchitectureSection";
 afterEach(cleanup);
 
 /** Renders the section over a live-ish state, returning the latest transform. */
-function renderSection(overrides: Partial<FormState> = {}) {
+function renderSection(
+  overrides: Partial<FormState> = {},
+  props: { magicStateFactoriesError?: string } = {},
+) {
   const state = { ...createInitialFormState(), ...overrides };
   const onTraceTransformChange = vi.fn();
   const onSecondaryFactoriesChange = vi.fn();
@@ -36,6 +39,7 @@ function renderSection(overrides: Partial<FormState> = {}) {
       architecture={state.architecture}
       magicStateFactories={state.magicStateFactories}
       onMagicStateFactoriesChange={onMagicStateFactoriesChange}
+      magicStateFactoriesError={props.magicStateFactoriesError}
       secondaryFactories={state.secondaryFactories}
       onSecondaryFactoriesChange={onSecondaryFactoriesChange}
       memoryOptimization={state.memoryOptimization}
@@ -96,43 +100,54 @@ describe("One factory control with five options", () => {
     expect(onSecondaryFactoriesChange).not.toHaveBeenCalled();
   });
 
-  it("refuses to empty the primary set — modifiers alone is unreachable", () => {
-    renderSection();
-    // Round-Based is the only primary checked, so it is held.
-    expect(factoryBox(/round-based/i)).toBeDisabled();
-    expect(
-      screen.getByText(/at least one of round-based, litinski19 or gsj24/i),
-    ).toBeInTheDocument();
+  it("lets the last primary be unchecked, asking to empty the set", async () => {
+    const user = userEvent.setup();
+    const { onMagicStateFactoriesChange } = renderSection();
+    // Round-Based is the only primary checked and is now removable, not held.
+    const roundBased = factoryBox(/round-based/i);
+    expect(roundBased).toBeEnabled();
+
+    await user.click(roundBased);
+    expect(onMagicStateFactoriesChange).toHaveBeenCalledWith([]);
   });
 
-  it("gives every unavailable option a visible reason", () => {
+  it("surfaces the empty-set error passed from validation", () => {
+    renderSection(
+      { magicStateFactories: [] },
+      {
+        magicStateFactoriesError:
+          "At least one of Round-Based, Litinski19 or GSJ24 must stay selected.",
+      },
+    );
+    const error = screen.getByRole("alert");
+    expect(error).toHaveTextContent(
+      /at least one of round-based, litinski19 or gsj24 must stay selected/i,
+    );
+  });
+
+  it("greys out the options an architecture can't use and names each requirement", () => {
     const state = createInitialFormState();
     state.architecture.type = "majorana";
     renderSection({ architecture: state.architecture });
 
     const boxes = within(factoryGroup()).getAllByRole("checkbox");
     const disabled = boxes.filter((box) => (box as HTMLInputElement).disabled);
-    // Majorana rules out Litinski19, GSJ24 and Magic Up-to-Clifford outright and
-    // holds Round-Based as the last primary standing, so the sweep below is not
-    // running over an empty list.
-    expect(disabled.map((box) => box.id)).toHaveLength(4);
+    // Majorana rules out Litinski19, GSJ24 and Magic Up-to-Clifford; Round-Based
+    // stays available (the set is allowed to go empty, so it is not force-held).
+    expect(disabled.map((box) => box.id).sort()).toEqual([
+      "micro-factory-gsj24",
+      "micro-factory-litinski19",
+      "micro-factory-magic_up_to_clifford",
+    ]);
 
-    // The invariant stated once, for all of them: a greyed-out box with no
-    // explanation is its own bug, and these rules are not guessable from the
-    // screen. Asserting only Magic Up-to-Clifford's reason let the other three
-    // lose theirs silently.
-    const missingReason = disabled
-      .filter(
-        (box) =>
-          !box.closest(".checkbox-field")?.querySelector(".checkbox-field__reason"),
-      )
-      .map((box) => box.id);
-    expect(missingReason).toEqual([]);
-
-    // And the wording is per-rule, not one copy-pasted sentence.
-    expect(screen.getByText(/not compatible with majorana/i)).toBeInTheDocument();
-    expect(screen.getByText(/at least one of round-based/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/needs superconducting/i)).toHaveLength(2);
+    // Each option carries its requirement in parentheses, per-rule, not one
+    // copy-pasted sentence.
+    expect(screen.getByText(/\(not compatible with majorana\)/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/requires superconducting/i)).toHaveLength(2);
+    // The section help states the Majorana rule.
+    expect(
+      screen.getByText(/majorana supports round-based only/i),
+    ).toBeInTheDocument();
   });
 
   it("keeps GSJ24 CCX bound to CCX Magic States in both directions", async () => {
@@ -436,22 +451,35 @@ describe("The summary reads back the pipeline the run would actually use", () =>
     },
   });
 
-  it("names stage 0 in the pipeline when it is on and complete", () => {
+  /** The value <dd> paired with the given label, scoped to its config-grid cell. */
+  const valueFor = (label: string): HTMLElement =>
+    within(screen.getByText(label).closest("div") as HTMLElement).getByText(
+      (_, node) => node?.tagName === "DD",
+    );
+
+  it("flags Dynamic Memory Compute as active when stage 0 is on and complete", () => {
     renderSummary(withStage0(0.5));
 
-    expect(
-      screen.getByText(/Dynamic Memory Compute → PSSPC → Lattice Surgery/),
-    ).toBeInTheDocument();
+    // Stage 0 is its own explicit recap row, so it can never look like the OFF
+    // state the way the old collapsed pipeline string could.
+    expect(valueFor("Dynamic Memory Compute")).toHaveTextContent("On");
   });
 
-  it("says stage 0 is incomplete rather than describing a two-stage run", () => {
+  it("still flags stage 0 in the recap even when its capacity is not yet entered", () => {
     renderSummary(withStage0(null));
 
-    // This row is the one place the analyst reads back what will run. It used
-    // to fall back to "PSSPC → Lattice Surgery" here — byte-identical to what
-    // it shows with the stage OFF — so a stage they could see switched on
-    // vanished silently.
-    expect(screen.getByText(/enter a compute capacity/i)).toBeInTheDocument();
-    expect(screen.queryByText(/^PSSPC → Lattice Surgery/)).not.toBeInTheDocument();
+    // The stage is switched on regardless of whether its capacity is filled in;
+    // ValidationSummary names the missing field. The recap must not drop it.
+    expect(valueFor("Dynamic Memory Compute")).toHaveTextContent("On");
+  });
+
+  it("breaks out the stage-0 parameters in the advanced details", async () => {
+    const user = userEvent.setup();
+    renderSummary(withStage0(0.5));
+
+    await user.click(screen.getByText("Advanced details"));
+
+    expect(valueFor("Compute Capacity Percentage")).toHaveTextContent("0.5");
+    expect(valueFor("Eviction Strategy")).toHaveTextContent("Least Recently Used");
   });
 });

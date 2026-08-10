@@ -5,7 +5,7 @@ import { getAdditionalFieldDefinitions, summarizeConfig } from "./resultFields";
 
 describe("renamed configuration labels", () => {
   it("uses the approved max-error label in the shared Results/History summary", () => {
-    const labels = summarizeConfig(buildRunConfig(), "qdk-test").map(
+    const labels = summarizeConfig(buildRunConfig()).map(
       (item) => item.label,
     );
 

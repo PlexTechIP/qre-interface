@@ -189,6 +189,90 @@ describe("comparison representative row", () => {
   });
 });
 
+describe("magic state factory row", () => {
+  it("states each run's configured factory even when the engine reported none", () => {
+    // A run using round_based whose representative point carries no factory node
+    // → the result field is absent. The config-sourced row must still name it.
+    const record = buildRunRecord({
+      config: { magicStateFactories: ["round_based"] },
+      result: { frontier: [buildFrontierRow({ additional: {} })] },
+    });
+
+    const rows = buildComparisonRows([toComparisonColumn(record)], new Set());
+    const factoryRow = rows.find((row) => row.key === "config.magicStateFactories");
+
+    expect(factoryRow?.label).toBe("Magic State Factory");
+    expect(factoryRow?.metrics[0]?.display).toBe("Round-Based");
+  });
+
+  it("joins a multi-factory set and drops the duplicate result field from the filter", () => {
+    const record = buildRunRecord({
+      config: { magicStateFactories: ["round_based", "litinski19"] },
+      result: {
+        frontier: [
+          buildFrontierRow({ additional: { magicStateFactory: { value: "round_based", unit: "", display: "round_based" } } }),
+        ],
+      },
+    });
+    const columns = [toComparisonColumn(record)];
+
+    const rows = buildComparisonRows(columns, new Set());
+    expect(rows.find((row) => row.key === "config.magicStateFactories")?.metrics[0]?.display).toBe(
+      "Round-Based + Litinski19",
+    );
+    // The engine's per-point field is deduped away, so the filter never lists it.
+    expect(additionalFieldDefinitions(columns).map((def) => def.key)).not.toContain(
+      "magicStateFactory",
+    );
+  });
+});
+
+describe("additional field filter list", () => {
+  const withExtra = (
+    name: string,
+    id: string,
+    key: string,
+    onNonRepresentativeRow = false,
+  ): RunRecord => {
+    const extraRow = buildFrontierRow({
+      additional: { [key]: { value: 1, unit: "", display: "1" } },
+    });
+    const plainRow = buildFrontierRow({ additional: {} });
+    return recordWithFrontier(
+      name,
+      id,
+      onNonRepresentativeRow ? [plainRow, extraRow] : [extraRow],
+    );
+  };
+
+  it("lists every additional field any selected run returned, even differing subsets", () => {
+    const columns = [
+      withExtra("A", "20000000-0000-4000-8000-00000000000a", "loss"),
+      withExtra("B", "20000000-0000-4000-8000-00000000000b", "evaluationTime"),
+    ].map((record) => toComparisonColumn(record));
+
+    const keys = additionalFieldDefinitions(columns).map((def) => def.key);
+
+    expect(keys).toContain("loss");
+    expect(keys).toContain("evaluationTime");
+  });
+
+  it("includes a field a run returned only on a non-representative frontier row", () => {
+    // selectedIndex 0 lacks the field; the run still returned it on row 1, so the
+    // filter has to surface it — the union is over the whole frontier, not the
+    // representative row.
+    const columns = [
+      toComparisonColumn(
+        withExtra("multi", "20000000-0000-4000-8000-00000000000c", "codeCycleTime", true),
+      ),
+    ];
+
+    const keys = additionalFieldDefinitions(columns).map((def) => def.key);
+
+    expect(keys).toContain("codeCycleTime");
+  });
+});
+
 describe("frontier curve series", () => {
   it("plots every point of every run, not just the representative row", () => {
     const columns = [

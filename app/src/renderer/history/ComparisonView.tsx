@@ -8,7 +8,7 @@ import { ComparisonTable } from "./ComparisonTable";
 import { DEFAULT_FIELD_DEFINITIONS } from "../results/resultFields";
 import { FrontierCurves } from "./FrontierCurves";
 import {
-  additionalFieldDefinitions,
+  comparisonFieldDefinitions,
   compareSelectionWarning,
   toComparisonColumn,
 } from "./comparisonModel";
@@ -48,6 +48,7 @@ export function ComparisonView({
 }: ComparisonViewProps) {
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isChartFilterOpen, setIsChartFilterOpen] = useState(false);
 
   const columns = useMemo(
     () =>
@@ -56,10 +57,19 @@ export function ComparisonView({
       ),
     [records, selectedRowByRunId],
   );
-  const additionalFields = useMemo(() => additionalFieldDefinitions(columns), [columns]);
-  const visibleAdditionalCount = additionalFields.filter((field) => !hiddenKeys.has(field.key)).length;
+  // Every field the table can show — configuration rows, the six result
+  // defaults, and the additional reported fields — so the filter can toggle any
+  // of them, not just the extras.
+  const allFields = useMemo(() => comparisonFieldDefinitions(columns), [columns]);
+  const defaultKeys = useMemo(
+    () => new Set<string>(DEFAULT_FIELD_DEFINITIONS.map((def) => def.key)),
+    [],
+  );
+  const visibleFieldCount = allFields.filter((field) => !hiddenKeys.has(field.key)).length;
   const failedCount = columns.filter((col) => col.failed).length;
-  const visibleFieldCount = DEFAULT_FIELD_DEFINITIONS.length + visibleAdditionalCount;
+  const filterNote = `Choose which of the ${allFields.length} field${
+    allFields.length === 1 ? "" : "s"
+  } appear in the table and the per-metric bars.`;
   // The sidebar and tab nav reach this surface directly, and are deliberately NOT
   // blocked — navigation should not dead-end. So the below-threshold explanation
   // has to live here too, not only behind the Compare Selected button.
@@ -72,26 +82,19 @@ export function ComparisonView({
       else next.add(key);
       return next;
     });
-  const showAll = () =>
-    setHiddenKeys((previous) => {
-      const next = new Set(previous);
-      additionalFields.forEach((field) => next.delete(field.key));
-      return next;
-    });
+  const showAll = () => setHiddenKeys(new Set());
   const showDefaultsOnly = () =>
-    setHiddenKeys((previous) => {
-      const next = new Set(previous);
-      additionalFields.forEach((field) => next.add(field.key));
-      return next;
-    });
+    setHiddenKeys(
+      new Set(allFields.map((field) => field.key).filter((key) => !defaultKeys.has(key))),
+    );
 
   return (
     <section
       className="comparison-view"
       {...(embedded ? { "aria-label": "Comparison" } : { "aria-labelledby": "comparison-title" })}
     >
-      <div className={`panel-header${embedded ? " panel-header--actions-only" : ""}`}>
-        {embedded ? null : (
+      {embedded ? null : (
+        <div className="panel-header">
           <div>
             <h2 id="comparison-title">Comparison</h2>
             <p>
@@ -100,16 +103,8 @@ export function ComparisonView({
                 : `Comparing ${records.length} selected run${records.length === 1 ? "" : "s"}.`}
             </p>
           </div>
-        )}
-        <div className="comparison-actions">
-          <button type="button" onClick={onExport} disabled={records.length === 0}>
-            Export comparison
-          </button>
-          <button type="button" onClick={onClear} disabled={records.length === 0}>
-            Clear selection
-          </button>
         </div>
-      </div>
+      )}
 
       {records.length === 0 ? (
         <div className="empty-state" role="status">
@@ -130,25 +125,35 @@ export function ComparisonView({
         <>
           {/* Hierarchy: what is being compared → the numbers → the charts. */}
           <div className="comparison-summary">
-            <p
-              className="comparison-summary__line"
-              role="status"
-              aria-label="Comparison summary"
-            >
-              <strong>
-                Comparing {columns.length} run{columns.length === 1 ? "" : "s"}
-              </strong>
-              {failedCount > 0 ? (
-                <span className="comparison-summary__failed">
+            <div className="comparison-summary__header">
+              <p
+                className="comparison-summary__line"
+                role="status"
+                aria-label="Comparison summary"
+              >
+                <strong>
+                  Comparing {columns.length} run{columns.length === 1 ? "" : "s"}
+                </strong>
+                {failedCount > 0 ? (
+                  <span className="comparison-summary__failed">
+                    {" · "}
+                    {failedCount} failed
+                  </span>
+                ) : null}
+                <span className="muted">
                   {" · "}
-                  {failedCount} failed
+                  {visibleFieldCount} field{visibleFieldCount === 1 ? "" : "s"} shown
                 </span>
-              ) : null}
-              <span className="muted">
-                {" · "}
-                {visibleFieldCount} field{visibleFieldCount === 1 ? "" : "s"} shown
-              </span>
-            </p>
+              </p>
+              <div className="comparison-actions">
+                <button type="button" onClick={onExport} disabled={records.length === 0}>
+                  Export comparison
+                </button>
+                <button type="button" onClick={onClear} disabled={records.length === 0}>
+                  Clear selection
+                </button>
+              </div>
+            </div>
             {thresholdNotice ? (
               <p
                 className="compare-warning"
@@ -178,13 +183,13 @@ export function ComparisonView({
             </div>
           </div>
 
-          <section className="panel">
+          <section className="panel panel--card">
             <div className="panel-header">
               <div>
                 <h3>Comparison table</h3>
                 <p>One column per run, one row per result field.</p>
               </div>
-              {additionalFields.length > 0 ? (
+              {allFields.length > 0 ? (
                 <button
                   type="button"
                   className="filter-toggle"
@@ -192,27 +197,26 @@ export function ComparisonView({
                   aria-controls="comparison-field-filter"
                   onClick={() => setIsFilterOpen((open) => !open)}
                 >
-                  Filter fields ({visibleAdditionalCount}/{additionalFields.length} extra shown)
+                  Filter fields ({visibleFieldCount}/{allFields.length} shown)
                   <span aria-hidden="true">{isFilterOpen ? "▲" : "▼"}</span>
                 </button>
-              ) : (
-                <span className="muted">6 default fields — the selected runs reported no extra fields</span>
-              )}
+              ) : null}
             </div>
-            {isFilterOpen && additionalFields.length > 0 ? (
+            {isFilterOpen && allFields.length > 0 ? (
               <FieldFilter
                 id="comparison-field-filter"
-                fields={additionalFields}
+                fields={allFields}
                 hiddenKeys={hiddenKeys}
                 onToggle={toggleField}
                 onShowAll={showAll}
                 onShowDefaultsOnly={showDefaultsOnly}
+                note={filterNote}
               />
             ) : null}
             <ComparisonTable columns={columns} hiddenKeys={hiddenKeys} />
           </section>
 
-          <section className="panel">
+          <section className="panel panel--card">
             <div className="panel-header">
               <div>
                 <h3>Pareto frontiers</h3>
@@ -226,17 +230,40 @@ export function ComparisonView({
             <FrontierCurves columns={columns} />
           </section>
 
-          <section className="panel">
+          <section className="panel panel--card">
             <div className="panel-header">
               <div>
                 <h3>Per-metric bars</h3>
                 <p>
-                  One bar per run at its representative row; the table above is the text
-                  equivalent.
+                  One bar per numeric field shown in the table above — filtering there or
+                  here adds and removes the matching chart.
                 </p>
               </div>
+              {allFields.length > 0 ? (
+                <button
+                  type="button"
+                  className="filter-toggle"
+                  aria-expanded={isChartFilterOpen}
+                  aria-controls="comparison-chart-field-filter"
+                  onClick={() => setIsChartFilterOpen((open) => !open)}
+                >
+                  Filter metrics ({visibleFieldCount}/{allFields.length} shown)
+                  <span aria-hidden="true">{isChartFilterOpen ? "▲" : "▼"}</span>
+                </button>
+              ) : null}
             </div>
-            <ComparisonCharts columns={columns} />
+            {isChartFilterOpen && allFields.length > 0 ? (
+              <FieldFilter
+                id="comparison-chart-field-filter"
+                fields={allFields}
+                hiddenKeys={hiddenKeys}
+                onToggle={toggleField}
+                onShowAll={showAll}
+                onShowDefaultsOnly={showDefaultsOnly}
+                note={filterNote}
+              />
+            ) : null}
+            <ComparisonCharts columns={columns} hiddenKeys={hiddenKeys} />
           </section>
         </>
       )}

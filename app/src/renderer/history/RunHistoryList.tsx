@@ -10,7 +10,7 @@ import {
   QEC_LABELS,
   applicationLabel,
 } from "./historyLabels";
- 
+
 /**
  * The Run History list — a PURE function of records + selection + callbacks.
  *
@@ -21,16 +21,19 @@ import {
  * to row 1; RunRecord remains immutable). All human-facing values route through
  * Team 2's `formatMetric`.
  *
- * This component only RENDERS and RAISES events. The container owns the store,
- * the confirm step for Delete, and the Rerun/Export handling.
+ * A SINGLE row selection feeds both actions: the checked runs are what "Compare
+ * Selected" and "Delete Selected" operate on. This component only RENDERS and
+ * RAISES events. The container owns the store, the confirm step for Delete, the
+ * too-small-selection popups, and the Rerun/Export handling.
  */
- 
+
 export interface RunHistoryListProps {
   records: RunRecord[];
   selectedId: string | null;
-  comparisonIds: string[];
-  deletionIds: string[];
-  isDeleteSelectionMode: boolean;
+  /** The unified selection: run ids checked for Compare / Delete. */
+  selectedIds: string[];
+  /** Present-and-selected count, used for the Compare Selected button badge. */
+  selectedCount: number;
   selectedRowByRunId: SelectedRowByRunId;
   /** True when any search/filter is active — distinguishes "no matches" from "no runs yet". */
   hasActiveFilter: boolean;
@@ -38,108 +41,86 @@ export interface RunHistoryListProps {
   onRerun: (record: RunRecord) => void;
   onDelete: (id: string) => void;
   onExport: (record: RunRecord) => void;
-  onToggleComparison: (id: string) => void;
-  onStartDeleteSelection: () => void;
-  onCancelDeleteSelection: () => void;
-  onToggleDeletion: (id: string) => void;
-  onToggleAllVisibleForDeletion: () => void;
-  onRequestBulkDelete: () => void;
+  onToggleSelection: (id: string) => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onCompareSelected: () => void;
+  onDeleteSelected: () => void;
   /** Navigate to Run Configuration from the empty state. Optional. */
   onNavigateToConfig?: () => void;
 }
- 
+
 function formatDateTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
+  // Compact numeric date (xx/xx/xx) + time keeps the column narrow.
+  const datePart = date.toLocaleDateString(undefined, {
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timePart = date.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
   });
+  return `${datePart} ${timePart}`;
 }
- 
+
 export function RunHistoryList({
   records,
   selectedId,
-  comparisonIds,
-  deletionIds,
-  isDeleteSelectionMode,
+  selectedIds,
+  selectedCount,
   selectedRowByRunId,
   hasActiveFilter,
   onViewDetails,
   onRerun,
   onDelete,
   onExport,
-  onToggleComparison,
-  onStartDeleteSelection,
-  onCancelDeleteSelection,
-  onToggleDeletion,
-  onToggleAllVisibleForDeletion,
-  onRequestBulkDelete,
+  onToggleSelection,
+  onSelectAll,
+  onClearSelection,
+  onCompareSelected,
+  onDeleteSelected,
   onNavigateToConfig,
 }: RunHistoryListProps) {
-  const comparisonSet = new Set(comparisonIds);
-  const deletionSet = new Set(deletionIds);
-  const areAllVisibleSelected =
-    records.length > 0 && records.every((record) => deletionSet.has(record.id));
- 
+  const selectedSet = new Set(selectedIds);
+
   return (
     <section className="panel history-panel" aria-labelledby="history-list-title">
       <div className="panel-header">
         <div>
           <h2 id="history-list-title">Completed Runs</h2>
-          <p>Select a run to open details; check two or more to compare.</p>
+          <p>Select a run to open details; check two or more to compare or delete.</p>
         </div>
         <div className="history-panel__summary">
           <span className="muted">
             {records.length} run{records.length === 1 ? "" : "s"}
           </span>
-          {!isDeleteSelectionMode && records.length > 0 ? (
-            <button
-              type="button"
-              className="danger"
-              onClick={onStartDeleteSelection}
-            >
-              Select to delete
-            </button>
-          ) : null}
         </div>
       </div>
 
-      {isDeleteSelectionMode ? (
-        <div
-          className="bulk-delete-toolbar"
-          role="region"
-          aria-label="Bulk delete controls"
-        >
-          <div>
-            <strong>Delete selection</strong>
-            <span>Choose runs to remove. Comparison selections stay separate.</span>
+      {records.length > 0 ? (
+        <div className="history-actions" role="group" aria-label="Selection actions">
+          <div className="history-actions__group">
+            <button type="button" onClick={onSelectAll}>
+              Select all
+            </button>
+            <button type="button" onClick={onClearSelection}>
+              Clear selection
+            </button>
           </div>
-          <div className="bulk-delete-toolbar__actions">
-            <button type="button" onClick={onToggleAllVisibleForDeletion}>
-              {areAllVisibleSelected ? "Deselect visible" : "Select all visible"}
+          <div className="history-actions__group">
+            <button type="button" onClick={onCompareSelected}>
+              Compare Selected{selectedCount > 0 ? ` (${selectedCount})` : ""}
             </button>
-            <span className="bulk-delete-toolbar__count" aria-live="polite">
-              {deletionIds.length} selected
-            </span>
-            <button type="button" onClick={onCancelDeleteSelection}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="danger"
-              disabled={deletionIds.length === 0}
-              onClick={onRequestBulkDelete}
-            >
-              Delete selected
+            <button type="button" className="danger" onClick={onDeleteSelected}>
+              Delete Selected
             </button>
           </div>
         </div>
       ) : null}
- 
+
       {records.length === 0 ? (
         <EmptyState
           hasActiveFilter={hasActiveFilter}
@@ -151,15 +132,8 @@ export function RunHistoryList({
             <thead>
               <tr>
                 <th scope="col" className="col-compare">
-                  <span className={isDeleteSelectionMode ? undefined : "sr-only"}>
-                    Compare
-                  </span>
+                  <span className="sr-only">Select</span>
                 </th>
-                {isDeleteSelectionMode ? (
-                  <th scope="col" className="col-delete-select">
-                    Delete
-                  </th>
-                ) : null}
                 <th scope="col">Run Name</th>
                 <th scope="col">Configuration</th>
                 <th scope="col">Date / Time</th>
@@ -183,31 +157,25 @@ export function RunHistoryList({
                   result,
                   selectedRowByRunId[record.id] ?? 0,
                 );
-                const isSelected = record.id === selectedId;
-                const isChecked = comparisonSet.has(record.id);
-                const isMarkedForDeletion = deletionSet.has(record.id);
+                const isOpen = record.id === selectedId;
+                const isChecked = selectedSet.has(record.id);
                 const isFailed = result.status === "failed";
- 
+
                 return (
                   <tr
                     key={record.id}
-                    className={[
-                      isSelected ? "selected" : "",
-                      isMarkedForDeletion ? "marked-for-deletion" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ") || undefined}
+                    className={isOpen ? "selected" : undefined}
                     // Row click is a pointer convenience; keyboard users reach the
                     // same action via Enter/Space on the focused row and the per-row
                     // "View" button. `aria-current` marks the open row and is valid on
                     // any element — `aria-selected` is only meaningful on a grid/listbox
                     // row, which this plain table row is not.
-                    aria-current={isSelected || undefined}
+                    aria-current={isOpen || undefined}
                     tabIndex={0}
                     onClick={() => onViewDetails(record.id)}
                     onKeyDown={(event) => {
                       // Only when the row itself is focused — inner controls (the
-                      // compare checkbox and the action buttons) own their own keys.
+                      // select checkbox and the action buttons) own their own keys.
                       if (
                         event.target === event.currentTarget &&
                         (event.key === "Enter" || event.key === " ")
@@ -221,23 +189,10 @@ export function RunHistoryList({
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => onToggleComparison(record.id)}
-                        aria-label={`Compare ${config.name}`}
+                        onChange={() => onToggleSelection(record.id)}
+                        aria-label={`Select ${config.name}`}
                       />
                     </td>
-                    {isDeleteSelectionMode ? (
-                      <td
-                        className="col-delete-select"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isMarkedForDeletion}
-                          onChange={() => onToggleDeletion(record.id)}
-                          aria-label={`Select ${config.name} for deletion`}
-                        />
-                      </td>
-                    ) : null}
                     <td>
                       <span className="run-name">{config.name}</span>
                       {isFailed ? <span className="status-pill failed">Failed</span> : null}
@@ -274,15 +229,13 @@ export function RunHistoryList({
                         <button type="button" onClick={() => onExport(record)}>
                           Export
                         </button>
-                        {isDeleteSelectionMode ? null : (
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={() => onDelete(record.id)}
-                          >
-                            Delete
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => onDelete(record.id)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -295,7 +248,7 @@ export function RunHistoryList({
     </section>
   );
 }
- 
+
 function EmptyState({
   hasActiveFilter,
   onNavigateToConfig,

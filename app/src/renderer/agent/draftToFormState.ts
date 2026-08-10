@@ -180,7 +180,14 @@ export function draftToFormState(
         name: draft.name ?? "",
         application,
         architecture,
-        magicStateFactories: [...draft.magicStateFactories],
+        // An empty set is schema-valid model output but must not land the form
+        // on nothing-checked: a machine draft gets the round_based default,
+        // whereas a person emptying the checkbox group in the form is left empty
+        // on purpose (that path shows the validation error instead).
+        magicStateFactories:
+          draft.magicStateFactories.length > 0
+            ? [...draft.magicStateFactories]
+            : ["round_based"],
         secondaryFactories: [...draft.secondaryFactories],
         memoryOptimization: draft.memoryOptimization,
         // Same spread rule as the architecture branches above. Stages 0 and 3

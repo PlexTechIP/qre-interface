@@ -2,15 +2,16 @@ import {
   MAGIC_STATE_FACTORY_IDS,
   MEMORY_OPTIMIZATION_IDS,
   SECONDARY_FACTORY_IDS,
+  type ArchitectureType,
   type MagicStateFactoryId,
   type MemoryOptimizationId,
+  type QecCodeId,
   type SecondaryFactoryId,
 } from "../../shared/types";
 import {
   ARCHITECTURE_LABELS,
   MAGIC_STATE_FACTORY_LABELS,
   MEMORY_OPTIMIZATION_LABELS,
-  QEC_LABELS,
   SECONDARY_FACTORY_LABELS,
 } from "../constants/labels";
 import {
@@ -57,6 +58,21 @@ const FACTORY_MEMBER_LABELS: Record<FactoryMemberId, string> = {
   ...SECONDARY_FACTORY_LABELS,
 };
 
+/**
+ * The hard requirement each factory carries, shown in parentheses beside the
+ * option. Only factories with a requirement appear here — Round-Based and
+ * GSJ24 CCX have none. The same condition drives whether the checkbox is
+ * disabled (see `isMemberDisabled`), so the greyed-out box always reads together
+ * with the reason it is greyed out.
+ */
+const FACTORY_REQUIREMENTS: Partial<Record<FactoryMemberId, string>> = {
+  litinski19:
+    "requires Superconducting ≤ 1e-3, or Neutral Atom with all errors ≤ 1e-3",
+  gsj24:
+    "requires Superconducting ≤ 1e-3, or Neutral Atom with Rydberg ≤ 1e-3 and single-qubit/measurement < 1e-2",
+  magic_up_to_clifford: "not compatible with Majorana",
+};
+
 const SECONDARY_MEMBERS = new Set<string>(SECONDARY_FACTORY_IDS);
 
 /** Whether a member is a modifier (secondary) rather than a primary factory. */
@@ -73,9 +89,12 @@ const EVICTION_STRATEGY_LABELS: Record<EvictionStrategy, string> = {
  
 interface MicroArchitectureSectionProps {
   architecture: ArchitectureForm;
-  /** Serialized primary magic-state factory set (multi-select, never empty). */
+  /** Serialized primary magic-state factory set (multi-select; may be emptied,
+   *  which surfaces `magicStateFactoriesError` and blocks Run). */
   magicStateFactories: readonly MagicStateFactoryId[];
   onMagicStateFactoriesChange: (value: MagicStateFactoryId[]) => void;
+  /** Set when the primary set is empty — no factory is selected. */
+  magicStateFactoriesError?: string | undefined;
   /** Serialized secondary-factory set (multi-select). */
   secondaryFactories: readonly SecondaryFactoryId[];
   onSecondaryFactoriesChange: (value: SecondaryFactoryId[]) => void;
@@ -92,14 +111,24 @@ interface MicroArchitectureSectionProps {
 }
  
 /**
- * The QEC-code catalogue for display. All three are contract values now; QEC is
- * locked to architecture, so the control's value always follows the derivation
- * and the control itself is inert.
+ * The QEC-code catalogue for display. All three are contract values; QEC is
+ * locked to architecture (each code is produced by exactly one architecture —
+ * see `expectedQecCode`), so the control's value always follows the derivation.
+ * The `architecture` here is the one that yields the code, used to grey out and
+ * annotate the options the current architecture doesn't produce.
  */
-const QEC_CODE_OPTIONS: readonly { value: string; label: string }[] = [
-  { value: "surface_code", label: "Surface Code" },
-  { value: "three_aux", label: "Three-Aux" },
-  { value: "low_move_surface_code", label: "Low-Move Surface Code" },
+const QEC_CODE_OPTIONS: readonly {
+  value: QecCodeId;
+  label: string;
+  architecture: ArchitectureType;
+}[] = [
+  { value: "surface_code", label: "Surface Code", architecture: "gateBased" },
+  { value: "three_aux", label: "Three-Aux", architecture: "majorana" },
+  {
+    value: "low_move_surface_code",
+    label: "Low-Move Surface Code",
+    architecture: "neutralAtom",
+  },
 ];
  
 /**
@@ -117,6 +146,7 @@ export function MicroArchitectureSection({
   architecture,
   magicStateFactories,
   onMagicStateFactoriesChange,
+  magicStateFactoriesError,
   secondaryFactories,
   onSecondaryFactoriesChange,
   memoryOptimization,
@@ -128,10 +158,8 @@ export function MicroArchitectureSection({
   onMaxErrorChange,
   computeCapacityError,
 }: MicroArchitectureSectionProps): React.JSX.Element {
-  const archLabel = ARCHITECTURE_LABELS[architecture.type];
   const derivedQec = deriveQecCode(architecture);
-  const qecLabel = QEC_LABELS[derivedQec];
- 
+
   const isMajorana = architecture.type === "majorana";
   const litinski19Allowed = isLitinski19AllowedInForm(architecture);
   const gsj24Allowed = isGsj24AllowedInForm(architecture);
@@ -143,21 +171,18 @@ export function MicroArchitectureSection({
    */
   const factoryHelp = isMajorana
     ? "Majorana supports Round-Based only. Selecting several factories asks the estimator to explore all of them and return one combined frontier."
-    : litinski19Allowed && gsj24Allowed
-      ? "Select one or more · the estimator explores every selected factory and returns one combined frontier."
-      : "Unavailable factories are filtered by architecture and error rate. Litinski19 needs Superconducting ≤ 1e-3, or Neutral Atom with all errors ≤ 1e-3. GSJ24 needs Superconducting ≤ 1e-3, or Neutral Atom with Rydberg ≤ 1e-3 and single-qubit/measurement < 1e-2.";
+    : "Select one or more · the estimator explores every selected factory and returns one combined frontier.";
  
   const primarySet = new Set(magicStateFactories);
 
   /**
-   * Toggle a primary factory. The set must never empty, so unchecking the last
-   * remaining one is refused — the user picks the replacement first, rather than
-   * passing through an invalid state the serializer would silently repair.
+   * Toggle a primary factory. The set may be emptied — unchecking the last one
+   * is allowed and surfaces `magicStateFactoriesError`, which blocks Run until a
+   * factory is re-selected, rather than the control refusing the click.
    */
   const togglePrimary = (id: MagicStateFactoryId): void => {
     const next = new Set(primarySet);
     if (next.has(id)) {
-      if (next.size === 1) return;
       next.delete(id);
     } else {
       next.add(id);
@@ -166,32 +191,16 @@ export function MicroArchitectureSection({
   };
 
   /**
-   * Why one of the five options is unselectable, or undefined when it is. Every
-   * disabled checkbox gets a reason — a greyed-out box with no explanation is
-   * its own bug, and the rules here are not guessable from the screen.
+   * Whether one of the five options is unselectable on the current architecture.
+   * Litinski19 and GSJ24 gate on the error-rate rules; Magic Up-to-Clifford is
+   * ruled out under Majorana. The reason for each is shown as the parenthetical
+   * requirement beside the option (see FACTORY_REQUIREMENTS).
    */
-  const memberDisabledReason = (id: FactoryMemberId): string | undefined => {
-    if (id === "litinski19" && !litinski19Allowed) {
-      return "Needs Superconducting with Error Rate ≤ 1e-3, or Neutral Atom with all three errors ≤ 1e-3.";
-    }
-    if (id === "gsj24" && !gsj24Allowed) {
-      return "Needs Superconducting with Error Rate ≤ 1e-3, or Neutral Atom with Rydberg ≤ 1e-3 and single-qubit/measurement < 1e-2.";
-    }
-    if (id === "magic_up_to_clifford" && isMajorana) {
-      return "Not compatible with Majorana.";
-    }
-    // The primary set must never empty: at least one of the first three has to
-    // stay selected, so the last one standing is held checked until the user
-    // picks a replacement. Modifiers alone is not a valid selection — there
-    // would be no factory query for them to modify.
-    if (
-      !isSecondaryMember(id) &&
-      primarySet.has(id) &&
-      primarySet.size === 1
-    ) {
-      return "At least one of Round-Based, Litinski19 or GSJ24 must stay selected.";
-    }
-    return undefined;
+  const isMemberDisabled = (id: FactoryMemberId): boolean => {
+    if (id === "litinski19") return !litinski19Allowed;
+    if (id === "gsj24") return !gsj24Allowed;
+    if (id === "magic_up_to_clifford") return isMajorana;
+    return false;
   };
 
   const secondarySet = new Set(secondaryFactories);
@@ -269,11 +278,18 @@ export function MicroArchitectureSection({
 
   const tStates = traceTransform.tStatesPerRotation;
  
-  // Percent of the track filled left of the thumb, used to paint the accent fill.
+  // Percent of the track filled left of the thumb, used to paint the accent fill
+  // AND to position the value bubble over the thumb.
   const tStatesFill = ((tStates - 5) / (20 - 5)) * 100;
   const maxErrorFill = (((maxError ?? 1) - 0.01) / (1 - 0.01)) * 100;
-  const fillStyle = (pct: number): React.CSSProperties =>
-    ({ "--fill": `${Math.min(100, Math.max(0, pct))}%` }) as React.CSSProperties;
+  // `--fill` is the percentage the track gradient reads; `--pos` is the same
+  // number, unitless, which the bubble's `left` calc scales by the thumb width
+  // so it stays centred on the thumb at both ends of the track. Both live on the
+  // shell so the slider (custom props inherit) and the bubble share one source.
+  const fillStyle = (pct: number): React.CSSProperties => {
+    const clamped = Math.min(100, Math.max(0, pct));
+    return { "--fill": `${clamped}%`, "--pos": clamped } as React.CSSProperties;
+  };
  
   return (
     <section className="form-section micro-section" aria-labelledby="micro-heading">
@@ -283,14 +299,15 @@ export function MicroArchitectureSection({
         </h2>
       </header>
  
-      <div className="micro-grid">
+      <div className="micro-group micro-group--card">
+        <span className="micro-group__title">Error Correction</span>
+        <div className="micro-grid">
         {/* QEC code is locked to the architecture — the value tracks the
             derivation and the control is inert. */}
         <Field
           id="micro-qec"
           label="QEC Code"
           definition={QEC_CODE_DEFINITIONS[derivedQec]}
-          help={`Locked to architecture (${archLabel} → ${qecLabel}).`}
         >
           <select
             id="micro-qec"
@@ -304,84 +321,31 @@ export function MicroArchitectureSection({
               /* locked to architecture — value is derived, never set here */
             }}
           >
-            {QEC_CODE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            {QEC_CODE_OPTIONS.map((option) => {
+              // The derived code is the only selectable one. The rest are greyed
+              // out and annotated with the architecture that would produce them,
+              // so the pairing is legible without letting the analyst pick a code
+              // the current architecture never yields.
+              const isDerived = option.value === derivedQec;
+              return (
+                <option key={option.value} value={option.value} disabled={!isDerived}>
+                  {isDerived
+                    ? option.label
+                    : `${option.label} (must use ${
+                        ARCHITECTURE_LABELS[option.architecture]
+                      } architecture)`}
+                </option>
+              );
+            })}
           </select>
         </Field>
  
-        {/* ONE control, five options — the 2026-07-31 POC ask. The analyst never
-            sees "primary" or "secondary"; the split lives at the boundary, where
-            it has to, because the estimator unions the first three into a single
-            factory query and multiplies the last two onto it as modifiers. */}
-        <fieldset className="field" aria-labelledby="micro-factory-label">
-          <legend className="field__label" id="micro-factory-label">
-            Magic State Factory
-          </legend>
-          {FACTORY_MEMBERS.map((id) => {
-            const checked = isSecondaryMember(id)
-              ? secondarySet.has(id)
-              : primarySet.has(id);
-            const disabledReason = memberDisabledReason(id);
-            // A <div> wrapper with an explicit htmlFor, NOT a wrapping <label>.
-            // Anything inside a label is walked by accessible-name computation,
-            // so a nested tooltip trigger would make this checkbox announce as
-            // "Litinski19 Litinski19 definition". The name stays exactly the
-            // factory's label; the definition arrives via aria-describedby.
-            return (
-              <div key={id} className="checkbox-field">
-                <input
-                  id={`micro-factory-${id}`}
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabledReason !== undefined}
-                  aria-describedby={definitionId(`micro-factory-${id}`)}
-                  onChange={() =>
-                    isSecondaryMember(id) ? toggleSecondary(id) : togglePrimary(id)
-                  }
-                />
-                <label htmlFor={`micro-factory-${id}`}>
-                  {FACTORY_MEMBER_LABELS[id]}
-                </label>
-                <DefinitionTip
-                  id={definitionId(`micro-factory-${id}`)}
-                  label={FACTORY_MEMBER_LABELS[id]}
-                >
-                  {FACTORY_DEFINITIONS[id]}
-                </DefinitionTip>
-                {disabledReason ? (
-                  <span className="checkbox-field__reason">{disabledReason}</span>
-                ) : null}
-              </div>
-            );
-          })}
-          <p className="field__help">{factoryHelp}</p>
-        </fieldset>
-      </div>
- 
-      <hr className="micro-divider" />
- 
-      <div className="micro-grid">
-        {/* The Secondary Factory fieldset that used to sit here was merged into
-            the single Magic State Factory control above (2026-07-31 POC ask).
-            `secondaryFactories` is unchanged on the wire — see the partition in
-            that control. */}
-
-        {/* Unavailable rather than optional. Week 5 wired the field through to
-            build_isa_query and measured: with Dynamic Memory Compute supplying
-            the READ_FROM_MEMORY / WRITE_TO_MEMORY demand the yoked codes exist
-            to serve, the estimate is still bit-identical
-            (memoryOptimization.test.ts).
-
-            The copy says "consistent with", NOT "measured, not assumed". An
-            unchanged estimate has two explanations — the codes are inert, or
-            `query * YokedSurfaceCode.q()` does not put them anywhere qdk
-            applies — and nothing yet distinguishes them. §G's "prove it is
-            actually in the query" is still open; see the checklist. Either way
-            an enabled control that silently changes nothing is worse than a
-            disabled one that says why, so the control stays off. */}
+        {/* Memory Optimization sits beside QEC — both are code-level error
+            correction choices. Unavailable rather than optional: the field is
+            wired through to build_isa_query, but on qdk 1.30.0 the yoked codes
+            leave the estimate unchanged even with Dynamic Memory Compute
+            supplying the memory demand they serve, so the control says why
+            instead of pretending to be optional. */}
         <div className="field">
           <div className="field__label-row">
             <label className="field__label" htmlFor="micro-memory-opt">
@@ -400,7 +364,6 @@ export function MicroArchitectureSection({
             className="field__input"
             aria-describedby={definitionId("micro-memory-opt")}
             value={memoryOptimization}
-            disabled
             onChange={(event) => {
               const next = event.target.value;
               if ((MEMORY_OPTIMIZATION_IDS as readonly string[]).includes(next)) {
@@ -409,37 +372,96 @@ export function MicroArchitectureSection({
             }}
           >
             {MEMORY_OPTIMIZATION_IDS.map((id) => (
-              <option key={id} value={id}>
+              // The dropdown lists the yoked codes so their existence is visible,
+              // but each is disabled — selecting one changes nothing on the
+              // current engine, so only "None" is choosable. A yoked value a
+              // stored record already carries stays selectable so Rerun can keep
+              // displaying it rather than snapping to None.
+              <option
+                key={id}
+                value={id}
+                disabled={id !== "none" && id !== memoryOptimization}
+              >
                 {MEMORY_OPTIMIZATION_LABELS[id]}
               </option>
             ))}
           </select>
-          <p
-            className="field__help"
-            id="micro-memory-opt-help"
-            data-testid="memory-opt-help"
-          >
-            Unavailable in this build. The yoked surface codes now reach the
-            estimator, and on qdk 1.30.0 they leave the estimate unchanged even
-            with Dynamic Memory Compute enabled — which is what supplies the
-            memory demand they optimize. That is consistent with their having no
-            effect, though it does not yet prove it, so the control stays
-            disabled.
-          </p>
+        </div>
         </div>
       </div>
- 
-      <hr className="micro-divider" />
- 
-      <div className="field-block">
-        <span className="field-eyebrow">Trace Transform</span>
+
+      {/* ONE control, five options — the 2026-07-31 POC ask. The analyst never
+          sees "primary" or "secondary"; the split lives at the boundary, where
+          it has to, because the estimator unions the first three into a single
+          factory query and multiplies the last two onto it as modifiers. */}
+      {/* A div with role="group", not a <fieldset>: a <legend> does not render as
+          a clean full-width block for the card's underlined eyebrow, so this uses
+          the same div/span pairing as the Trace Transform group. The grouping
+          semantics are preserved by role + aria-labelledby. */}
+      <div
+        className="field micro-group micro-group--card"
+        role="group"
+        aria-labelledby="micro-factory-label"
+      >
+        <span className="micro-group__title" id="micro-factory-label">
+          Magic State Factory
+        </span>
+          <p className="field__help">{factoryHelp}</p>
+          {FACTORY_MEMBERS.map((id) => {
+            const checked = isSecondaryMember(id)
+              ? secondarySet.has(id)
+              : primarySet.has(id);
+            const requirement = FACTORY_REQUIREMENTS[id];
+            // A <div> wrapper with an explicit htmlFor, NOT a wrapping <label>.
+            // Anything inside a label is walked by accessible-name computation,
+            // so a nested tooltip trigger would make this checkbox announce as
+            // "Litinski19 Litinski19 definition". The name stays exactly the
+            // factory's label; the definition arrives via aria-describedby.
+            return (
+              <div key={id} className="checkbox-field">
+                <input
+                  id={`micro-factory-${id}`}
+                  type="checkbox"
+                  checked={checked}
+                  disabled={isMemberDisabled(id)}
+                  aria-describedby={definitionId(`micro-factory-${id}`)}
+                  onChange={() =>
+                    isSecondaryMember(id) ? toggleSecondary(id) : togglePrimary(id)
+                  }
+                />
+                <label htmlFor={`micro-factory-${id}`}>
+                  {FACTORY_MEMBER_LABELS[id]}
+                </label>
+                <DefinitionTip
+                  id={definitionId(`micro-factory-${id}`)}
+                  label={FACTORY_MEMBER_LABELS[id]}
+                >
+                  {FACTORY_DEFINITIONS[id]}
+                </DefinitionTip>
+                {requirement ? (
+                  <span className="checkbox-field__requirement">
+                    ({requirement})
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+          {magicStateFactoriesError ? (
+            <p className="field__help field__help--error" role="alert">
+              {magicStateFactoriesError}
+            </p>
+          ) : null}
+        </div>
+
+      <div className="micro-group micro-group--card">
+        <span className="micro-group__title">Trace Transform</span>
         {/* An ORDERED pipeline, not a choice. Two stages always run and two are
             optional; the order is a correctness property of qdk, not a
             presentation preference — PSSPC alone yields an empty frontier, and
             LatticeSurgery × PSSPC raises "unsupported instruction
             LATTICE_SURGERY in trace transformation 'PSSPC'". */}
         <p className="field__help">
-          An ordered pipeline —{" "}
+          An ordered pipeline:{" "}
           <strong>
             Dynamic Memory Compute → PSSPC → Lattice Surgery → Unmemory
           </strong>
@@ -494,14 +516,13 @@ export function MicroArchitectureSection({
             error={computeCapacityError}
             disabled={!dmcEnabled}
             placeholder="0.5"
-            help="0 < capacity ≤ 1.0 · qdk default 0.5"
+            help="0 < capacity ≤ 1.0"
           />
 
           <Field
             id="micro-dmc-eviction"
             label="Eviction Strategy"
             definition={TRACE_TRANSFORM_DEFINITIONS.evictionStrategy}
-            help="qdk default: Least Recently Used"
           >
             <select
               id="micro-dmc-eviction"
@@ -542,20 +563,26 @@ export function MicroArchitectureSection({
               </DefinitionTip>
             </div>
             <div className="slider-row">
-              <input
-                id="micro-tstates"
-                type="range"
-                className="slider"
-                style={fillStyle(tStatesFill)}
-                min={5}
-                max={20}
-                step={1}
-                aria-describedby={definitionId("micro-tstates")}
-                value={tStates}
-                onChange={(event) =>
-                  setTransform({ tStatesPerRotation: Number(event.target.value) })
-                }
-              />
+              <div className="slider-shell" style={fillStyle(tStatesFill)}>
+                <input
+                  id="micro-tstates"
+                  type="range"
+                  className="slider"
+                  min={5}
+                  max={20}
+                  step={1}
+                  aria-describedby={definitionId("micro-tstates")}
+                  value={tStates}
+                  onChange={(event) =>
+                    setTransform({ tStatesPerRotation: Number(event.target.value) })
+                  }
+                />
+                {/* Persistent value pinned over the thumb. aria-hidden: the
+                    paired number input already exposes the value to AT. */}
+                <output className="slider__bubble" aria-hidden="true">
+                  {tStates}
+                </output>
+              </div>
               <input
                 type="number"
                 className="field__input slider-row__number"
@@ -677,19 +704,18 @@ export function MicroArchitectureSection({
               {traceTransform.unmemory ? "On" : "Off"}
             </span>
           </div>
-          <p className="field__help">
-            {dmcEnabled
-              ? "Reverses stage 0, mapping memory qubits back to compute qubits."
-              : "Needs Dynamic Memory Compute — there is no memory model to reverse without it."}
-          </p>
+          {dmcEnabled ? null : (
+            <p className="field__help">
+              Needs Dynamic Memory Compute — there is no memory model to reverse
+              without it.
+            </p>
+          )}
         </div>
         </div>
       </div>
  
-      <hr className="micro-divider" />
- 
-      <div className="field-block">
-        <span className="field-eyebrow field-eyebrow--with-tip">
+      <div className="micro-group micro-group--card">
+        <span className="micro-group__title field-eyebrow--with-tip">
           <span id="micro-max-error-label">Total Fault Tolerant Execution Error</span>
           <DefinitionTip
             id={definitionId("micro-max-error")}
@@ -700,19 +726,25 @@ export function MicroArchitectureSection({
         </span>
         <div className="field">
           <div className="slider-row">
-            <input
-              id="micro-max-error"
-              type="range"
-              className="slider"
-              style={fillStyle(maxErrorFill)}
-              min={0.01}
-              max={1}
-              step={0.01}
-              aria-labelledby="micro-max-error-label"
-              aria-describedby={definitionId("micro-max-error")}
-              value={maxError ?? 1}
-              onChange={(event) => onMaxErrorChange(Number(event.target.value))}
-            />
+            <div className="slider-shell" style={fillStyle(maxErrorFill)}>
+              <input
+                id="micro-max-error"
+                type="range"
+                className="slider"
+                min={0.01}
+                max={1}
+                step={0.01}
+                aria-labelledby="micro-max-error-label"
+                aria-describedby={definitionId("micro-max-error")}
+                value={maxError ?? 1}
+                onChange={(event) => onMaxErrorChange(Number(event.target.value))}
+              />
+              {/* Persistent value pinned over the thumb. aria-hidden: the paired
+                  number input already exposes the value to AT. */}
+              <output className="slider__bubble" aria-hidden="true">
+                {maxError ?? 1}
+              </output>
+            </div>
             <input
               type="number"
               className="field__input slider-row__number"

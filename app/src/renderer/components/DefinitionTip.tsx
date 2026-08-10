@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 interface DefinitionTipProps {
   /** The field's own label, used to name the trigger for screen readers. */
@@ -12,6 +20,15 @@ interface DefinitionTipProps {
    */
   id: string;
   children: ReactNode;
+  /**
+   * Render the bubble in a portal, fixed-positioned next to the trigger, so it
+   * overlays the page instead of being clipped or stacked behind a scroll /
+   * `overflow` / sticky ancestor. Needed inside the comparison table, whose
+   * horizontal scroll container clips its own overflow and whose sticky column
+   * traps z-index. Default (`false`) keeps the CSS-positioned bubble the config
+   * forms use, where there is no clipping ancestor.
+   */
+  portal?: boolean;
 }
 
 /**
@@ -29,9 +46,12 @@ export function DefinitionTip({
   label,
   id,
   children,
+  portal = false,
 }: DefinitionTipProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
+  const [fixedStyle, setFixedStyle] = useState<CSSProperties>();
 
   // Escape dismisses the bubble whether it was opened by hover, focus or click.
   //
@@ -65,6 +85,89 @@ export function DefinitionTip({
     return () => document.removeEventListener("keydown", dismiss, true);
   }, [open]);
 
+  // Place the portaled bubble beside the trigger and keep it there. It is
+  // `position: fixed`, so it is measured against the viewport and immune to the
+  // table's clipping and stacking. Preferred spot is to the trigger's right,
+  // vertically centred; it flips to the left if the right would run off-screen,
+  // and the top is clamped into the viewport. Recomputed on scroll/resize so
+  // scrolling the table keeps the bubble pinned to its "?". Layout effect so the
+  // position is set before paint — no first-frame flash at 0,0.
+  useLayoutEffect(() => {
+    if (!portal || !open) return;
+    // Shrink the box to its own text so the description fills it — the widest
+    // wrapped line touches both edges, with no leftover width. CSS cannot size a
+    // block to its longest line, so let the text wrap within the cap (with
+    // `text-wrap: balance` evening the lines), measure the actual line boxes via
+    // a Range, and set the box to the widest one. Widths are border-box (global
+    // reset); NaN in a non-DOM test env is filtered by the caller.
+    const sizeToText = (bubble: HTMLElement): number => {
+      const style = getComputedStyle(bubble);
+      const chromeX =
+        parseFloat(style.paddingLeft) +
+        parseFloat(style.paddingRight) +
+        parseFloat(style.borderLeftWidth) +
+        parseFloat(style.borderRightWidth);
+
+      // Wrap at the cap, then read each rendered line's width.
+      const cap = Math.min(340, window.innerWidth * 0.8);
+      bubble.style.maxWidth = "none";
+      bubble.style.whiteSpace = "";
+      bubble.style.width = `${cap}px`;
+      const range = document.createRange();
+      range.selectNodeContents(bubble);
+      let widestLine = 0;
+      for (const rect of range.getClientRects()) {
+        widestLine = Math.max(widestLine, rect.width);
+      }
+      range.detach();
+      bubble.style.maxWidth = "";
+
+      // +1 absorbs sub-pixel rounding so the widest line never re-wraps.
+      return Math.ceil(widestLine) + chromeX + 1;
+    };
+
+    const place = (): void => {
+      const trigger = triggerRef.current;
+      const bubble = bubbleRef.current;
+      if (!trigger || !bubble) return;
+      const margin = 8;
+      // No layout in a non-DOM test environment — leave width to CSS then.
+      const width = sizeToText(bubble);
+      const sized = Number.isFinite(width);
+      if (sized) bubble.style.width = `${width}px`;
+      const t = trigger.getBoundingClientRect();
+      const b = bubble.getBoundingClientRect();
+      let left = t.right + margin;
+      if (left + b.width > window.innerWidth - margin) {
+        left = Math.max(margin, t.left - margin - b.width);
+      }
+      const top = Math.min(
+        Math.max(margin, t.top + t.height / 2 - b.height / 2),
+        Math.max(margin, window.innerHeight - margin - b.height),
+      );
+      setFixedStyle(sized ? { top, left, width } : { top, left });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [portal, open, children]);
+
+  const bubble = (
+    <span
+      ref={bubbleRef}
+      id={id}
+      role="tooltip"
+      className={`definition-tip__bubble${portal ? " definition-tip__bubble--portal" : ""}${open ? " definition-tip__bubble--open" : ""}`}
+      style={portal ? fixedStyle : undefined}
+    >
+      {children}
+    </span>
+  );
+
   return (
     <span
       className="definition-tip"
@@ -88,13 +191,7 @@ export function DefinitionTip({
       >
         ?
       </button>
-      <span
-        id={id}
-        role="tooltip"
-        className={`definition-tip__bubble${open ? " definition-tip__bubble--open" : ""}`}
-      >
-        {children}
-      </span>
+      {portal ? createPortal(bubble, document.body) : bubble}
     </span>
   );
 }

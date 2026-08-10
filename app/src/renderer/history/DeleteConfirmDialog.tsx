@@ -32,7 +32,7 @@ export function DeleteConfirmDialog({ record, onConfirm, onCancel }: DeleteConfi
     >
       <p>
         Delete <strong>{record.config.name}</strong>? This permanently removes the saved run from
-        history. Run records are immutable — this cannot be undone.
+        history. This cannot be undone.
       </p>
     </Modal>
   );

@@ -6,9 +6,14 @@ import { formatMetric } from "./formatMetric";
 import { FrontierScatter } from "./FrontierScatter";
 import { FrontierTable } from "./FrontierTable";
 import { RawExplorer } from "./RawExplorer";
-import { getAdditionalFieldDefinitions } from "./resultFields";
+import {
+  DEFAULT_FIELD_DEFINITIONS,
+  getAdditionalFieldDefinitions,
+  getDefaultMetric,
+} from "./resultFields";
 import { resolveSelectedFrontierRow } from "./selectedRows";
 import { SelectedRowDetail } from "./SelectedRowDetail";
+import { DefinitionTip, definitionId } from "../components/DefinitionTip";
 
 interface ResultsAreaViewProps extends ResultsAreaProps {
   onConfigure?: () => void;
@@ -127,7 +132,7 @@ export function ResultsArea({
             relaxing the maximum error or adjusting the architecture, then rerun.
           </p>
         </div>
-        <ConfigSummary config={config} qreVersion={result.qreVersion} />
+        <ConfigSummary config={config} />
         <RawExplorer raw={result.raw} />
       </section>
     );
@@ -182,12 +187,17 @@ export function ResultsArea({
       </div>
 
       <div className="metric-grid" aria-label="Default result fields preview">
-        <MetricCard label="Physical Qubits" value={formatMetric(selectedRow?.physicalQubits)} />
-        <MetricCard label="Runtime" value={formatMetric(selectedRow?.runtime)} />
-        <MetricCard label="Total Error" value={formatMetric(selectedRow?.totalError)} />
-        <MetricCard label="Factories" value={formatMetric(selectedRow?.factories)} />
-        <MetricCard label="Code Distance" value={formatMetric(selectedRow?.codeDistance)} />
-        <MetricCard label="Logical Cycle Time" value={formatMetric(selectedRow?.logicalCycleTime)} />
+        {DEFAULT_FIELD_DEFINITIONS.map((definition) => (
+          <MetricCard
+            key={definition.key}
+            fieldKey={definition.key}
+            label={definition.label}
+            description={definition.description}
+            value={formatMetric(
+              selectedRow ? getDefaultMetric(selectedRow, definition.key) : undefined,
+            )}
+          />
+        ))}
       </div>
 
       <div className="foundation-grid">
@@ -250,22 +260,30 @@ export function ResultsArea({
           hiddenAdditionalKeys={hiddenAdditionalKeys}
         />
       ) : null}
-      <ConfigSummary config={config} qreVersion={result.qreVersion} />
+      <ConfigSummary config={config} />
       <RawExplorer raw={result.raw} />
     </section>
   );
 }
 
 interface MetricCardProps {
+  fieldKey: string;
   label: string;
+  description: string;
   value: string;
 }
 
-function MetricCard({ label, value }: MetricCardProps) {
+function MetricCard({ fieldKey, label, description, value }: MetricCardProps) {
+  const tipId = definitionId(`result-metric-${fieldKey}`);
   return (
     <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span className="metric-card__label">
+        {label}
+        <DefinitionTip id={tipId} label={label}>
+          {description}
+        </DefinitionTip>
+      </span>
+      <strong aria-describedby={tipId}>{value}</strong>
     </article>
   );
 }

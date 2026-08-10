@@ -31,8 +31,7 @@ export function BulkDeleteConfirmDialog({
       }
     >
       <p>
-        This permanently removes the selected {runLabel} from history. Run records are
-        immutable, so this cannot be undone.
+        This permanently removes the selected {runLabel} from history. This cannot be undone.
       </p>
     </Modal>
   );

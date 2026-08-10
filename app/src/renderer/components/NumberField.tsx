@@ -87,7 +87,7 @@ export function NumberField({
   const descriptor = formatInvalid
     ? "Enter a valid number."
     : integerInvalid
-      ? "Enter a whole number — decimals are not accepted here."
+      ? "Enter a whole number."
       : help;
   // The control carries BOTH descriptions: its own descriptor line and the
   // tooltip bubble. Pointing aria-describedby at only the trigger button would

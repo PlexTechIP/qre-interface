@@ -1,6 +1,7 @@
 import type { FrontierRow } from "../../shared/types";
 import { formatMetric } from "./formatMetric";
 import { DEFAULT_FIELD_DEFINITIONS, getDisplayFields } from "./resultFields";
+import { DefinitionTip, definitionId } from "../components/DefinitionTip";
 
 interface SelectedRowDetailProps {
   row: FrontierRow;
@@ -27,15 +28,25 @@ export function SelectedRowDetail({ row, rowNumber, hiddenAdditionalKeys }: Sele
         </div>
       </div>
       <dl className="detail-grid">
-        {fields.map((field) => (
-          <div key={field.key} className="detail-item" title={field.description}>
-            <dt>
-              {field.label}
-              {field.unitLabel ? <span>{field.unitLabel}</span> : null}
-            </dt>
-            <dd>{formatMetric(field.metric)}</dd>
-          </div>
-        ))}
+        {fields.map((field) => {
+          const tipId = definitionId(`result-field-${field.key}`);
+          return (
+            <div key={field.key} className="detail-item">
+              <dt>
+                <span className="detail-item__head">
+                  {field.label}
+                  <DefinitionTip id={tipId} label={field.label}>
+                    {field.description}
+                  </DefinitionTip>
+                </span>
+                {field.unitLabel ? (
+                  <span className="detail-item__unit">{field.unitLabel}</span>
+                ) : null}
+              </dt>
+              <dd aria-describedby={tipId}>{formatMetric(field.metric)}</dd>
+            </div>
+          );
+        })}
       </dl>
     </section>
   );
