@@ -406,6 +406,7 @@ export function MicroArchitectureSection({
         <span className="micro-group__title" id="micro-factory-label">
           Magic State Factory
         </span>
+          <p className="field__help">{factoryHelp}</p>
           {FACTORY_MEMBERS.map((id) => {
             const checked = isSecondaryMember(id)
               ? secondarySet.has(id)
@@ -445,7 +446,6 @@ export function MicroArchitectureSection({
               </div>
             );
           })}
-          <p className="field__help">{factoryHelp}</p>
           {magicStateFactoriesError ? (
             <p className="field__help field__help--error" role="alert">
               {magicStateFactoriesError}
