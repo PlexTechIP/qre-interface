@@ -602,12 +602,6 @@ select {
   gap: 16px;
 }
 
-/* Embedded comparison view: no inner heading, so the actions sit alone at the
-   right (the shell's surface header carries the title). */
-.panel-header--actions-only {
-  justify-content: flex-end;
-}
-
 .panel-header p {
   margin: 6px 0 0;
   color: var(--color-label-soft);
@@ -695,11 +689,6 @@ select {
   color: var(--color-body);
   font-size: 13px;
   cursor: pointer;
-}
-
-.field-filter-list small {
-  color: var(--color-faint-label);
-  font-size: 10px;
 }
 
 .chart-help {
@@ -1645,6 +1634,10 @@ select {
   font-weight: 500;
   letter-spacing: normal;
   line-height: 1.35;
+  /* A tooltip is a wrapped block, always — never let a nowrap ancestor (e.g. the
+     comparison table's sticky field column) flatten it into one overflowing
+     line. The box grows as tall as the text needs. */
+  white-space: normal;
   opacity: 0;
   pointer-events: none;
   text-transform: none;
@@ -3564,6 +3557,14 @@ button.danger:hover {
   gap: 10px;
 }
 
+.comparison-summary__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .comparison-summary__line {
   display: flex;
   flex-wrap: wrap;
@@ -3587,6 +3588,68 @@ button.danger:hover {
 .comparison-chip--failed {
   border-color: var(--color-danger-border);
   background: var(--color-danger-bg);
+}
+
+.comparison-field-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The comparison table clips its own overflow (horizontal scroll) and its
+   sticky field column traps z-index, so a bubble positioned inside it can never
+   fully overlay the page. These tips render in a PORTAL instead (see
+   `DefinitionTip portal`): the bubble is `position: fixed`, placed beside the
+   trigger by script, and immune to both the clip and the stacking context. */
+.definition-tip__bubble--portal {
+  position: fixed;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  /* Fit the box to its own (fixed) description: as wide as the text wants, up to
+     a readable cap, then wrap. `text-wrap: balance` evens the line lengths and
+     `fit-content` shrinks the box to the longest balanced line, so a wrapped
+     definition sits in a neat rectangle with equal whitespace on every side —
+     no ragged gap left over on the right. */
+  width: fit-content;
+  max-width: min(340px, 80vw);
+  padding: 10px 13px;
+  text-wrap: balance;
+}
+
+.definition-tip__bubble--portal.definition-tip__bubble--open {
+  transform: none;
+}
+
+/* The boxed card look shared with Run Configuration and the Configuration
+   Summary's advanced-details groups: an accent eyebrow title over a hairline
+   and an accent border + soft shadow on hover. These panels sit directly on the
+   page background, so the card keeps the surface fill (not --color-bg, which
+   would blend into the page and wash out the title and description). */
+.panel--card {
+  background: var(--color-surface);
+  border-color: var(--color-card-border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.panel--card:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 2px 10px var(--color-shadow-soft);
+}
+
+.panel--card > .panel-header {
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+.panel--card > .panel-header h3 {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .comparison-table-scroll {
@@ -3711,6 +3774,17 @@ button.danger:hover {
   margin-bottom: 6px;
 }
 
+/* Recharts makes its SVG surface and shapes focusable, so a click paints a stray
+   focus outline across the chart. These figures are decorative — the comparison
+   table above is their keyboard/screen-reader equivalent — so drop the outline
+   on the chart internals. */
+.comparison-chart .recharts-wrapper,
+.comparison-chart .recharts-surface,
+.comparison-chart :focus,
+.comparison-chart :focus-visible {
+  outline: none;
+}
+
 .comparison-tooltip {
   display: flex;
   flex-direction: column;
@@ -3749,7 +3823,8 @@ button.danger:hover {
   color: var(--color-heading);
 }
 
-.comparison-curves__empty {
+.comparison-curves__empty,
+.comparison-charts__empty {
   margin: 0;
   padding: 24px 0;
   text-align: center;

@@ -26,12 +26,14 @@ const noop = () => {};
 afterEach(cleanup);
 
 describe("Comparison surface (Part E)", () => {
-  it("shows a 'pick runs' empty state and disables its actions with no selection", () => {
+  it("shows a 'pick runs' empty state and no comparison actions with no selection", () => {
     render(<ComparisonView records={[]} onClear={noop} onRemove={noop} onExport={noop} />);
 
     expect(screen.getByText(/select at least 2 runs to compare/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /export comparison/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /clear selection/i })).toBeDisabled();
+    // The Export/Clear actions now sit in the comparison summary, which only
+    // renders alongside a selection — there is nothing to export or clear here.
+    expect(screen.queryByRole("button", { name: /export comparison/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /clear selection/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -65,21 +67,42 @@ describe("Comparison surface (Part E)", () => {
     cells.forEach((cell) => expect(cell.textContent).not.toBe("—"));
   });
 
-  it("renders the six per-metric charts, including physical factory qubits", () => {
+  it("renders a per-metric chart for each numeric field the table shows", () => {
     render(<ComparisonView records={trio} onClear={noop} onRemove={noop} onExport={noop} />);
 
+    // One chart per numeric field on the table — default result fields plus the
+    // reported additional ones (e.g. Phys. Factory Qubits). Anchored so a label
+    // never matches a longer sibling (e.g. "Runtime" vs "Runtime / Shot").
     for (const label of [
       "Physical Qubits",
       "Runtime",
       "Logical Cycle Time",
-      "Physical Factory Qubits",
+      "Phys\\. Factory Qubits",
       "Total Error",
       "Code Distance",
     ]) {
       // Chart labels live in <figcaption>, distinct from the table row headers.
-      const figure = screen.getByRole("figure", { name: new RegExp(label, "i") });
+      const figure = screen.getByRole("figure", { name: new RegExp(`^${label} by run`, "i") });
       expect(figure).toBeInTheDocument();
     }
+  });
+
+  it("chains the per-metric charts to the field filter", async () => {
+    render(<ComparisonView records={trio} onClear={noop} onRemove={noop} onExport={noop} />);
+    const factoryChart = /^Phys\. Factory Qubits by run/i;
+
+    // The additional field reported by the trio shows as its own chart by default.
+    expect(screen.getByRole("figure", { name: factoryChart })).toBeInTheDocument();
+
+    // Filtering it out from the charts' own control removes the matching chart,
+    // while a default metric's chart stays.
+    await userEvent.click(screen.getByRole("button", { name: /filter metrics/i }));
+    await userEvent.click(screen.getByRole("button", { name: /defaults only/i }));
+
+    expect(screen.queryByRole("figure", { name: factoryChart })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("figure", { name: /^Physical Qubits by run/i }),
+    ).toBeInTheDocument();
   });
 
   it("field filter adds/removes additional rows without touching the defaults", async () => {

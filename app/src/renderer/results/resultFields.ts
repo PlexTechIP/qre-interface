@@ -34,41 +34,53 @@ export const DEFAULT_FIELD_DEFINITIONS = [
     key: "physicalQubits",
     label: "Physical Qubits",
     unitLabel: "qubits",
-    description: "Total physical qubits required by this frontier point.",
+    description: "Total number of physical qubits required for the computation.",
   },
   {
     key: "runtime",
     label: "Runtime",
     unitLabel: "time",
-    description: "Total wall-clock algorithm runtime for this estimate.",
+    description: "Total runtime of the algorithm.",
   },
   {
     key: "totalError",
     label: "Total Error",
     unitLabel: "probability",
-    description: "Estimated logical error probability for the computation.",
+    description:
+      "Total estimated failure probability of the computation, composed across all error contributions and bounded by the max-error budget.",
   },
   {
     key: "factories",
     label: "Factories",
     unitLabel: "factories",
-    description: "Magic-state factory copies used at this frontier point.",
+    description:
+      "Magic-state factories used, shown as copies × factory type (e.g., 12×Round-Based Factory).",
   },
   {
     key: "codeDistance",
     label: "Code Distance",
     unitLabel: "distance",
-    description: "Error-correcting code distance used by this estimate.",
+    description: "Code distance of the error-correcting code.",
   },
   {
     key: "logicalCycleTime",
     label: "Logical Cycle Time",
     unitLabel: "time",
-    description: "Duration of one logical clock cycle after error correction.",
+    description:
+      "Duration of one logical operation cycle (one code cycle × the code distance).",
   },
 ] as const satisfies readonly ResultFieldDefinition[];
  
 const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
+  [
+    "source",
+    {
+      key: "source",
+      label: "Source",
+      unitLabel: "",
+      description: "The instruction source (ISA) that produced this result.",
+    },
+  ],
   [
     "physicalComputeQubits",
     {
@@ -93,7 +105,56 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
       key: "physicalMemoryQubits",
       label: "Phys. Memory Qubits",
       unitLabel: "qubits",
-      description: "Physical qubits used for memory.",
+      description: "Physical qubits used for memory storage.",
+    },
+  ],
+  [
+    "logicalComputeQubits",
+    {
+      key: "logicalComputeQubits",
+      label: "Logical Compute Qubits",
+      unitLabel: "qubits",
+      description:
+        "Logical qubits used for computation, after compilation into a trace.",
+    },
+  ],
+  [
+    "logicalMemoryQubits",
+    {
+      key: "logicalMemoryQubits",
+      label: "Logical Memory Qubits",
+      unitLabel: "qubits",
+      description:
+        "Logical qubits used for memory, after compilation into a trace.",
+    },
+  ],
+  [
+    "algorithmComputeQubits",
+    {
+      key: "algorithmComputeQubits",
+      label: "Algorithm Compute Qubits",
+      unitLabel: "qubits",
+      description:
+        "Compute qubits reported by the algorithm itself, before compilation into a trace.",
+    },
+  ],
+  [
+    "algorithmMemoryQubits",
+    {
+      key: "algorithmMemoryQubits",
+      label: "Algorithm Memory Qubits",
+      unitLabel: "qubits",
+      description:
+        "Memory qubits reported by the algorithm itself, before compilation into a trace.",
+    },
+  ],
+  [
+    "codeCycleTime",
+    {
+      key: "codeCycleTime",
+      label: "Code Cycle Time",
+      unitLabel: "time",
+      description: "Duration of one physical syndrome-extraction round.",
     },
   ],
   [
@@ -102,7 +163,8 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
       key: "runtimeSingleShot",
       label: "Runtime / Shot",
       unitLabel: "time",
-      description: "Runtime for a single shot of the algorithm.",
+      description:
+        "Estimated runtime for a single shot (execution) of the algorithm.",
     },
   ],
   [
@@ -111,7 +173,18 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
       key: "expectedShots",
       label: "Expected Shots",
       unitLabel: "shots",
-      description: "Expected number of repetitions.",
+      description:
+        "Expected number of shots (repetitions) needed for the algorithm to succeed.",
+    },
+  ],
+  [
+    "evaluationTime",
+    {
+      key: "evaluationTime",
+      label: "Evaluation Time",
+      unitLabel: "time",
+      description:
+        "Wall-clock time spent evaluating the input program into a resource trace (not the estimation search itself).",
     },
   ],
   [
@@ -124,16 +197,16 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
       // what the number counts.
       label: T_COUNT_PER_ROTATION_LABEL,
       unitLabel: "T states",
-      description: "T states used to synthesize each arbitrary rotation.",
+      description: "Number of T states used to synthesize each arbitrary rotation.",
     },
   ],
   [
-    "source",
+    "blockSize",
     {
-      key: "source",
-      label: "Source",
+      key: "blockSize",
+      label: "Block Size",
       unitLabel: "",
-      description: "Instruction set or source that produced this result.",
+      description: "Size of a repeated block of operations used in the resource model.",
     },
   ],
   [
@@ -142,7 +215,103 @@ const ADDITIONAL_FIELD_DEFINITIONS = new Map<string, ResultFieldDefinition>([
       key: "feasibility",
       label: "Feasibility",
       unitLabel: "",
-      description: "Whether the configuration is feasible.",
+      description: "Whether the configuration satisfied all estimation constraints.",
+    },
+  ],
+  [
+    "loss",
+    {
+      key: "loss",
+      label: "Loss",
+      unitLabel: "probability",
+      description: "Physical qubit loss rate assumed for the hardware.",
+    },
+  ],
+  [
+    "targetYear",
+    {
+      key: "targetYear",
+      label: "Target Year",
+      unitLabel: "",
+      description:
+        "Target hardware generation assigned to two-qubit gates; has no effect unless a year-aware trace transform is enabled.",
+    },
+  ],
+  [
+    "name",
+    {
+      key: "name",
+      label: "Name",
+      unitLabel: "",
+      description: "Name or label assigned to this result.",
+    },
+  ],
+  [
+    "assumptions",
+    {
+      key: "assumptions",
+      label: "Assumptions",
+      unitLabel: "",
+      description:
+        "Modeling assumptions used by the selected architecture and QEC strategy.",
+    },
+  ],
+  [
+    "atomSpacing",
+    {
+      key: "atomSpacing",
+      label: "Atom Spacing",
+      unitLabel: "µm",
+      description:
+        "Nominal spacing (microns) between atoms during transport or placement in storage (neutral-atom).",
+    },
+  ],
+  [
+    "dataQubitSpacing",
+    {
+      key: "dataQubitSpacing",
+      label: "Data Qubit Spacing",
+      unitLabel: "µm",
+      description:
+        "Nominal spacing (microns) between data qubits during transport or placement (neutral-atom).",
+    },
+  ],
+  [
+    "velocity",
+    {
+      key: "velocity",
+      label: "Velocity",
+      unitLabel: "m/s",
+      description: "Maximum atom transport velocity, in m/s (neutral-atom).",
+    },
+  ],
+  [
+    "acceleration",
+    {
+      key: "acceleration",
+      label: "Acceleration",
+      unitLabel: "m/s²",
+      description: "Maximum atom transport acceleration, in m/s² (neutral-atom).",
+    },
+  ],
+  [
+    "surfaceCodeOneQubitTimeFactor",
+    {
+      key: "surfaceCodeOneQubitTimeFactor",
+      label: "Surface Code 1-Qubit Time Factor",
+      unitLabel: "",
+      description:
+        "Multiplier applied to the depth of one-qubit gates during surface-code syndrome extraction.",
+    },
+  ],
+  [
+    "surfaceCodeTwoQubitTimeFactor",
+    {
+      key: "surfaceCodeTwoQubitTimeFactor",
+      label: "Surface Code 2-Qubit Time Factor",
+      unitLabel: "",
+      description:
+        "Multiplier applied to the depth of two-qubit gates during surface-code syndrome extraction.",
     },
   ],
 ]);

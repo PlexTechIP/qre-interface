@@ -13,9 +13,10 @@ import { formatMetric } from "../results/formatMetric";
 import { buildCharts, type ChartSpec, type ComparisonColumn } from "./comparisonModel";
 
 /**
- * The comparison bar charts — one chart per SOW metric (physical qubits, runtime,
- * logical cycle time, physical factory qubits, total error, code distance), one
- * bar per selected run. Built with the approved charting library (Recharts), not
+ * The comparison bar charts — one chart per NUMERIC field the table is showing,
+ * one bar per selected run. The set is chained to the table through the same
+ * `hiddenKeys`, so filtering a field in or out of the table adds or removes its
+ * chart here too. Built with the approved charting library (Recharts), not
  * hand-rolled. Every tick/label/tooltip value routes through `formatMetric`.
  *
  * Accessibility: each chart pairs a formatted value label on every bar (so the
@@ -26,6 +27,8 @@ import { buildCharts, type ChartSpec, type ComparisonColumn } from "./comparison
  */
 export interface ComparisonChartsProps {
   columns: ComparisonColumn[];
+  /** Shared with the table: which additional fields are hidden. */
+  hiddenKeys: ReadonlySet<string>;
 }
 
 interface BarDatum {
@@ -35,8 +38,16 @@ interface BarDatum {
   display: string;
 }
 
-export function ComparisonCharts({ columns }: ComparisonChartsProps) {
-  const charts = buildCharts(columns);
+export function ComparisonCharts({ columns, hiddenKeys }: ComparisonChartsProps) {
+  const charts = buildCharts(columns, hiddenKeys);
+
+  if (charts.length === 0) {
+    return (
+      <p className="muted comparison-charts__empty">
+        No numeric metrics to plot for the current selection.
+      </p>
+    );
+  }
 
   return (
     <div className="comparison-charts">

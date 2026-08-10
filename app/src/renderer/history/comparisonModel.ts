@@ -1,4 +1,10 @@
-import { applicationKey, type FieldMetric, type FrontierRow, type RunRecord } from "../../shared/types";
+import {
+  applicationKey,
+  type FieldMetric,
+  type FrontierRow,
+  type MagicStateFactoryId,
+  type RunRecord,
+} from "../../shared/types";
 import {
   DEFAULT_FIELD_DEFINITIONS,
   getAdditionalFieldDefinitions,
@@ -9,9 +15,14 @@ import { formatMetric } from "../results/formatMetric";
 import { resolveSelectedFrontierRow } from "../results/selectedRows";
 import { parseTraceTransform } from "../../shared/traceTransform";
 import {
+  MAGIC_STATE_FACTORY_LABELS,
   T_COUNT_PER_ROTATION_LABEL,
   TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
 } from "../constants/labels";
+import {
+  CONFIG_DEFINITIONS,
+  TRACE_TRANSFORM_DEFINITIONS,
+} from "../constants/configDefinitions";
 import { ARCHITECTURE_LABELS, applicationLabel } from "./historyLabels";
 
 /**
@@ -49,6 +60,15 @@ export interface ComparisonColumn {
    * the record does not actually carry — against runs whose 20 is real.
    */
   tCountPerRotation: number | null;
+  /**
+   * The magic-state factory (or factories) this run was CONFIGURED with, joined
+   * for display. Sourced from config, not the result: the engine's per-point
+   * `magicStateFactory` is only filled in when a factory transform is
+   * identifiable for that frontier point, so a single-factory run legitimately
+   * reports it as absent — showing "—" for a factory the run plainly used. The
+   * configured set is always known.
+   */
+  magicStateFactories: string;
   failed: boolean;
   /** Zero-based representative row index after safe fallback. */
   selectedIndex: number;
@@ -76,6 +96,7 @@ export function toComparisonColumn(
     qreVersion: result.qreVersion,
     maxError: config.maxError,
     tCountPerRotation: configuredTCountPerRotation(config.traceTransform),
+    magicStateFactories: configuredFactories(config.magicStateFactories),
     failed: result.status === "failed",
     selectedIndex: selected.index,
     frontierCount: selected.count,
@@ -94,6 +115,12 @@ export function toComparisonColumn(
 function configuredTCountPerRotation(transform: unknown): number | null {
   const parsed = parseTraceTransform(transform);
   return parsed.ok ? parsed.transform.tStatesPerRotation : null;
+}
+
+/** The configured factory set, labelled and joined; a dash when somehow empty. */
+function configuredFactories(factories: readonly MagicStateFactoryId[]): string {
+  const labels = factories.map((factory) => MAGIC_STATE_FACTORY_LABELS[factory]);
+  return labels.length > 0 ? labels.join(" + ") : "—";
 }
 
 /**
@@ -116,14 +143,25 @@ function tCountIsConfiguredForEveryColumn(
  * The union of additional (non-default) result fields reported across the
  * selected runs, minus any the configuration rows already cover.
  *
+ * Gathered from every run's FULL frontier, not just its representative row: runs
+ * return different subsets of the reported fields, and the filter has to list
+ * every field ANY selected run returned so none is silently unreachable. A field
+ * a given run did not return simply reads "—" in that run's column.
+ *
  * `numTsPerRotation` is dropped ONLY when the configuration row can state the
  * value for every column. Where a record's transform does not parse, the
  * engine-reported metric is the only honest source for that field, so it stays
  * — otherwise a legacy record would show neither number.
  */
 export function additionalFieldDefinitions(columns: readonly ComparisonColumn[]): ResultFieldDefinition[] {
-  const rows = columns.map((c) => c.row).filter((r): r is FrontierRow => r != null);
-  const definitions = getAdditionalFieldDefinitions(rows);
+  const rows = columns.flatMap((c) => c.frontier);
+  // The configured Magic State Factory row (below) always states the factory, so
+  // the engine's sparse per-point `magicStateFactory` result field is dropped as
+  // a duplicate — it would otherwise show "—" for a run that reported no factory
+  // node on its representative point despite plainly using one.
+  const definitions = getAdditionalFieldDefinitions(rows).filter(
+    (def) => def.key !== "magicStateFactory",
+  );
   if (!tCountIsConfiguredForEveryColumn(columns)) return definitions;
   return definitions.filter((def) => def.key !== "numTsPerRotation");
 }
@@ -133,6 +171,8 @@ export interface ComparisonRow {
   key: string;
   label: string;
   unitLabel: string;
+  /** On-demand field definition, mirroring the configuration/results tooltips. */
+  description: string;
   metrics: (FieldMetric | null)[];
   /** Configuration values still exist when estimation failed. */
   availableOnFailedRun: boolean;
@@ -152,6 +192,7 @@ export function buildComparisonRows(
       key: "config.maxError",
       label: TOTAL_FAULT_TOLERANT_EXECUTION_ERROR_LABEL,
       unitLabel: "probability",
+      description: CONFIG_DEFINITIONS.maxError,
       metrics: columns.map((column) => ({
         value: column.maxError,
         unit: "probability",
@@ -169,6 +210,7 @@ export function buildComparisonRows(
       key: "config.tStatesPerRotation",
       label: T_COUNT_PER_ROTATION_LABEL,
       unitLabel: "T states",
+      description: TRACE_TRANSFORM_DEFINITIONS.tStatesPerRotation,
       metrics: columns.map((column) => ({
         value: column.tCountPerRotation,
         unit: "T states",
@@ -178,25 +220,66 @@ export function buildComparisonRows(
     });
   }
 
+  // Sourced from config so it is always populated, even when the engine's
+  // per-point `magicStateFactory` result field is absent (see the dedup in
+  // `additionalFieldDefinitions`) or the run failed outright.
+  configuration.push({
+    key: "config.magicStateFactories",
+    label: "Magic State Factory",
+    unitLabel: "",
+    description:
+      "The magic-state factory (or factories) this run was configured to use for its non-Clifford operations.",
+    metrics: columns.map((column) => ({
+      value: column.magicStateFactories,
+      unit: "",
+      display: column.magicStateFactories,
+    })),
+    availableOnFailedRun: true,
+  });
+
   const defaults: ComparisonRow[] = DEFAULT_FIELD_DEFINITIONS.map((def) => ({
     key: def.key,
     label: def.label,
     unitLabel: def.unitLabel,
+    description: def.description,
     metrics: columns.map((col) => (col.row ? getDefaultMetric(col.row, def.key) : null)),
     availableOnFailedRun: false,
   }));
 
-  const additional: ComparisonRow[] = additionalFieldDefinitions(columns)
-    .filter((def) => !hiddenKeys.has(def.key))
-    .map((def) => ({
-      key: def.key,
-      label: def.label,
-      unitLabel: def.unitLabel,
-      metrics: columns.map((col) => col.row?.additional?.[def.key] ?? null),
-      availableOnFailedRun: false,
-    }));
+  const additional: ComparisonRow[] = additionalFieldDefinitions(columns).map((def) => ({
+    key: def.key,
+    label: def.label,
+    unitLabel: def.unitLabel,
+    description: def.description,
+    metrics: columns.map((col) => col.row?.additional?.[def.key] ?? null),
+    availableOnFailedRun: false,
+  }));
 
-  return [...configuration, ...defaults, ...additional];
+  // Every row is filterable — configuration values, the defaults, and the
+  // additional fields alike — so the field filter can hide ANY of them, not just
+  // the extras.
+  return [...configuration, ...defaults, ...additional].filter(
+    (row) => !hiddenKeys.has(row.key),
+  );
+}
+
+/**
+ * Every field the comparison table can show, in table order — the two/three
+ * configuration rows, the six result defaults, then the additional reported
+ * fields. This is what the field filter enumerates: the analyst can toggle any
+ * of them, so the list is not limited to the "extra" fields. Derived from
+ * `buildComparisonRows` with nothing hidden, so the filter and the table can
+ * never disagree about which rows exist.
+ */
+export function comparisonFieldDefinitions(
+  columns: readonly ComparisonColumn[],
+): ResultFieldDefinition[] {
+  return buildComparisonRows(columns, new Set()).map((row) => ({
+    key: row.key,
+    label: row.label,
+    unitLabel: row.unitLabel,
+    description: row.description,
+  }));
 }
 
 /** One metric's bar across all selected runs. */
@@ -218,38 +301,41 @@ export interface ChartSpec {
   bars: ComparisonBar[];
 }
 
-/** The SOW comparison-chart set, in order. physicalFactoryQubits is an additional field. */
-const CHART_METRICS: ReadonlyArray<{ key: string; label: string; get: (row: FrontierRow) => FieldMetric | undefined }> = [
-  { key: "physicalQubits", label: "Physical Qubits", get: (r) => r.physicalQubits },
-  { key: "runtime", label: "Runtime", get: (r) => r.runtime },
-  { key: "logicalCycleTime", label: "Logical Cycle Time", get: (r) => r.logicalCycleTime },
-  { key: "physicalFactoryQubits", label: "Physical Factory Qubits", get: (r) => r.additional?.physicalFactoryQubits },
-  { key: "totalError", label: "Total Error", get: (r) => r.totalError },
-  { key: "codeDistance", label: "Code Distance", get: (r) => r.codeDistance },
-];
-
 /**
- * Build the six per-metric bar specs. Each metric is its OWN chart, so a single
- * axis never spans qubits (~1e6) and error (~1e-15) at once — that is how the
- * surface handles wide magnitude ranges. Values are formatted via `formatMetric`.
+ * Build one per-metric bar chart for every NUMERIC field the comparison table is
+ * currently showing — the charts are chained to the table through the same
+ * `hiddenKeys`, so filtering a field in or out adds or removes its chart too.
+ * Each metric is its OWN chart, so a single axis never spans qubits (~1e6) and
+ * error (~1e-15) at once. Rows whose value is not a finite number (Factories,
+ * Source, Feasibility, …) cannot be a bar and are skipped. Values are formatted
+ * via `formatMetric`.
  */
-export function buildCharts(columns: readonly ComparisonColumn[]): ChartSpec[] {
-  return CHART_METRICS.map((chart) => {
+export function buildCharts(
+  columns: readonly ComparisonColumn[],
+  hiddenKeys: ReadonlySet<string>,
+): ChartSpec[] {
+  const charts: ChartSpec[] = [];
+  for (const row of buildComparisonRows(columns, hiddenKeys)) {
     let unit = "";
-    const bars: ComparisonBar[] = columns.map((col) => {
-      const metric = col.row ? chart.get(col.row) : undefined;
-      const numeric = metric && typeof metric.value === "number" && Number.isFinite(metric.value) ? metric.value : null;
-      if (metric && unit === "") unit = metric.unit;
+    let hasNumeric = false;
+    const bars: ComparisonBar[] = columns.map((col, index) => {
+      const metric = row.metrics[index] ?? null;
+      const value = numericValue(metric ?? undefined);
+      if (value !== null) {
+        hasNumeric = true;
+        if (unit === "" && metric) unit = metric.unit;
+      }
       return {
         id: col.id,
         name: col.name,
         shortName: col.shortName,
-        value: numeric,
-        display: formatMetric(metric ?? null),
+        value,
+        display: formatMetric(metric),
       };
     });
-    return { key: chart.key, label: chart.label, unit, bars };
-  });
+    if (hasNumeric) charts.push({ key: row.key, label: row.label, unit, bars });
+  }
+  return charts;
 }
 
 /* ---- Pareto curves (one series per compared run) -------------------------- */
