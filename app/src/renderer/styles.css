@@ -2821,6 +2821,59 @@ input[type="range"]:focus-visible,
   font-weight: 700;
 }
 
+/* Each issue is a button that scrolls to and flashes its field. It reads as
+   plain list text until hovered, so the box stays a summary, not a toolbar. */
+.validation-box__jump {
+  display: block;
+  width: 100%;
+  border: 0;
+  margin: 0;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.validation-box__jump:hover,
+.validation-box__jump:focus-visible {
+  background: var(--color-danger-border);
+  text-decoration: underline;
+}
+
+.validation-box--pending .validation-box__jump:hover,
+.validation-box--pending .validation-box__jump:focus-visible {
+  background: var(--color-input-border);
+}
+
+/* Transient highlight on the field a jump lands on. */
+.field--flash {
+  animation: field-flash 1.2s ease-out;
+  border-radius: 8px;
+}
+
+@keyframes field-flash {
+  0%,
+  35% {
+    box-shadow: 0 0 0 3px var(--color-accent-border);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .validation-box__jump {
+    scroll-behavior: auto;
+  }
+  .field--flash {
+    animation: none;
+  }
+}
+
 /* --- Run button (primary CTA) + secondary --------------------------*/
 /* Primary uses Team 2's accent emphasis pair (same as .nav-list       */
 /* .active / .solution-pill) so contrast holds in light AND dark.      */
