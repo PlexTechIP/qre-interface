@@ -1,21 +1,30 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentService } from "../shared/agentTypes";
 import { InMemoryRunStore } from "../shared/runStore";
 import {
   SAMPLE_RUN_RECORDS,
   buildFrontierRow,
   buildRunRecord,
   buildSuccessResult,
+  fakeAgentService,
   fakeEstimator,
 } from "../shared/testing";
-import { App } from "./App";
+import { App, resolveAgentService } from "./App";
 
+/**
+ * The three preload seams the shell reads. `window.agent` is populated here for
+ * the same reason `estimator` and `store` are: preload defines all three in
+ * every shipped build, so a test that leaves one out is testing a shape the app
+ * never has.
+ */
 describe("App shell wiring", () => {
   beforeEach(() => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
     window.store = new InMemoryRunStore(SAMPLE_RUN_RECORDS);
+    window.agent = fakeAgentService();
   });
 
   it("opens on the Run Configuration surface", () => {
@@ -31,7 +40,7 @@ describe("App shell wiring", () => {
     expect(labels.indexOf("Describe a Run")).toBeGreaterThan(labels.indexOf("Comparison"));
   });
 
-  it("moves an offline demo proposal into the existing editable form without running", async () => {
+  it("moves a model proposal into the existing editable form without running", async () => {
     const estimatorRun = vi.fn(window.estimator.run);
     window.estimator = { run: estimatorRun };
     render(<App />);
@@ -52,6 +61,48 @@ describe("App shell wiring", () => {
     expect(screen.getByDisplayValue("Model-assisted Grover estimate")).toBeVisible();
     expect(screen.getByDisplayValue("50")).toBeVisible();
     expect(estimatorRun).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The review step's missing half. The form the analyst lands on is fully
+   * populated, so without this they cannot tell the model's decisions from the
+   * defaults it never mentioned.
+   */
+  it("says which fields the model chose on the form it hands over", async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Run description" }),
+      "Estimate Grover search",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Review request" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send and create draft" }),
+    );
+
+    const panel = (
+      await screen.findByRole("heading", { name: /drafted by/i })
+    ).closest("section");
+    if (!panel) throw new Error("Expected the model-proposal panel.");
+    // The fixture's draft: Grover, gate-based, 50 ns gates, 20 search qubits.
+    // Queried by each entry's accessible name — "Benchmark" is both a field
+    // label and the Application Type's value, so bare text is ambiguous.
+    expect(
+      within(panel).getByRole("button", { name: /^Benchmark: Grover's Search\./ }),
+    ).toBeVisible();
+    expect(
+      within(panel).getByRole("button", { name: /^Search Qubits: 20\./ }),
+    ).toBeVisible();
+    expect(
+      within(panel).getByRole("button", { name: /^Application Type: Benchmark\./ }),
+    ).toBeVisible();
+
+    // And it is a real affordance: the entry moves the analyst to the control.
+    await userEvent.click(
+      within(panel).getByRole("button", { name: /Gate time/ }),
+    );
+    expect(document.querySelector(".field--flash")).not.toBeNull();
   });
 
   it("the Results nav item shows the results surface, not the configuration form", async () => {
@@ -228,5 +279,42 @@ describe("App shell wiring", () => {
       .closest("tr");
     if (!qubitsRow) throw new Error("Expected physical-qubits comparison row.");
     expect(within(qubitsRow).getByText("333,333")).toBeInTheDocument();
+  });
+});
+
+/**
+ * How the shell finds the agent seam. This used to end in `demoAgentService` —
+ * a fixture living in the renderer's production tree, third in the resolution
+ * order of the shipped app.
+ *
+ * `preload.ts` defines `window.agent` unconditionally, so that third branch was
+ * unreachable in Electron and reachable only under test: the whole suite ran
+ * against a seam production can never take, and a green run therefore said
+ * nothing about whether the real one worked. The fixture now lives with the
+ * other test doubles and is injected, and the resolution order has two entries.
+ */
+describe("agent service resolution", () => {
+  afterEach(() => {
+    delete (window as { agent?: AgentService }).agent;
+  });
+
+  it("prefers an explicitly injected service", () => {
+    const injected = fakeAgentService();
+    window.agent = fakeAgentService();
+
+    expect(resolveAgentService(injected)).toBe(injected);
+  });
+
+  it("otherwise uses the preload surface", () => {
+    const preload = fakeAgentService();
+    window.agent = preload;
+
+    expect(resolveAgentService()).toBe(preload);
+  });
+
+  it("has no fixture behind the preload surface — a missing seam says so", () => {
+    delete (window as { agent?: AgentService }).agent;
+
+    expect(() => resolveAgentService()).toThrow(/window\.agent/);
   });
 });

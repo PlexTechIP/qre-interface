@@ -4,7 +4,6 @@ import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/ag
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { AgentInterface } from "./agent/AgentInterface";
-import { demoAgentService } from "./agent/demoAgentService";
 import type { DraftHandoff } from "./agent/draftToFormState";
 import { NetworkStatus } from "./agent/NetworkStatus";
 import { QRE_VERSION } from "./constants/staticOptions";
@@ -84,8 +83,31 @@ const NAV_ITEMS: readonly NavItem[] = [
   { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
 ];
 
+/**
+ * The agent seam, in resolution order: an explicitly injected service, then the
+ * preload surface. There is no third branch.
+ *
+ * There used to be — `?? demoAgentService`, a fixture that lived in this tree.
+ * `preload.ts` exposes `window.agent` unconditionally, so that branch could
+ * never run in Electron and ran only under test, which meant the suite proved
+ * out a seam the shipped app never takes. Failing loudly is the whole point:
+ * the one configuration this cannot silently paper over is a build where the
+ * preload bridge did not load.
+ */
+export function resolveAgentService(injected?: AgentService): AgentService {
+  const service = injected ?? window.agent;
+  if (service === undefined) {
+    throw new Error(
+      "No agent service is available: window.agent is defined by preload in every " +
+        "shipped build, so its absence means this renderer is running outside Electron. " +
+        "Tests must inject one (see fakeAgentService).",
+    );
+  }
+  return service;
+}
+
 export function App({ agentService }: { agentService?: AgentService } = {}) {
-  const resolvedAgentService = agentService ?? window.agent ?? demoAgentService;
+  const resolvedAgentService = resolveAgentService(agentService);
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState<Page>("config");
@@ -244,6 +266,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               initialConfig={rerunConfig}
               initialDraft={draftHandoff?.state}
               provenance={draftHandoff?.provenance}
+              proposed={draftHandoff?.proposed}
             />
           ) : null}
           {activePage === "agent" ? (

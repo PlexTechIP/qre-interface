@@ -25,7 +25,14 @@ declare global {
         format: UploadedProgramFormat,
       ): Promise<UploadPreflightResult>;
     };
-    /** Team 2's optional fifth preload surface. No credential getter exists. */
+    /**
+     * The fifth preload surface. No credential getter exists.
+     *
+     * Optional only because a renderer running outside Electron has no preload
+     * bridge at all — `preload.ts` exposes this unconditionally, so it is
+     * always present in a shipped build. The shell refuses to substitute a
+     * fixture when it is missing; see `resolveAgentService` in App.tsx.
+     */
     agent?: AgentService;
   }
 }
