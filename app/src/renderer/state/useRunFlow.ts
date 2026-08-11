@@ -38,8 +38,15 @@ export interface RunFlow {
   edit: () => void;
 }
 
-function stamp(): RunStamp {
-  return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+function stamp(provenance?: RunProvenance): RunStamp {
+  const next: RunStamp = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+  };
+  // Omitted rather than written as undefined, so `retry`'s spread below cannot
+  // erase the provenance the previous config carried.
+  if (provenance !== undefined) next.provenance = provenance;
+  return next;
 }
 
 function getEstimator(): Pick<EstimatorService, "run"> {
@@ -84,9 +91,12 @@ export function useRunFlow(
 
   const start = useCallback(
     (state: FormState, provenance?: RunProvenance): void => {
-      const config = toRunConfig(state, stamp());
+      // Provenance goes IN through the stamp rather than onto the result
+      // afterwards. The Run gate validates `toRunConfig(state, stamp)`, so a
+      // field assigned after that call is a field the gate never inspected —
+      // the object approved and the object executed have to be the same one.
+      const config = toRunConfig(state, stamp(provenance));
       if (config === null) return; // Run is gated on validity; unreachable in practice.
-      if (provenance !== undefined) config.provenance = provenance;
       void execute(config);
     },
     [execute],

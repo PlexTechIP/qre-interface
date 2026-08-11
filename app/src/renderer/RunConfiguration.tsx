@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
  
 import type { RunConfig, RunProvenance, RunResult } from "../shared/types";
+import type { ProposedField } from "./agent/draftToFormState";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
 import { ConfigurationSummary } from "./components/ConfigurationSummary";
 import { MicroArchitectureSection } from "./components/MicroArchitectureSection";
+import { ModelProposalSummary } from "./components/ModelProposalSummary";
 import { RunConfigInspector } from "./components/RunConfigInspector";
 import { RunFlowPanel } from "./components/RunFlowPanel";
 import { RunNameSection } from "./components/RunNameSection";
@@ -42,6 +44,11 @@ interface RunConfigurationProps {
    * Run is pressed. Read once, when the draft is loaded — see `draftProvenance`.
    */
   provenance?: RunProvenance | undefined;
+  /**
+   * What the model actually chose in `initialDraft`. Travels with the draft and
+   * is read once alongside it, for the same reason `provenance` is.
+   */
+  proposed?: readonly ProposedField[] | undefined;
 }
 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
@@ -50,6 +57,7 @@ export function RunConfiguration({
   initialConfig = null,
   initialDraft,
   provenance,
+  proposed,
 }: RunConfigurationProps = {}): React.JSX.Element {
   const [state, setState] = useState<FormState>(() =>
     initialDraft ??
@@ -70,6 +78,11 @@ export function RunConfiguration({
   const [draftProvenance, setDraftProvenance] = useState<RunProvenance | undefined>(
     () => (initialDraft ? provenance : undefined),
   );
+  /** What the model chose in the configuration now in the form. Same lifetime
+   *  as `draftProvenance`, and replaced by the same three writes. */
+  const [draftProposal, setDraftProposal] = useState<readonly ProposedField[]>(
+    () => (initialDraft ? (proposed ?? []) : []),
+  );
   const { runState, start, retry, edit } = useRunFlow();
 
   // A Rerun hands a reconstructed config down as `initialConfig`; load it into
@@ -78,15 +91,18 @@ export function RunConfiguration({
     if (initialDraft) {
       setState(initialDraft);
       setDraftProvenance(provenance);
+      setDraftProposal(proposed ?? []);
     } else if (initialConfig) {
       setState(formStateFromRunConfig(initialConfig));
       // A Rerun replaces the model's draft with a saved config, so whatever
-      // authored that draft no longer describes what is on screen.
+      // authored that draft no longer describes what is on screen — and neither
+      // does the list of what that model chose.
       setDraftProvenance(undefined);
+      setDraftProposal([]);
     }
-    // `provenance` is deliberately not a dependency: it travels WITH a draft,
-    // and re-running this effect when only it changed would re-apply a stale
-    // `initialDraft` over the analyst's edits.
+    // `provenance` and `proposed` are deliberately not dependencies: they travel
+    // WITH a draft, and re-running this effect when only they changed would
+    // re-apply a stale `initialDraft` over the analyst's edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfig, initialDraft]);
  
@@ -125,11 +141,14 @@ export function RunConfiguration({
         }
       : baseErrors;
   const generatedName = generateName(state);
-  const valid = isConfigValid(state) && !blocksRun(preflight);
- 
+  // `draftProvenance` is passed to the gate and to Run from the same variable:
+  // the config the gate approves is then the config that executes, provenance
+  // included. Reading it in only one of the two places is the hole this closed.
+  const valid = isConfigValid(state, draftProvenance) && !blocksRun(preflight);
+
   // Live serialized preview (placeholder stamp) so the dev inspector can prove
   // the draft validates against the contract schema before Run stamps it for real.
-  const previewConfig = toRunConfig(state, schemaValidationStamp());
+  const previewConfig = toRunConfig(state, schemaValidationStamp(draftProvenance));
   const previewValid =
     previewConfig !== null && validateRunConfigSchema(previewConfig).valid;
  
@@ -159,6 +178,14 @@ export function RunConfiguration({
       </header>
  
       <div className="run-config__body">
+        {/* Above the form, because it describes the form: the analyst reads
+            what the model chose, then scrolls into the fields it chose them
+            in. */}
+        <ModelProposalSummary
+          proposed={draftProposal}
+          model={draftProvenance?.model}
+        />
+
         <div className="run-config__form">
           <ApplicationSection
             value={state.application}
