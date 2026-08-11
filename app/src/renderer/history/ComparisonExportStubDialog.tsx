@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { RunRecord } from "../../shared/types";
 import { formatMetric } from "../results/formatMetric";
 import type { SelectedRowByRunId } from "../results/selectedRows";
+import { downloadMarkdown } from "../downloadMarkdown";
 import { Modal } from "./Modal";
 import {
   buildComparisonExportStub,
@@ -77,16 +78,6 @@ export function buildComparisonExportMarkdown(
   ].join("\n");
 }
 
-function downloadMarkdown(contents: string): void {
-  const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "qre-run-comparison.md";
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ComparisonExportStubDialog({
   records,
   selectedRowByRunId = {},
@@ -121,7 +112,7 @@ export function ComparisonExportStubDialog({
             {copied ? "Copied" : complete ? "Copy Markdown" : "Copy preview"}
           </button>
           {complete ? (
-            <button type="button" onClick={() => downloadMarkdown(preview)}>
+            <button type="button" onClick={() => downloadMarkdown(preview, "qre-run-comparison")}>
               Download .md
             </button>
           ) : null}

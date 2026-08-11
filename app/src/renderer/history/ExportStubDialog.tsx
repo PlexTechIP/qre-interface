@@ -14,6 +14,7 @@ import {
   QEC_LABELS,
   applicationLabel,
 } from "./historyLabels";
+import { downloadMarkdown } from "../downloadMarkdown";
 import { Modal } from "./Modal";
 
 /**
@@ -147,16 +148,6 @@ export function buildRunExportMarkdown(record: RunRecord): string {
   return lines.join("\n");
 }
 
-function downloadMarkdown(contents: string, name: string): void {
-  const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "qre-run"}.md`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ExportStubDialog({
   record,
   onClose,
@@ -190,7 +181,7 @@ export function ExportStubDialog({
           {complete ? (
             <button
               type="button"
-              onClick={() => downloadMarkdown(preview, record.config.name)}
+              onClick={() => downloadMarkdown(preview, record.config.name, "qre-run")}
             >
               Download .md
             </button>
