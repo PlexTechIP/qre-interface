@@ -1,211 +1,315 @@
-# Week 6 — Team 1 (Sun Min + Emma) — Technical Brief: Improve the LLM Interface
+# Week 6 — Team 1 (Sun Min + Emma) — Technical Brief: Deployment Readiness
 
-Your track: **take the natural-language interface Team 2 built in week 5 and
-make it something you would put in front of an analyst.**
+Your track: **get the app and the pipeline around it into a state we would be
+comfortable having strangers look at.**
 
-You did not write this code. That is the point of the rotation, and it is also
-the first thing to plan around: **budget your first sitting for reading, not
-typing.** The feature is about 1,275 lines across `renderer/agent/` plus six
-files in `main/`, and it is unusually well commented — the reasoning is in the
-files, not lost.
+Microsoft wants this open-sourced under the PlexTech account. That is the
+direction, and it moves a pile of work from "someday" to "before that happens."
+Nobody has ever done a security pass on this codebase. The CI pipeline has not
+been touched since week 2 and **does not run on your branch**. There is a
+high-severity advisory in the production dependency tree right now. None of that
+had an owner during a feature week. It has one now.
 
-## What you are inheriting, and its condition
+**This is not packaging.** No electron-builder, no installers, no code signing —
+that is week 7 or later, by decision. "Ready to go" this week means the codebase
+and the pipeline are ready, not that there is something to double-click.
 
-Week 5's Team 2 branch landed on `main`. At review time the feature was inert;
-it is not any more. Verified on `main` at `b6a5091`:
+## Four deliverables, and one of them is a document
 
-| Piece | Where | State |
+| # | Deliverable | Required / flexes |
 |---|---|---|
-| Credential storage | `main/credentialStore.ts`, `credentialHandler.ts`, `credentialValidator.ts` | **Done and good.** `safeStorage`, no getter, refuses on `basic_text`, `0o600` on the blob |
-| Provider adapters | `main/anthropicDraftGenerator.ts`, `main/openAiDraftGenerator.ts` | **Two of them**, both wired |
-| IPC seam | `main/agentHandler.ts`, registered at `main/main.ts:89` | **Wired.** Failures resolve as typed data; only programmer errors reject |
-| Key entry UI | `renderer/agent/ProviderCredentialPanel.tsx` | **Exists.** A key can be entered, validated once, and stored |
-| The interface | `renderer/agent/AgentInterface.tsx` (232 lines) | Prompt → **Review request** → Send → draft |
-| Draft → form | `renderer/agent/draftToFormState.ts` | Maps a strict proposal into a `FormState` |
-| Lowered schema + drift test | `shared/contracts/runconfig-generation.schema.json`, `runconfigGenerationCoverage.ts` | **The best artifact in the repo.** Do not weaken it |
-| Provenance | `state/useRunFlow.ts` | Present, and attached the wrong way — see Defect 1 |
+| 1 | **The CI pipeline actually catches things** | Required |
+| 2 | **Dependency advisories cleared** | Required |
+| 3 | **A security review of the app as it stands**, written up, with the cheap fixes made | Required — the write-up. The fixes flex |
+| 4 | **The two day-one contributor blockers closed** | Required |
+| 5 | **Release hygiene** — versioning, package metadata | Flexes |
+| 6 | **What else you found** — things we did not list, and what you did about each | **Required** |
 
-**Read `AgentInterface.tsx:55-70` first.** The comment there explains why the
-reviewed payload is stored *with the request that produced it* rather than as a
-separate `reviewing` flag. It is the clearest single example of the standard this
-code was written to, and your changes should meet it.
+Deliverables 3 and 6 have written artifacts. The rest are changes to the repo.
 
-## Your week is two things: a closed defect list, and one improvement
-
-The defect list is small and fixed. The improvement is one item, chosen by you.
-**Nothing else.** If you find a seventh thing, it goes in the channel as a note,
-not into the branch.
+**Deliverable 6 is not a formality — read § The list below is a floor.**
 
 ---
 
-## Part A — The defect list (closed; all five are required)
+## Deliverable 1 — Make CI catch things
 
-### Defect 1 — Provenance is attached outside the schema gate
+`.github/workflows/ci.yml` has not changed since week 2. It is better than it
+looks in one respect and worse in several others.
 
-`state/useRunFlow.ts:86-91`:
+**What it does right, so you do not break it:** it runs the two typecheck
+projects as **separate steps**, which sidesteps the `&&` short-circuit. And it has
+a `real-engine-checks` job that installs Python 3.13 and runs `npm run test:engine`
+— which is more than most people assume.
 
-```ts
-const config = toRunConfig(state, stamp());
-if (config === null) return;
-if (provenance !== undefined) config.provenance = provenance;
+**What is wrong:**
+
+**1. It does not run on your branch.** The triggers are:
+
+```yaml
+on:
+  pull_request:
+    branches: [week-2/team-3, main]
+  push:
+    branches: [week-2/team-3, main]
 ```
 
-The Run button is gated on `validateRunConfigSchema(previewConfig)`, and
-`previewConfig` is built **without** provenance
-(`RunConfiguration.tsx:132-134`). So the object that actually executes carries a
-field the schema gate never inspected.
+`week-2/team-3` is a branch from four weeks ago. `week-6/team-1` is not in that
+list, and neither is any other team branch. **So work in progress gets no CI at
+all** — which is precisely why week 5's non-compiling branch went unnoticed until
+a human ran `tsc` by hand during review. Fix this first; it is the single
+highest-value change in your week and it takes minutes.
 
-This is safe *today* — the canonical schema does define `provenance` and the only
-producer is the app itself. It is still a hole in the invariant the whole feature
-rests on: *existing validation is the only execution gate.* Close it by threading
-provenance through `toRunConfig`'s stamp rather than mutating after the fact, so
-the validated object and the executed object are the same object.
+**2. There is no lint step, and eslint does not work.** `eslint@10.6.0` and
+`typescript-eslint@8.63.0` are both in `devDependencies` — and there is **no
+eslint config file anywhere and no `lint` script in `package.json`.** Two
+dependencies installed on every `npm ci`, run by nobody. Either wire it up
+properly (config, script, CI step) or remove the dependencies. **Do not leave it
+in the current state**, which reads to an outside contributor as a lint setup that
+is silently broken.
 
-**The test that proves it:** a model-assisted run whose provenance is present in
-the object passed to `validateRunConfigSchema`, not only in the object passed to
-`execute`.
+**3. There is no build step.** `npm run build` works — verified — and CI never
+checks it. A change that typechecks and passes tests can still break the
+production build; Vite's build path is not the same as `tsc --noEmit`.
 
-### Defect 2 — `demoAgentService` is in the production fallback chain
+**4. It is ubuntu-only**, for an Electron desktop app that will run on macOS and
+Windows. A matrix is not free — it multiplies minutes and the engine job installs
+a Python venv — so **decide and defend**: full matrix, matrix on the fast job
+only, or ubuntu-only with a written reason. Any of the three is fine. Silence is
+not.
 
-`App.tsx:88`:
+**5. `npm run typecheck` short-circuits.** CI dodges it; your terminal does not.
+`"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"`
+means a single renderer error hides every main-process error. Fix the script so a
+local run reports both — two scripts plus a composite, or `;` with an explicit
+exit code.
+
+---
+
+## Deliverable 2 — Clear the advisories
+
+Run it yourself, but here is what we saw on `b6a5091`:
+
+- **`npm audit --omit=dev` → 1 high severity.** `fast-uri` (3.0.0–3.1.4), host
+  confusion via backslash authority introducer. **This is in the production
+  dependency tree**, pulled in transitively — almost certainly under `ajv`, which
+  is the library that validates every configuration this app runs.
+- **`npm audit` (including dev) → 5 vulnerabilities**, 1 moderate and 4 high,
+  `undici` among them.
+
+`npm audit fix` reportedly resolves them. **Run it, then verify nothing broke** —
+`npm run typecheck`, `npm test`, `npm run test:engine`, and `npm run build`. A
+transitive bump under Ajv is exactly the kind of change that is fine 95% of the
+time and silently changes validation behaviour the other 5%.
+
+Then the harder half: **what stops this from recurring?** Nothing currently
+watches for advisories. Your options are a CI `npm audit` step that fails the
+build, a scheduled workflow, Dependabot, or a documented manual cadence. **Pick
+one and implement it**, or write down why none of them is right yet. Also check
+**Electron's currency** — we are on 43.1.0, and Electron ships security releases
+on a schedule that does not care about our sprint plan.
+
+---
+
+## Deliverable 3 — Security review of the app as it stands
+
+**Scope: the code on `main` today.** Not the git history — that is Team 3's, and
+the boundary matters so you do not duplicate each other. **Talk to them.** Your
+findings belong in their document, and their publication timeline depends on
+yours.
+
+### What is already right — verify, then say so
+
+`main.ts:24-29` is correct and it is the part that matters most:
 
 ```ts
-const resolvedAgentService = agentService ?? window.agent ?? demoAgentService;
-```
-
-In Electron, `preload.ts` always defines `window.agent`, so the third branch is
-unreachable in the shipped app. It is very much reachable under test, which means
-**the suite exercises a fixture path production can never take** — a green run
-says nothing about whether the real seam works.
-
-Decide and defend one of: delete `demoAgentService` and inject the fake in the
-tests that need it, or keep it and make the fallback explicit and impossible to
-hit by accident. Either is fine. Silently leaving a demo double in the resolution
-order of the shipped app is not.
-
-### Defect 3 — Two hardcoded colours on the network-status dot
-
-`styles.css:365-366`:
-
-```css
-.agent-status--on .agent-status__dot {
-  background: #22a06b;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #22a06b 18%, transparent);
+webPreferences: {
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+  preload: path.join(currentDir, "preload.cjs"),
 }
 ```
 
-170 lines of otherwise token-clean CSS, and the one colour that has to read
-against both themes is the one that is hardcoded. Move it to a token and check it
-in light **and** dark.
+Three of the four canonical Electron footguns are already disarmed. **Confirm
+this yourself and state it in the write-up** — a security review that only lists
+problems is not a review, and this is a genuine strength worth recording before a
+stranger has to work it out.
 
-### Defect 4 — The offline non-negotiable has never been demonstrated
+### What is missing
 
-`docs/tech-stack.md` §Non-negotiables says no network calls are required for core
-workflows. The feature only lives inside that rule if configuration, execution,
-history, comparison, and export all work with **no provider configured and no
-network**.
+**1. There is no Content Security Policy.** Not a `<meta>` tag in `index.html`,
+not a header set via `session.defaultSession.webRequest.onHeadersReceived`. The
+app now renders content derived from LLM provider responses. Electron's own
+security checklist treats a CSP as a baseline item and the renderer will warn
+about its absence in development. Decide what the policy should be and implement
+it — note that a strict `script-src` interacts with the inline theme script in
+`index.html`, so this is slightly more than a one-liner.
 
-This has been statically audited — no agent import anywhere in the core path —
-and never run. **Run it.** No key configured, network off, then: configure a run,
-execute it, open History, compare two runs, export one. Write down in the PR what
-you did and what you saw.
+**2. There are no navigation guards.** No `setWindowOpenHandler`, no
+`will-navigate` handler anywhere in `src/main/`. The standard hardening is to deny
+new-window creation by default and to block in-app navigation to external origins,
+opening them in the system browser instead. With `sandbox: true` this is less
+severe than it would otherwise be, but it is a standard item and its absence is
+the sort of thing a first outside reviewer will spot in a minute.
 
-### Defect 5 — The end-to-end walkthrough has never been performed
+**3. The IPC surface has grown and nobody has audited it end to end.** There are
+now **five** preload surfaces — `estimator`, `uploads`, `store`, `agent`, `files`
+(`preload.ts:101-105`). *(Note: the MCP design document says four. It was written
+before `agent` landed. Tell Team 2.)* For each channel: what does the handler
+receive, does it validate before acting, and what is the worst thing a malicious
+or buggy renderer could ask for? `uploads` and `files` touch the filesystem;
+`estimator` spawns a Python subprocess; `agent` makes network calls with a
+credential the renderer is not allowed to see.
 
-No one has ever recorded doing this in order:
+**4. The subprocess and network surfaces are new since anyone last looked.**
+`QreEngine` spawns Python with arguments derived from a `RunConfig`. The agent
+path sends analyst prose to a third-party provider. Neither has been reviewed as a
+security surface — only as a feature.
 
-> no key configured → app fully usable → key entered and validated → prose in →
-> draft proposed → draft edited in the form → Run → the saved record carries
-> provenance → the key is unreadable from the renderer
+### What the write-up needs
 
-Do it once, in the running app, and record it. **A wrong key should produce a
-clear message, not a crash** — check that too; `providerErrorBody.ts` exists to
-make the provider's own reason legible, so confirm it does.
+`docs/week-6/team-1/security-review.md`. **Every finding gets a severity, a file
+and line, and one of three dispositions: fixed, filed, or accepted with a
+reason.** "Accepted with a reason" is a legitimate outcome and we would rather see
+it written down than see a rushed fix.
 
----
-
-## Part B — One improvement, and it is yours to choose
-
-**Pick one. Post which one, and why, in the channel before you build it.** The
-design is yours in the same way week 5's was Team 2's — we want your answer, not
-ours with your name on it.
-
-Two candidates are named below because both are real gaps we can point at. If you
-have a third you can argue for, argue for it in the channel first.
-
-### Candidate 1 — A model proposal silently discards the analyst's work
-
-`App.tsx:245` hands the draft to the form as `initialDraft={draftHandoff?.state}`,
-and `draftToFormState` builds that state from `createInitialFormState()` plus the
-proposal. So an analyst who has half-filled the configuration form, then asks the
-model for help, **loses everything they had typed** — with no warning and no way
-back.
-
-Worse for the review step specifically: the analyst is asked to review a draft
-without being shown *what changed*. "Review before you run" only means something
-if the thing under review is legible, and right now the proposal arrives as a
-fully-populated form with no indication of which of its ~40 fields the model
-actually chose versus which are defaults it never mentioned.
-
-Fixing either half of this is a week. Fixing the second half — **show the analyst
-what the model actually set** — is the one with more value per hour, because it
-makes the existing review step honest rather than adding a new one.
-
-### Candidate 2 — There is no way to refine a proposal
-
-The interaction is single-shot: prompt in, draft out. An analyst who gets a draft
-that is right except for the architecture has to rewrite the whole prompt from
-scratch, and the second request has no knowledge of the first.
-
-"Now make it Majorana" is the single most obvious thing a person will try with a
-natural-language interface, and today it does not work. Whether the fix is
-conversational context, a structured "adjust this field" affordance, or something
-else is a design question — and it is genuinely yours.
-
-**Whichever you pick, the constraints from week 5 are unchanged and are not
-design choices:** the key never enters the renderer; the model produces a draft
-`FormState`, never a `RunConfig`; existing validation is the only execution gate;
-the analyst sees exactly what will be sent before it is sent; the app works
-completely with no provider configured.
+**Fix what is cheap and low-risk. File what is not.** A security review that turns
+into a large refactor is a security review that does not get finished, and an
+unfinished one is worth nothing to Team 3's document.
 
 ---
 
-## The drift test is load-bearing — do not weaken it
+## Deliverable 4 — The two day-one blockers
 
-`shared/contracts/runconfigGenerationCoverage.ts` asserts that every canonical
-`RunConfig` leaf is classified **exactly once** as generated, app-controlled, or
-excluded, by set equality against `runconfig.schema.json`. Add a field to the
-canonical schema and this test fails until a human decides what the model may do
-with it.
+Both of these break a new contributor before they write a line, and both have been
+open for weeks.
 
-If your improvement makes it fail, **the answer is to classify the new field, not
-to relax the assertion.** If you find yourself editing the test to make it pass,
-stop and post in the channel.
+**1. `npm run test:engine` cannot be run on a fresh checkout.** The pinned
+interpreter `app/src/main/engine/python/.venv/bin/python3` is gitignored and
+absent, so the suite reports ~135 instant "failures" that are not failures. Worse,
+`setup_venv.sh` pins Python **3.13.14** and **deletes the existing `.venv` before
+it checks the version** — so on a machine with an older `python3` it fails *after*
+destroying what was there. That is a destructive failure in the first script a new
+contributor runs.
+
+Fix the ordering at minimum: **check the interpreter version before removing
+anything.** Then decide whether the pin should be exact or a floor, and make the
+failure message say what to do.
+
+**2. The setup guide has never been executed on a clean environment.**
+`setup-and-troubleshooting.md:189` still reads *"Guide executed on clean
+environment: **not yet**; local macOS dev checkout."* Open since week 4. Someone
+runs it start to finish on a machine that has not built this project, writes down
+what broke, fixes the guide, and updates that line. Expect the Python pin to be
+the first thing it catches.
+
+---
+
+## Deliverable 5 — Release hygiene (this is the part that flexes)
+
+`app/package.json` is `version: 0.0.0`, `private: true`, and carries no `license`,
+`author`, or `repository` field. There is no root `package.json` at all.
+
+**Do not add a `license` field** — the license choice is Team 3's recommendation
+and the PMs' decision, and putting a value there pre-empts both. Everything else
+here is fair game: what the version number should be and when it moves, whether
+`private: true` is still right, and what metadata a published package needs.
+
+Write your recommendation into the security review document as a short section
+rather than a separate file, and coordinate with Team 3 so you are not both
+proposing versioning schemes.
+
+---
+
+## Deliverable 6 — The list above is a floor, not a ceiling
+
+**Everything in deliverables 1–5 is something the PMs found from the outside, in
+an afternoon, without running the app.** That is the level of scrutiny it took to
+produce that list. You will be inside this codebase for two weeks with a security
+brief in your hand.
+
+**So go looking, and write down what you find.**
+
+If you are handing this document to a coding agent, that is fine — but point it at
+this section too. *"What else in this codebase is a security risk or a
+deployment blocker that is not on this list?"* is exactly the prompt nobody runs,
+and it is the one this track most rewards. Use your own judgment on what comes
+back; you are accountable for what lands, not the agent.
+
+**Places worth pointing it, that deliverables 1–5 do not cover:**
+
+- **Error and crash paths.** What happens when the Python subprocess dies mid-run,
+  when the database is locked, when a provider request times out, when a file the
+  user uploaded disappears between selection and read? Nobody has swept these.
+- **What the app writes to disk, and where.** The run store, the credential blob,
+  any caches or temp files. File permissions on each — `credentialStore.ts` sets
+  `0o600`; does everything else that should?
+- **What the app logs.** Once this repository is public, a log line that seemed
+  harmless is a log line strangers can read about. Does anything log a
+  configuration, a prompt, a path, or an error body with data in it?
+- **The upload path.** `uploads` and `files` are two of the five preload surfaces
+  and they touch the filesystem on behalf of the renderer. Path traversal, symlink
+  handling, size limits, what happens on a file that is not what its extension
+  claims.
+- **Anything that would embarrass us in a public repository** — a stray `TODO`
+  with someone's name on it, a hardcoded path, a commented-out experiment, a
+  test that asserts nothing.
+
+**The output is a section in `security-review.md`:** everything you found that we
+did not name, and for each one — fixed, filed, or deliberately left with a
+reason. **Implement what is safe and inside your boundaries. File the rest.**
+
+**An empty list is an acceptable answer, but it has to be argued.** "We swept the
+error paths, the disk writes, and the upload surface, and found nothing worth
+reporting" is a finding, and a useful one. Saying nothing is not.
+
+**One guardrail:** deliverables 1–5 come first. Discovery does not justify an
+unfinished pipeline. If you are behind, the extra *implementation* is the first
+thing to cut — but the list of what you *found* still ships.
+
+## Reviews — run them, on your own work
+
+Two things, and neither is the same as testing:
+
+1. **Read your own diff top to bottom before you ask your teammate to.** As though
+   someone else wrote it. Most of what a reviewer catches is something the author
+   would have caught by reading it once, cold.
+2. **Your teammate reviews every merge.** Not just the last one. This track lands
+   in pieces — the CI fix, the audit bump, the security fixes — and each piece is
+   a review.
+
+If you are using an agent, running a review pass over the finished diff is a
+legitimate and encouraged use of it. It is also not a substitute for a human
+reading the security changes, because the agent that wrote a fix is the worst
+possible judge of whether the fix is right.
 
 ## Boundaries — what is NOT yours this week
 
 | Not yours | Whose |
 |---|---|
-| Anything under `main/mcp/`, the MCP scaffold, `@modelcontextprotocol/sdk` | Team 2 |
-| `main/sqliteRunStore.ts`, including the WAL question | Team 2 |
-| The open-source question — LICENSE, CONTRIBUTING, repo visibility | Team 3 |
-| `renderer/components/`, `renderer/constants/`, `main/engine/` | Nobody this week — don't drift into them |
-| The Results-page `qreVersion` regression and the History selection change | PM — both are tracked from the PR #22 review |
+| `renderer/agent/`, `main/agentHandler.ts`, `main/credential*`, `main/*DraftGenerator.ts`, `renderer/state/useRunFlow.ts` | **PMs** — the LLM interface is a PM track this week |
+| The git history secret scan, licensing, community files, governance | Team 3 |
+| Adding `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` | Nobody — Team 3 recommends, PMs decide |
+| Making the repository public, or any repo setting | PMs and PlexTech. Not reversible |
+| The MCP entry point and its build config; `main/sqliteRunStore.ts` | Team 2 |
+| **electron-builder, installers, code signing** | Nobody — deferred to week 7+ |
+| The Results-page `qreVersion` regression, the History selection change, the `MEMORY_OPTIMIZATION_SECTION` copy drift | PM — all three already known from the PR #22 review |
 | Opening a contract-change PR | Nobody. v1.4.0 stands |
-| Automated circuit creation, consumer-subscription OAuth | Out of scope, deliberately |
-| Packaging or installers | Deferred to week 7+ |
 
-**You will touch `renderer/state/useRunFlow.ts` and `renderer/state/validation.ts`
-is adjacent to it.** Nobody else is in `renderer/state/` this week, so this is
-yours without coordination — but note that Preston's PR #22 changed
-`normalizeFormState` and `draftToFormState` as a pair on Aug 9. **Rebase and read
-both before you edit either.**
+**You will be reading a lot of code you did not write, including the agent
+files.** Reading them is expected — the IPC audit requires it. **Changing them is
+not.** If the audit turns up something in a PM-owned file, that is a finding for
+the write-up and a message in the channel, not a commit.
 
 ## Quality bar
 
-Strict TypeScript, no `any` at boundaries, contract types imported from
-`app/src/shared/types.ts` rather than re-declared. Every new surface keyboard
-operable and legible in both themes. No key, prompt, or provider response written
-to `run-history.sqlite`. `npm run typecheck` and `npm test` green **on the commit
-you merge** — and see the overview's note about the `&&` short-circuit before you
-trust a clean run on a red tree.
+Every security finding names a file and a line and carries a disposition. Every
+CI change is proven by a run that actually happened — **push a deliberately broken
+commit to a scratch branch once and confirm CI goes red**, because a pipeline
+nobody has seen fail is a pipeline nobody has tested. `npm audit` clean, or the
+remaining items explained. `npm run typecheck`, `npm test`, `npm run test:engine`,
+and `npm run build` all green on the commit you merge.
+
+**And the standard this track is actually held to:** if week 5 had happened with
+your pipeline in place, would CI have caught it? Three typecheck errors and one
+failing test on a team branch. If the answer is no, the pipeline is not done.

@@ -1,109 +1,162 @@
-# Week 6 — Team 1 (Sun Min + Emma) — Definition of Done: The LLM Interface
+# Week 6 — Team 1 (Sun Min + Emma) — Definition of Done: Deployment Readiness
 
-The bar for **Wed Aug 12 EOD**. Demoed from `main`, not a branch.
+The bar for **Tue Aug 18 EOD**. Verified from `main`, not a branch.
 
-## The defect list — all five closed
+## CI
 
-- [ ] **Provenance is inside the schema gate.** The object validated by
-      `validateRunConfigSchema` and the object passed to `execute` are the same
-      object; `useRunFlow` no longer mutates `config` after `toRunConfig`
-- [ ] **A test covers it** — provenance present in the validated object, and it
-      fails if the fix is reverted
-- [ ] **`demoAgentService` is no longer an implicit fallback in the shipped app.**
-      Deleted, or made explicit and unhittable; the choice is stated in the PR
-- [ ] **The network-status dot uses a token**, not `#22a06b`, and reads correctly
-      in light and dark
-- [ ] **Offline was demonstrated, not asserted.** With no provider configured and
-      no network: configure → run → History → compare → export, all working, and
-      the PR says what was done and seen
-- [ ] **The end-to-end walkthrough was performed once, in the running app**, in
-      order: no key → app usable → key entered and validated → prose in → draft
-      proposed → draft edited in the form → Run → saved record carries provenance
-      → key unreadable from the renderer
-- [ ] **A wrong or expired key produces a clear message, not a crash**
+- [ ] **CI runs on team branches.** `week-6/**` at minimum; `week-2/team-3` is
+      gone from the triggers
+- [ ] **CI has been seen to fail on purpose.** A deliberately broken commit was
+      pushed to a scratch branch, CI went red, and the run is linked in the PR
+- [ ] **There is a build step.** `npm run build` runs in CI
+- [ ] **Lint is either wired up or removed.** Config + script + CI step, or
+      `eslint` and `typescript-eslint` dropped from `devDependencies`. Not left
+      installed-and-unrunnable
+- [ ] **The OS matrix decision is made and written down** as a comment in the
+      workflow — full, fast-job-only, or ubuntu-only with a reason
+- [ ] **`npm run typecheck` no longer short-circuits.** A local run reports both
+      projects, not only the first to fail
+- [ ] **The `real-engine-checks` job still works.** It was not broken while
+      restructuring
+- [ ] **CI is green on the merge commit**
 
-## The improvement
+## Dependencies
 
-- [ ] **One improvement shipped**, and it is the one that was posted in the
-      channel before it was built
-- [ ] **The PR explains the design and why** — this was your call to make, so the
-      reasoning belongs in writing
-- [ ] It is genuinely usable, not a scaffold: an analyst can reach it, use it, and
-      understand what it did
+- [ ] **`npm audit --omit=dev` is clean**, or every remaining item is explained in
+      the security review with a reachability assessment
+- [ ] **`npm audit` (including dev) is clean or explained**
+- [ ] **The fix was verified, not assumed** — `npm run typecheck`, `npm test`,
+      `npm run test:engine`, and `npm run build` all run after the bump. The engine
+      suite specifically, because the high-severity item sits under Ajv
+- [ ] **Electron's currency was checked** and a recommendation recorded
+- [ ] **A recurrence guard exists** — CI audit step, scheduled workflow,
+      Dependabot, or a documented cadence — or a written reason why none is right
+      yet
 
-## The week-5 constraints survive — non-negotiable
+## Security review
 
-- [ ] **The key never enters the renderer** and is never written to
-      `run-history.sqlite`, a config JSON, or `localStorage`. Grep-checkable, and
-      grepped
-- [ ] **There is still no getter.** No IPC channel returns the key; the renderer
-      can only ask whether one is configured
-- [ ] **The model still produces a draft `FormState`, never a `RunConfig`.** No
-      path exists by which model output becomes a stamped config directly
-- [ ] **Existing validation is still the only execution gate.** There is no
-      "generated config" code path that skips `toRunConfig` or
-      `validateRunConfigSchema`
-- [ ] **The analyst still sees the literal payload before it is sent**, read back
-      from the process that sends it rather than reconstructed in the renderer
-- [ ] **The canonical schema is unchanged**; the lowered generation schema
-      remains a separate artifact
-- [ ] **The drift test still asserts set equality** against
-      `runconfig.schema.json`, with the uniqueness check intact. It was not
-      relaxed to accommodate a change
-- [ ] **The feature is still removable** — nothing in the core config → run →
-      history → export path imports agent code
-- [ ] **No network call happens without an explicit user action**
+- [ ] **`docs/week-6/team-1/security-review.md` is on `main`**
+- [ ] **Every finding has a severity, a file and line, and a disposition** —
+      fixed, filed, or accepted with a reason
+- [ ] **What is already correct is recorded**, not just what is wrong —
+      `contextIsolation`, `nodeIntegration: false`, `sandbox: true`, verified by
+      you at `main.ts:24-29`
+- [ ] **A Content Security Policy exists**, or its absence is an explicit accepted
+      finding with a reason. The interaction with the inline theme script in
+      `index.html` is addressed either way
+- [ ] **Navigation guards exist** — `setWindowOpenHandler` and `will-navigate` —
+      or their absence is an explicit accepted finding
+- [ ] **All five preload surfaces are audited** — `estimator`, `uploads`, `store`,
+      `agent`, `files` — each with what the handler receives, whether it validates,
+      and the worst case
+- [ ] **The Python subprocess surface is assessed**
+- [ ] **The provider network surface is assessed** — read, not changed
+- [ ] **Cheap fixes were made; expensive ones were filed.** The review did not
+      turn into a refactor
+- [ ] **Anything found in a PM-owned file was reported, not fixed**
+- [ ] **Team 3 has the findings** and can cite them in their document
+
+## Contributor day-one blockers
+
+- [ ] **`setup_venv.sh` checks the Python version before deleting `.venv`.** The
+      destructive-failure ordering is fixed
+- [ ] **The Python pin decision is made** — exact or floor — and the failure
+      message tells the reader what to do
+- [ ] **`npm run test:engine` on a fresh checkout** either works or fails with a
+      message that explains itself. No more ~135 instant false failures
+- [ ] **`setup-and-troubleshooting.md` was executed start to finish** on a machine
+      that had not built this project
+- [ ] **The guide was fixed** based on what that caught, and **line 189 now names
+      who ran it, on what, and what it caught** — open since week 4
+
+## Release hygiene (flexes — cut this first if behind)
+
+- [ ] A versioning recommendation exists for `app/package.json`
+      (`version: 0.0.0`, `private: true` today)
+- [ ] **No `license` field was added** — that is Team 3's recommendation and the
+      PMs' decision
+- [ ] It was coordinated with Team 3 so two versioning schemes were not proposed
+- [ ] It lives as a section in `security-review.md`, not a separate file
+
+## What else you found
+
+> Not a formality. Everything above is what the PMs found from the outside in an
+> afternoon; you were inside the codebase for two weeks.
+
+- [ ] **`security-review.md` has a section listing what you found that we did not
+      name**
+- [ ] **Each item says what happened to it** — fixed, filed, or deliberately left
+      with a reason
+- [ ] **The five sweeps were actually done** — error and crash paths, what the app
+      writes to disk and with what permissions, what it logs, the upload path, and
+      anything that would embarrass us in a public repository
+- [ ] **What was safe and in scope was implemented.** What was not was filed
+- [ ] **If the list is empty, it is argued** — which areas were swept and what was
+      concluded. Silence does not count
+- [ ] **The required deliverables were not sacrificed for it.** Discovery did not
+      come at the cost of an unfinished pipeline
+
+## Reviews
+
+- [ ] **Every merge was reviewed by the teammate**, not only the final one
+- [ ] **The author read their own diff first**, cold, before requesting review
+- [ ] **A PM reviewed the security write-up** and the security-adjacent changes
+- [ ] **Any agent-assisted review was backed by a human reading the security
+      changes** — an agent reviewing its own fix is not a review
 
 ## Testing
 
-> The section that did not happen last week. Every line here is cheap.
+> Your track is the one that makes week 5 impossible to repeat, which makes it
+> the worst possible track to be sloppy on.
 
-- [ ] **`npm run typecheck` is clean on the merge commit.** If it went red at any
-      point, both projects were run separately — the `&&` short-circuits and an
-      error count on a red tree is a floor, not a total
-- [ ] **`npm test` is green on the merge commit**, not on an earlier commit
-- [ ] **Every behaviour changed has a test that fails when the change is
-      reverted**, and this was verified by actually reverting one
+- [ ] **`npm run typecheck` clean on the merge commit**
+- [ ] **`npm test` green on the merge commit**, not an earlier one
+- [ ] **`npm run test:engine` green** — you are the team that made it runnable
+- [ ] **`npm run build` succeeds**
+- [ ] **Security fixes are tested where a test makes sense** — a CSP and a
+      navigation guard are both assertable
 - [ ] **No test was skipped, `.only`'d, or deleted** to make the suite pass
-- [ ] **Every surface touched is keyboard operable and legible in both themes**
-
-## Quality
-
-- [ ] Strict TypeScript; no `any` at boundaries; contract types imported from
-      `app/src/shared/types.ts`, never re-declared
-- [ ] New CSS uses tokens; no hardcoded colours introduced
-- [ ] The code you added meets the standard of the code you inherited — the
-      reasoning for a non-obvious decision is in the file, not only in the PR
+- [ ] **The acceptance question is answered in the PR:** if week 5's branch —
+      3 typecheck errors and 1 failing test on a team branch — were pushed today,
+      would this pipeline catch it? Yes or no, and why
 
 ## Process
 
-- [ ] **Worked on `week-6/team-1`**, the branch the PMs created off `b6a5091` —
-      not a branch of your own, and not one based on week 5
+- [ ] **Worked under `week-6/team-1`**, the branch the PMs created off `b6a5091`
+- [ ] **Each piece of work had its own `week-6/team-1-<thing>` branch** that PR'd
+      into the team branch. Nothing was committed straight to the team branch, and
+      every feature branch kept the `week-6/` prefix so CI picked it up
 - [ ] **The work split at the top of the checklist was filled in at kickoff** and
       is still accurate, or was corrected in a commit
 - [ ] **Both names appear in the commit log**
-- [ ] **The improvement choice was posted in the channel before it was built**
-- [ ] **Halfway gate honored** — Part A done by Tuesday's checkpoint, or Part B
-      dropped and said so in the channel
-- [ ] **Scope was not grown.** Anything found beyond the five defects and the one
-      improvement went to the channel as a note, not into the branch
+- [ ] **The CI trigger fix landed early**, not bundled into one Tuesday merge.
+      Every other team benefits from it the day it lands
+- [ ] **Work was merged in pieces** rather than as a single end-of-week drop
+- [ ] **Mid-point gate honored** — CI running on team branches by the Tue Aug 11
+      checkpoint, or an escalation posted
+- [ ] **Anything serious found in the review was escalated immediately**, not held
+      until the deadline
 - [ ] **Checklist file updated** — every box ticked, or annotated with one line
       saying why not. An unchecked box with a reason is a good outcome; an
       unchecked box with no reason reads as abandoned
-- [ ] **Merged to `main` by Wed Aug 12 EOD**; teammate reviews first. A PR opened
-      Wednesday evening is not a delivery
+- [ ] **Merged to `main` by Tue Aug 18 EOD**; teammate reviews first, and a PM
+      reviews the security write-up. A PR opened Tuesday evening is not a delivery
 
 ## Explicitly NOT required
 
-- **A second improvement** — one, finished, beats two started · **any MCP work**,
-  the scaffold, `@modelcontextprotocol/sdk`, or anything under `main/mcp/`
-  (Team 2) · **`main/sqliteRunStore.ts`, including the WAL question** (Team 2) ·
-  **the open-source question** — LICENSE, CONTRIBUTING, repo visibility (Team 3) ·
-  **the Results-page `qreVersion` regression** and **the History
-  compare/delete selection change** — both are tracked PM items from the PR #22
-  review, and neither is yours · **a contract-change PR** — v1.4.0 stands ·
-  **automated circuit creation** · **consumer-subscription OAuth** · **a third
-  provider adapter** — two work; a third proves nothing · **packaging or
-  installers** — deferred to week 7+ · **rewriting the drift test or the
-  credential module** — they are the two best things in the repo, and improving
-  the interface does not require touching either.
+- **Packaging, installers, or code signing** — no electron-builder, no
+  electron-forge, not even a spike. Deferred to week 7+ by decision ·
+  **any LLM interface work** — `renderer/agent/`, `main/agentHandler.ts`,
+  `main/credential*`, `main/*DraftGenerator.ts`, `renderer/state/useRunFlow.ts`
+  are PM-owned this week; read them for the audit, change nothing · **the git
+  history secret scan, licensing, community files, or governance** (Team 3) ·
+  **adding `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, or `SECURITY.md`** —
+  Team 3 recommends, PMs decide · **making the repository public or changing any
+  repo setting** — not reversible · **the MCP entry point or
+  `main/sqliteRunStore.ts`** (Team 2) · **the Results-page `qreVersion`
+  regression**, **the History compare/delete selection change**, and **the
+  `MEMORY_OPTIMIZATION_SECTION` copy drift** — all three already known from the
+  PR #22 review and all three PM items · **a contract-change PR** — v1.4.0 stands ·
+  **a full penetration test or a formal threat model** — this is a review of a
+  codebase by the people who work on it, not an external assessment · **fixing
+  every finding** — filed with a severity and a reason is a complete outcome.
