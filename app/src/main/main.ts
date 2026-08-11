@@ -14,6 +14,7 @@ import { registerEstimatorHandler } from "./estimatorHandler.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
 import { registerStoreHandlers } from "./storeHandler.js";
 import { registerUploadHandler } from "./uploadHandler.js";
+import { hardenWebContents } from "./windowSecurity.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +31,13 @@ function createWindow(): void {
   });
 
   const devServerUrl = process.env["VITE_DEV_SERVER_URL"];
+  // Guards applied BEFORE the first load, so there is no window in which the
+  // page exists unguarded. The dev server is allowed to navigate within its own
+  // origin (reload and HMR do exactly that); the packaged build is allowed
+  // nothing — a `file://` URL has origin "null", which would compare equal to
+  // every other `file://` URL and wave through the whole filesystem.
+  hardenWebContents(window.webContents, devServerUrl);
+
   if (devServerUrl) {
     void window.loadURL(devServerUrl);
   } else {
