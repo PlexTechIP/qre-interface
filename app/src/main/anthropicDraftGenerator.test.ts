@@ -2,6 +2,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import { PROVIDER_MODELS } from "../shared/providerModels.js";
+import { FAKE_GENERATED_DRAFT } from "../shared/testing/fakeAgentService.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 
 const PROMPT = "Grover search over 20 qubits on a gate-based QPU";
@@ -50,6 +52,42 @@ describe("AnthropicDraftGenerator request body", () => {
     expect(body.system).toContain("searchQubits");
   });
 
+  /**
+   * `output_config.effort` is a 5-generation parameter. Haiku 4.5 answers it
+   * with a 400, so sending it unconditionally made the cheapest entry in the
+   * model menu the one that could never succeed — and the failure arrived as an
+   * opaque provider rejection rather than as anything naming the cause.
+   */
+  it.each(["claude-sonnet-5", "claude-opus-5"])("paces thinking with low effort on %s", (model) => {
+    const body = new AnthropicDraftGenerator(model).buildRequestBody(PROMPT);
+
+    expect(body.output_config.effort).toBe("low");
+  });
+
+  it("omits effort entirely on a model that rejects the parameter", () => {
+    const body = new AnthropicDraftGenerator("claude-haiku-4-5").buildRequestBody(PROMPT);
+
+    // Absent, not undefined: `JSON.stringify` drops an undefined value, but the
+    // preview panel renders this object directly and would show the key.
+    expect(body.output_config).not.toHaveProperty("effort");
+    expect(Object.keys(body.output_config)).toEqual(["format"]);
+    // The part that actually matters on this model is untouched.
+    expect(body.output_config.format.type).toBe("json_schema");
+  });
+
+  /**
+   * Every model the picker offers has to produce a body the provider accepts.
+   * A menu entry that always 400s is the failure this pins, whichever model is
+   * added next.
+   */
+  it("builds a body for every Anthropic model the picker offers", () => {
+    for (const model of PROVIDER_MODELS.anthropic.models) {
+      const body = new AnthropicDraftGenerator(model).buildRequestBody(PROMPT);
+      expect(body.model).toBe(model);
+      expect(body.output_config.format.schema).toBeDefined();
+    }
+  });
+
   it("never puts a credential in the request body", () => {
     const generator = new AnthropicDraftGenerator();
     const serialized = JSON.stringify(generator.buildRequestBody(PROMPT));
@@ -85,14 +123,51 @@ describe("AnthropicDraftGenerator outcomes", () => {
   }
 
   it("returns the parsed draft on success", async () => {
-    const result = await draftWith(messageResponse({ name: "Grover draft", maxError: 1 }));
+    const result = await draftWith(messageResponse(FAKE_GENERATED_DRAFT));
 
     expect(result).toEqual({
       ok: true,
-      draft: { name: "Grover draft", maxError: 1 },
+      draft: FAKE_GENERATED_DRAFT,
       provider: "Anthropic",
       model: "claude-opus-5",
     });
+  });
+
+  /**
+   * The reply is checked against the generation contract before it is handed
+   * on. Without this, a type-confused value mapped cleanly into a form that
+   * looked valid, flagged no field, and could never be run — see
+   * `draftValidation.ts`.
+   */
+  it("refuses a schema-valid-looking reply whose types are wrong, naming the field", async () => {
+    const result = await draftWith(
+      messageResponse({
+        ...FAKE_GENERATED_DRAFT,
+        architecture: {
+          type: "gateBased",
+          errorRate: "1e-3",
+          gateTime: 50,
+          measurementTime: 100,
+          twoQubitGateTime: null,
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
+    if (result.ok) return;
+    expect(result.message).toContain("architecture.errorRate");
+    expect(result.message).toContain("Nothing was applied to the form.");
+  });
+
+  it("refuses a reply missing a required section", async () => {
+    const draft: Record<string, unknown> = structuredClone(FAKE_GENERATED_DRAFT);
+    delete draft["traceTransform"];
+
+    const result = await draftWith(messageResponse(draft));
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
+    if (result.ok) return;
+    expect(result.message).toContain("traceTransform");
   });
 
   // Every provider failure resolves — the estimator convention this surface is
@@ -185,6 +260,52 @@ describe("AnthropicDraftGenerator outcomes", () => {
       abort.name = "AbortError";
       throw abort;
     });
+
+    expect(result).toMatchObject({ ok: false, code: "TIMEOUT" });
+  });
+
+  /**
+   * Cancelling and timing out surface as the same `AbortError` from the same
+   * `fetch`, so the signal is what tells them apart. Collapsing them would tell
+   * someone who had just pressed Cancel that "the provider did not respond in
+   * time" — a claim about the provider, made about their own action.
+   */
+  it("distinguishes a cancelled request from a slow one", async () => {
+    const cancel = new AbortController();
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      cancel.abort();
+      // What a real fetch does once its signal fires.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const error = new Error("This operation was aborted");
+      error.name = "AbortError";
+      // The combined signal is what actually reaches fetch.
+      expect(init.signal?.aborted).toBe(true);
+      throw error;
+    });
+
+    const result = await new AnthropicDraftGenerator(
+      "claude-opus-5",
+      fetchImpl as unknown as typeof fetch,
+    ).requestDraft(API_KEY, PROMPT, cancel.signal);
+
+    expect(result).toMatchObject({ ok: false, code: "CANCELLED" });
+    if (result.ok) return;
+    expect(result.message).toContain("Nothing was applied to the form.");
+    expect(result.message).not.toMatch(/did not respond in time/);
+  });
+
+  it("still reports TIMEOUT when a cancel signal exists but never fired", async () => {
+    const cancel = new AbortController();
+    const fetchImpl = vi.fn(async () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      throw error;
+    });
+
+    const result = await new AnthropicDraftGenerator(
+      "claude-opus-5",
+      fetchImpl as unknown as typeof fetch,
+    ).requestDraft(API_KEY, PROMPT, cancel.signal);
 
     expect(result).toMatchObject({ ok: false, code: "TIMEOUT" });
   });

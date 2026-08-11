@@ -126,6 +126,22 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     UNAVAILABLE_AGENT_STATUS,
   );
   const [draftHandoff, setDraftHandoff] = useState<DraftHandoff | null>(null);
+  /**
+   * The Describe-a-Run prompt, held by the shell rather than by the panel.
+   *
+   * Every page here is a conditional render, so `AgentInterface` unmounts on any
+   * sidebar click and used to take a typed description with it — check a default
+   * on Run Configuration, come back, start again. It also made the trip back
+   * from a draft ("that is not quite what I meant") begin from an empty box,
+   * which is most of why the round trip through this page never worked.
+   *
+   * Session state only, deliberately NOT localStorage like the theme and the
+   * provider selection beside it: those are inert preferences, while this is
+   * text the analyst composed to send to a third party. It survives navigation,
+   * which is the actual complaint; it does not survive quitting the app, and it
+   * never lands on disk.
+   */
+  const [agentPrompt, setAgentPrompt] = useState("");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -275,8 +291,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               status={agentStatus}
               provider={agentSelection.provider}
               model={agentSelection.model}
+              prompt={agentPrompt}
+              onPromptChange={setAgentPrompt}
               onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
-              onCredentialConfigured={refreshAgentStatus}
+              onCredentialChange={refreshAgentStatus}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);
                 setDraftHandoff(handoff);

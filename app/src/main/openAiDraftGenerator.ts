@@ -1,29 +1,13 @@
-import type {
-  AgentDraftFailureCode,
-  AgentDraftResult,
-  GeneratedRunDraft,
-} from "../shared/agentTypes.js";
+import type { AgentDraftFailureCode, AgentDraftResult } from "../shared/agentTypes.js";
 import type { DraftGenerator } from "./agentHandler.js";
-import { GENERATION_FIELD_GUIDE, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
+import { validateGeneratedDraft } from "./draftValidation.js";
+import { DRAFT_SYSTEM_PROMPT, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
 import { readProviderErrorReason } from "./providerErrorBody.js";
 
 const MAX_TOKENS = 16_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 const DEFAULT_MODEL = "gpt-5.6-terra";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1/chat/completions";
-
-const SYSTEM_PROMPT = [
-  "You translate a quantum-resource-estimation request written in prose into a draft configuration.",
-  "",
-  "The analyst reviews and edits every field before anything runs, so prefer a complete, plausible draft over a cautious one — but never invent a benchmark, architecture, or factory that is not in the schema's enums.",
-  "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
-  "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
-  "",
-  // Same split as the Anthropic adapter: descriptions are compiled into the
-  // decoding grammar, so the bounds ride in the prompt instead.
-  "Field guidance — the schema cannot express these bounds, so respect them:",
-  GENERATION_FIELD_GUIDE,
-].join("\n");
 
 export interface OpenAiDraftRequestBody {
   readonly model: string;
@@ -54,7 +38,7 @@ export class OpenAiDraftGenerator implements DraftGenerator {
       model: this.model,
       max_completion_tokens: MAX_TOKENS,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: DRAFT_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
       response_format: {
@@ -68,7 +52,11 @@ export class OpenAiDraftGenerator implements DraftGenerator {
     };
   }
 
-  async requestDraft(apiKey: string, prompt: string): Promise<AgentDraftResult> {
+  async requestDraft(
+    apiKey: string,
+    prompt: string,
+    cancel?: AbortSignal,
+  ): Promise<AgentDraftResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
@@ -79,12 +67,15 @@ export class OpenAiDraftGenerator implements DraftGenerator {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(this.buildRequestBody(prompt)),
-        signal: controller.signal,
+        // Combined, not merged — see the Anthropic twin.
+        signal: cancel === undefined
+          ? controller.signal
+          : AbortSignal.any([controller.signal, cancel]),
       });
       if (!response.ok) return await this.describeHttpFailure(response);
       return this.readDraft(await response.json());
     } catch (error) {
-      return this.describeTransportFailure(error);
+      return this.describeTransportFailure(error, cancel);
     } finally {
       clearTimeout(timeout);
     }
@@ -108,9 +99,12 @@ export class OpenAiDraftGenerator implements DraftGenerator {
     );
   }
 
-  private describeTransportFailure(error: unknown): AgentDraftResult {
+  /** Cancel and timeout share an AbortError; the signal is what tells them apart. */
+  private describeTransportFailure(error: unknown, cancel?: AbortSignal): AgentDraftResult {
     if (error instanceof Error && error.name === "AbortError") {
-      return fail("TIMEOUT", "The provider did not respond in time. Nothing was applied to the form.");
+      return cancel?.aborted === true
+        ? fail("CANCELLED", "Request cancelled. Nothing was applied to the form.")
+        : fail("TIMEOUT", "The provider did not respond in time. Nothing was applied to the form.");
     }
     const detail = error instanceof Error ? error.message : String(error);
     return fail("NETWORK", `Could not reach the provider: ${detail}`);
@@ -141,7 +135,15 @@ export class OpenAiDraftGenerator implements DraftGenerator {
     if (asRecord(parsed) === null) {
       return fail("INVALID_RESPONSE", "The provider's proposal was not a configuration object.");
     }
-    return { ok: true, draft: parsed as GeneratedRunDraft, provider: this.provider, model: this.model };
+    // Same contract check as the Anthropic twin — see `draftValidation.ts`.
+    const validated = validateGeneratedDraft(parsed);
+    if (!validated.ok) {
+      return fail(
+        "INVALID_RESPONSE",
+        `The provider's proposal did not match the generation contract (${validated.reason}). Nothing was applied to the form.`,
+      );
+    }
+    return { ok: true, draft: validated.draft, provider: this.provider, model: this.model };
   }
 }
 

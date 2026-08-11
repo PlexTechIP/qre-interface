@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProviderStatus, CredentialConfigureResult } from "../../shared/agentTypes";
+import type { AgentProviderStatus, CredentialClearResult, CredentialConfigureResult } from "../../shared/agentTypes";
 import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
 
 const UNCONFIGURED: AgentProviderStatus = {
@@ -26,12 +26,17 @@ const CONFIGURED: AgentProviderStatus = {
   ],
 };
 
-function setup(result: CredentialConfigureResult = { ok: true }, status = UNCONFIGURED) {
+function setup(
+  result: CredentialConfigureResult = { ok: true },
+  status = UNCONFIGURED,
+  clearResult: CredentialClearResult = { ok: true },
+) {
   const configureCredential = vi.fn(async () => result);
-  const onConfigured = vi.fn();
+  const clearCredential = vi.fn(async () => clearResult);
+  const onCredentialChange = vi.fn();
   const onSelectionChange = vi.fn();
-  render(<ProviderCredentialPanel service={{ configureCredential }} status={status} provider="anthropic" model="claude-sonnet-5" onSelectionChange={onSelectionChange} onConfigured={onConfigured} />);
-  return { configureCredential, onConfigured, onSelectionChange };
+  render(<ProviderCredentialPanel service={{ configureCredential, clearCredential }} status={status} provider="anthropic" model="claude-sonnet-5" onSelectionChange={onSelectionChange} onCredentialChange={onCredentialChange} />);
+  return { configureCredential, clearCredential, onCredentialChange, onSelectionChange };
 }
 
 describe("ProviderCredentialPanel", () => {
@@ -44,12 +49,12 @@ describe("ProviderCredentialPanel", () => {
 
   it("hands the selected provider's key to main and clears the field", async () => {
     const user = userEvent.setup();
-    const { configureCredential, onConfigured } = setup();
+    const { configureCredential, onCredentialChange } = setup();
     const field = screen.getByLabelText("Anthropic API key");
     await user.type(field, "sk-ant-secret-value");
     await user.click(screen.getByRole("button", { name: /validate and save/i }));
     expect(configureCredential).toHaveBeenCalledWith("anthropic", "sk-ant-secret-value");
-    expect(onConfigured).toHaveBeenCalledOnce();
+    expect(onCredentialChange).toHaveBeenCalledOnce();
     expect(field).toHaveValue("");
   });
 
@@ -76,12 +81,12 @@ describe("ProviderCredentialPanel", () => {
     // open — the selected provider still has no key.
     render(
       <ProviderCredentialPanel
-        service={{ configureCredential: vi.fn(async () => ({ ok: true as const })) }}
+        service={{ configureCredential: vi.fn(async () => ({ ok: true as const })), clearCredential: vi.fn(async () => ({ ok: true as const })) }}
         status={CONFIGURED}
         provider="openai"
         model="gpt-5.6-terra"
         onSelectionChange={vi.fn()}
-        onConfigured={vi.fn()}
+        onCredentialChange={vi.fn()}
       />,
     );
     expect(screen.getByText("Model provider").closest("details")).toHaveProperty("open", true);
@@ -94,7 +99,7 @@ describe("ProviderCredentialPanel", () => {
 
   it("clears the field even when the provider rejects the key", async () => {
     const user = userEvent.setup();
-    const { onConfigured } = setup({
+    const { onCredentialChange } = setup({
       ok: false,
       code: "AUTHENTICATION",
       message: "The provider rejected this key.",
@@ -105,7 +110,7 @@ describe("ProviderCredentialPanel", () => {
     await user.click(screen.getByRole("button", { name: /validate and save/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The provider rejected this key.");
-    expect(onConfigured).not.toHaveBeenCalled();
+    expect(onCredentialChange).not.toHaveBeenCalled();
     // A rejected key is still a secret — it must not linger on screen.
     expect(field).toHaveValue("");
   });
@@ -132,5 +137,82 @@ describe("ProviderCredentialPanel", () => {
 
     expect(configureCredential).not.toHaveBeenCalled();
     expect(await screen.findByRole("alert")).toHaveTextContent(/enter a key/i);
+  });
+
+  /**
+   * Removal — the exit from the one-way street. Before this, a stored key could
+   * only be revoked by deleting the encrypted blob out of `userData` by hand.
+   *
+   * Every one of these starts from CONFIGURED, where the disclosure is collapsed
+   * on purpose (there is nothing to do until you want to change something), so
+   * they open it first. Asserting through a shut `<details>` would pass on
+   * markup no analyst can see.
+   */
+  describe("removing a stored key", () => {
+    function openPanel(): void {
+      const details = screen.getByText("Model provider").closest("details");
+      if (details !== null) details.open = true;
+    }
+
+    it("offers no removal control when there is nothing stored", () => {
+      setup();
+      expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
+    });
+
+    it("asks once before deleting, and does not call main on the first press", async () => {
+      const user = userEvent.setup();
+      const { clearCredential } = setup({ ok: true }, CONFIGURED);
+      openPanel();
+
+      await user.click(screen.getByRole("button", { name: "Remove key" }));
+
+      expect(clearCredential).not.toHaveBeenCalled();
+      expect(screen.getByText(/deletes the encrypted key from this machine/i)).toBeVisible();
+      expect(screen.getByRole("button", { name: "Remove Anthropic key" })).toBeVisible();
+    });
+
+    it("backs out cleanly", async () => {
+      const user = userEvent.setup();
+      const { clearCredential } = setup({ ok: true }, CONFIGURED);
+      openPanel();
+
+      await user.click(screen.getByRole("button", { name: "Remove key" }));
+      await user.click(screen.getByRole("button", { name: "Keep it" }));
+
+      expect(clearCredential).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Remove key" })).toBeVisible();
+    });
+
+    it("deletes the SELECTED provider's key and asks the shell to re-read status", async () => {
+      const user = userEvent.setup();
+      const { clearCredential, onCredentialChange } = setup({ ok: true }, CONFIGURED);
+      openPanel();
+
+      await user.click(screen.getByRole("button", { name: "Remove key" }));
+      await user.click(screen.getByRole("button", { name: "Remove Anthropic key" }));
+
+      expect(clearCredential).toHaveBeenCalledWith("anthropic");
+      // Without this the header badge keeps claiming "Network on" against a key
+      // that is no longer there.
+      expect(onCredentialChange).toHaveBeenCalledOnce();
+      expect(await screen.findByRole("status")).toHaveTextContent(/Key removed from this machine/);
+    });
+
+    it("surfaces a refused deletion instead of claiming the key is gone", async () => {
+      const user = userEvent.setup();
+      const { onCredentialChange } = setup({ ok: true }, CONFIGURED, {
+        ok: false,
+        code: "CLEAR_FAILED",
+        message: "The stored key could not be deleted (EPERM). It is still on this machine.",
+      });
+      openPanel();
+
+      await user.click(screen.getByRole("button", { name: "Remove key" }));
+      await user.click(screen.getByRole("button", { name: "Remove Anthropic key" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/still on this machine/);
+      expect(screen.queryByText(/Key removed from this machine/)).toBeNull();
+      expect(onCredentialChange).not.toHaveBeenCalled();
+    });
   });
 });

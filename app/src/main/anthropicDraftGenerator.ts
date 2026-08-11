@@ -1,10 +1,7 @@
-import type {
-  AgentDraftFailureCode,
-  AgentDraftResult,
-  GeneratedRunDraft,
-} from "../shared/agentTypes.js";
+import type { AgentDraftFailureCode, AgentDraftResult } from "../shared/agentTypes.js";
 import type { DraftGenerator } from "./agentHandler.js";
-import { GENERATION_FIELD_GUIDE, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
+import { validateGeneratedDraft } from "./draftValidation.js";
+import { DRAFT_SYSTEM_PROMPT, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
 import { readProviderErrorReason } from "./providerErrorBody.js";
 
 /**
@@ -28,25 +25,19 @@ const DEFAULT_MODEL = "claude-sonnet-5";
 const DEFAULT_BASE_URL = "https://api.anthropic.com/v1/messages";
 
 /**
- * The model owns field *values*. It is told nothing about run identity, and
- * the lowered schema gives it nowhere to put one even if it tried — `id`,
- * `createdAt`, `schemaVersion`, `qecCode` and `qreVersion` are absent from the
- * schema and rejected by `additionalProperties: false`.
+ * Models that reject `output_config.effort` outright.
+ *
+ * Effort is a property of the 5-generation reasoning models. Haiku 4.5 predates
+ * it and answers the parameter with a 400 — so shipping it unconditionally made
+ * the cheapest entry in the model menu the one that could never succeed, and the
+ * failure arrived as an opaque provider rejection rather than as anything
+ * naming the real cause.
+ *
+ * Omitting it is the whole fix, not a degradation: Haiku 4.5 without a thinking
+ * block is exactly the fast, cheap path someone picking Haiku is asking for, and
+ * structured output — the part that actually matters here — is supported on it.
  */
-const SYSTEM_PROMPT = [
-  "You translate a quantum-resource-estimation request written in prose into a draft configuration.",
-  "",
-  "The analyst reviews and edits every field before anything runs, so prefer a complete, plausible draft over a cautious one — but never invent a benchmark, architecture, or factory that is not in the schema's enums.",
-  "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
-  "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
-  "",
-  // The bounds and cross-field rules the lowered schema cannot express as
-  // keywords. They live here rather than as schema descriptions because
-  // descriptions are compiled into the decoding grammar and push it over the
-  // provider's size ceiling; as prompt text they cost only input tokens.
-  "Field guidance — the schema cannot express these bounds, so respect them:",
-  GENERATION_FIELD_GUIDE,
-].join("\n");
+const EFFORT_UNSUPPORTED_MODELS: ReadonlySet<string> = new Set(["claude-haiku-4-5"]);
 
 /** The exact JSON body sent to the provider. No credential appears here. */
 export interface AnthropicDraftRequestBody {
@@ -55,7 +46,8 @@ export interface AnthropicDraftRequestBody {
   readonly system: string;
   readonly messages: readonly { role: "user"; content: string }[];
   readonly output_config: {
-    readonly effort: "low";
+    /** Absent on models that reject it — see `EFFORT_UNSUPPORTED_MODELS`. */
+    readonly effort?: "low";
     readonly format: { readonly type: "json_schema"; readonly schema: unknown };
   };
 }
@@ -79,20 +71,26 @@ export class AnthropicDraftGenerator implements DraftGenerator {
     return {
       model: this.model,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system: DRAFT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }],
-      // Thinking is left at its default (adaptive, on) and paced with a low
-      // effort level rather than disabled: drafting one small JSON object does
-      // not need deep reasoning, and disabling thinking on this model has
-      // documented failure modes that low effort avoids.
+      // On the 5-generation models thinking is left at its default (adaptive,
+      // on) and paced with a low effort level rather than disabled: drafting one
+      // small JSON object does not need deep reasoning, and disabling thinking
+      // on those models has documented failure modes that low effort avoids.
+      // Where `effort` is not a parameter at all the key is omitted entirely,
+      // which on those models means no thinking — the right trade for this task.
       output_config: {
-        effort: "low",
+        ...(EFFORT_UNSUPPORTED_MODELS.has(this.model) ? {} : { effort: "low" as const }),
         format: { type: "json_schema", schema: WIRE_GENERATION_SCHEMA },
       },
     };
   }
 
-  async requestDraft(apiKey: string, prompt: string): Promise<AgentDraftResult> {
+  async requestDraft(
+    apiKey: string,
+    prompt: string,
+    cancel?: AbortSignal,
+  ): Promise<AgentDraftResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -105,7 +103,12 @@ export class AnthropicDraftGenerator implements DraftGenerator {
           "anthropic-version": ANTHROPIC_VERSION,
         },
         body: JSON.stringify(this.buildRequestBody(prompt)),
-        signal: controller.signal,
+        // Two independent reasons to give up, combined rather than merged, so
+        // the catch below can still tell which one fired. Aborting the timeout
+        // controller from the cancel path would have collapsed them.
+        signal: cancel === undefined
+          ? controller.signal
+          : AbortSignal.any([controller.signal, cancel]),
       });
 
       if (!response.ok) return await this.describeHttpFailure(response);
@@ -113,7 +116,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
       const payload: unknown = await response.json();
       return this.readDraft(payload);
     } catch (error) {
-      return this.describeTransportFailure(error);
+      return this.describeTransportFailure(error, cancel);
     } finally {
       clearTimeout(timeout);
     }
@@ -151,12 +154,23 @@ export class AnthropicDraftGenerator implements DraftGenerator {
     );
   }
 
-  private describeTransportFailure(error: unknown): AgentDraftResult {
+  /**
+   * Both giving-up paths surface as the same `AbortError`, so the signal itself
+   * is what distinguishes them — telling someone who just pressed Cancel that
+   * the provider was slow would be a claim about the provider, made about their
+   * own action.
+   */
+  private describeTransportFailure(
+    error: unknown,
+    cancel?: AbortSignal,
+  ): AgentDraftResult {
     if (error instanceof Error && error.name === "AbortError") {
-      return fail(
-        "TIMEOUT",
-        "The provider did not respond in time. Nothing was applied to the form.",
-      );
+      return cancel?.aborted === true
+        ? fail("CANCELLED", "Request cancelled. Nothing was applied to the form.")
+        : fail(
+            "TIMEOUT",
+            "The provider did not respond in time. Nothing was applied to the form.",
+          );
     }
     const detail = error instanceof Error ? error.message : String(error);
     return fail("NETWORK", `Could not reach the provider: ${detail}`);
@@ -205,13 +219,21 @@ export class AnthropicDraftGenerator implements DraftGenerator {
       return fail("INVALID_RESPONSE", "The provider's proposal was not a configuration object.");
     }
 
-    // Deliberately not re-validated against the generation schema here. The
-    // draft's real gate is downstream and stricter: draftToFormState refuses
-    // anything it cannot map, and the canonical schema still decides what may
-    // run. A second Ajv pass in the main process would only duplicate that.
+    // Checked against the generation schema before anything downstream treats
+    // it as a draft. The gate further down IS stricter, but it is silent about
+    // a type-confused value — see `draftValidation.ts` for the dead end that
+    // produced.
+    const validated = validateGeneratedDraft(parsed);
+    if (!validated.ok) {
+      return fail(
+        "INVALID_RESPONSE",
+        `The provider's proposal did not match the generation contract (${validated.reason}). Nothing was applied to the form.`,
+      );
+    }
+
     return {
       ok: true,
-      draft: parsed as GeneratedRunDraft,
+      draft: validated.draft,
       provider: this.provider,
       model: this.model,
     };

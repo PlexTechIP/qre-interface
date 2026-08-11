@@ -1528,6 +1528,18 @@ select {
   cursor: pointer;
 }
 
+/*
+ * The armed half of the two-step key removal. Same token pairing as
+ * `.agent-error` rather than a new colour, so the one destructive control on
+ * this surface reads in the palette the app already uses to mean "this is the
+ * serious one" — in both themes, for free.
+ */
+.agent-secondary--danger {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
 .agent-error {
   border: 1px solid var(--color-danger-border);
   border-radius: 8px;

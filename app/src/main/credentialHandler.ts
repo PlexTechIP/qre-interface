@@ -1,13 +1,21 @@
 import type { IpcMain } from "electron";
 
-import type { CredentialConfigureResult, ProviderId } from "../shared/agentTypes.js";
+import type {
+  CredentialClearResult,
+  CredentialConfigureResult,
+  ProviderId,
+} from "../shared/agentTypes.js";
 import { isProviderId } from "../shared/providerModels.js";
 import type { CredentialBackendCheck, CredentialStore } from "./credentialStore.js";
 import type {
   CredentialValidationResult,
   CredentialValidator,
 } from "./credentialValidator.js";
-import { CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL } from "./ipcChannels.js";
+import {
+  CREDENTIAL_CLEAR_CHANNEL,
+  CREDENTIAL_CONFIGURE_CHANNEL,
+  CREDENTIAL_STATUS_CHANNEL,
+} from "./ipcChannels.js";
 
 /**
  * Wires credential storage behind IPC, following the estimator convention
@@ -21,7 +29,7 @@ import { CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL } from "./ipcCh
  */
 type CredentialVault = Record<
   ProviderId,
-  Pick<CredentialStore, "hasCredential" | "checkBackend" | "write">
+  Pick<CredentialStore, "hasCredential" | "checkBackend" | "write" | "clear">
 >;
 type CredentialValidators = Record<ProviderId, CredentialValidator>;
 
@@ -34,6 +42,39 @@ export function registerCredentialHandlers(
     anthropic: vault.anthropic.hasCredential(),
     openai: vault.openai.hasCredential(),
   }));
+
+  /**
+   * Delete a provider's stored key.
+   *
+   * `CredentialStore.clear()` existed from the start and was wired to nothing,
+   * so the only way to revoke a key the app had encrypted was to find
+   * `provider-credential-<provider>.enc` under `userData` and delete it by hand.
+   * For a surface whose entire argument is careful custody of a secret, "you can
+   * put one in but never take it out" was the conspicuous hole.
+   *
+   * Clearing an absent key is a success, not an error: the analyst asked for the
+   * key to be gone, and it is. Reporting a failure there would push callers into
+   * checking status first and racing it.
+   */
+  ipcMain.handle(
+    CREDENTIAL_CLEAR_CHANNEL,
+    (_event, provider: unknown): CredentialClearResult => {
+      if (!isProviderId(provider)) {
+        throw new Error("credential:clear requires a supported provider id.");
+      }
+      try {
+        vault[provider].clear();
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          code: "CLEAR_FAILED",
+          message: `The stored key could not be deleted (${detail}). It is still on this machine — remove the file yourself if this persists.`,
+        };
+      }
+      return { ok: true };
+    },
+  );
 
   ipcMain.handle(
     CREDENTIAL_CONFIGURE_CHANNEL,

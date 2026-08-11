@@ -30,6 +30,35 @@ export const WIRE_GENERATION_SCHEMA = stripDescriptive(generationSchema) as Json
 /** The same prose, addressed to the model as `path — description` lines. */
 export const GENERATION_FIELD_GUIDE = collectDescriptions(generationSchema as JsonRecord);
 
+/**
+ * The system prompt every adapter sends, built from the guide above.
+ *
+ * It lives here, beside the guide it ends with, because it was previously
+ * copy-pasted byte-for-byte into both adapters — the exact second copy this
+ * module's docstring exists to argue against. A prompt that says one thing to
+ * Anthropic and another to OpenAI would make the two providers silently
+ * incomparable, which is worse than either wording alone.
+ *
+ * The model owns field *values*. It is told nothing about run identity, and the
+ * lowered schema gives it nowhere to put one even if it tried — `id`,
+ * `createdAt`, `schemaVersion`, `qecCode` and `qreVersion` are absent from the
+ * schema and rejected by `additionalProperties: false`.
+ */
+export const DRAFT_SYSTEM_PROMPT = [
+  "You translate a quantum-resource-estimation request written in prose into a draft configuration.",
+  "",
+  "The analyst reviews and edits every field before anything runs, so prefer a complete, plausible draft over a cautious one — but never invent a benchmark, architecture, or factory that is not in the schema's enums.",
+  "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
+  "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
+  "",
+  // The bounds and cross-field rules the lowered schema cannot express as
+  // keywords. They live here rather than as schema descriptions because
+  // descriptions are compiled into the decoding grammar and push it over the
+  // provider's size ceiling; as prompt text they cost only input tokens.
+  "Field guidance — the schema cannot express these bounds, so respect them:",
+  GENERATION_FIELD_GUIDE,
+].join("\n");
+
 function stripDescriptive(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(stripDescriptive);
   if (typeof node !== "object" || node === null) return node;

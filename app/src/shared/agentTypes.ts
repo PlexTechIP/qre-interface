@@ -147,6 +147,16 @@ export type AgentDraftFailureCode =
   | "REFUSED"
   | "INVALID_RESPONSE"
   /**
+   * The analyst abandoned the request while it was in flight.
+   *
+   * Distinct from TIMEOUT, which is the same `AbortError` from the same
+   * `fetch`. Collapsing them would tell someone who just pressed Cancel that
+   * "the provider did not respond in time" — a claim about the provider, made
+   * about their own action, and the sort of thing that gets debugged for an
+   * afternoon.
+   */
+  | "CANCELLED"
+  /**
    * The stored blob exists but could not be decrypted — a locked or reset
    * keychain, a denied access prompt, a file truncated by a crash.
    *
@@ -183,6 +193,19 @@ export type CredentialConfigureResult =
   | { ok: false; code: AgentDraftFailureCode | CredentialStorageFailureCode; message: string };
 
 /**
+ * Removing a stored key. Deleting a file the analyst asked to be gone can fail
+ * for ordinary reasons — a permission change, a locked volume — so it resolves
+ * as data like everything else on this surface.
+ *
+ * This is the counterpart `configureCredential` lacked. It is NOT a getter and
+ * does not weaken the asymmetry the surface is built on: it takes a provider and
+ * returns whether the blob is gone. Nothing about the key's *value* travels.
+ */
+export type CredentialClearResult =
+  | { ok: true }
+  | { ok: false; code: "CLEAR_FAILED"; message: string };
+
+/**
  * Renderer-facing seam. It intentionally has no credential getter.
  *
  * `configureCredential` is one-way by design: a key can be handed to the main
@@ -196,8 +219,15 @@ export interface AgentService {
   /** The exact request body `requestDraft` would send. Carries no credential. */
   previewRequest(request: AgentDraftRequest): Promise<unknown>;
   requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult>;
+  /**
+   * Abandon the draft this window has in flight, if any. Resolves either way —
+   * a cancel that races the reply is not an error, it is a no-op.
+   */
+  cancelDraft(): Promise<void>;
   configureCredential(
     provider: ProviderId,
     apiKey: string,
   ): Promise<CredentialConfigureResult>;
+  /** Delete a provider's stored key. The one-way street's exit, not a getter. */
+  clearCredential(provider: ProviderId): Promise<CredentialClearResult>;
 }

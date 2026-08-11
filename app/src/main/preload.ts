@@ -4,6 +4,7 @@ import type {
   AgentDraftResult,
   AgentProviderStatus,
   AgentService,
+  CredentialClearResult,
   CredentialConfigureResult,
 } from "../shared/agentTypes.js";
 import type {
@@ -17,9 +18,11 @@ import type {
 } from "../shared/types.js";
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
+  AGENT_CANCEL_CHANNEL,
   AGENT_DRAFT_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
   AGENT_STATUS_CHANNEL,
+  CREDENTIAL_CLEAR_CHANNEL,
   CREDENTIAL_CONFIGURE_CHANNEL,
   ESTIMATOR_RUN_CHANNEL,
   UPLOAD_PREFLIGHT_CHANNEL,
@@ -73,9 +76,10 @@ const uploads = {
 
 // window.agent — the fifth surface. No credential getter: the renderer can ask
 // getStatus() (a boolean-shaped "is a provider configured"), previewRequest()
-// and requestDraft() (which rejects only if the status check was skipped), and
-// hand a key one-way to configureCredential(). Nothing here returns a key, and
-// there is no channel on the other side that could.
+// and requestDraft() (which rejects only if the status check was skipped),
+// cancelDraft() and clearCredential() (both of which only ever DESTROY state),
+// and hand a key one-way to configureCredential(). Nothing here returns a key,
+// and there is no channel on the other side that could.
 const agent: AgentService = {
   getStatus(): Promise<AgentProviderStatus> {
     return ipcRenderer.invoke(AGENT_STATUS_CHANNEL) as Promise<AgentProviderStatus>;
@@ -86,6 +90,9 @@ const agent: AgentService = {
   requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult> {
     return ipcRenderer.invoke(AGENT_DRAFT_CHANNEL, request) as Promise<AgentDraftResult>;
   },
+  cancelDraft(): Promise<void> {
+    return ipcRenderer.invoke(AGENT_CANCEL_CHANNEL) as Promise<void>;
+  },
   configureCredential(
     provider: Parameters<AgentService["configureCredential"]>[0],
     apiKey: string,
@@ -95,6 +102,14 @@ const agent: AgentService = {
       provider,
       apiKey,
     ) as Promise<CredentialConfigureResult>;
+  },
+  clearCredential(
+    provider: Parameters<AgentService["clearCredential"]>[0],
+  ): Promise<CredentialClearResult> {
+    return ipcRenderer.invoke(
+      CREDENTIAL_CLEAR_CHANNEL,
+      provider,
+    ) as Promise<CredentialClearResult>;
   },
 };
 

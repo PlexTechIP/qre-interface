@@ -22,6 +22,7 @@ import {
   type AgentDraftResult,
   type AgentProviderStatus,
   type AgentService,
+  type CredentialClearResult,
   type CredentialConfigureResult,
   type GeneratedRunDraft,
 } from "../agentTypes";
@@ -89,6 +90,9 @@ export function fakeAgentService(
       };
     },
 
+    /** Nothing is in flight behind a fixture, so cancelling is a no-op. */
+    async cancelDraft(): Promise<void> {},
+
     /** There is no store behind a fixture, so accepting a key would be a lie. */
     async configureCredential(): Promise<CredentialConfigureResult> {
       return {
@@ -97,6 +101,14 @@ export function fakeAgentService(
         message:
           "The test fixture has no credential store. Run the packaged app to configure a provider.",
       };
+    },
+
+    /**
+     * Removing a key that was never stored is the success case in the real
+     * handler too: the analyst asked for it to be gone, and it is.
+     */
+    async clearCredential(): Promise<CredentialClearResult> {
+      return { ok: true };
     },
   };
 }
