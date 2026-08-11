@@ -11,6 +11,7 @@ import {
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels.js";
 import type { CredentialStore } from "./credentialStore.js";
 import {
+  AGENT_CANCEL_CHANNEL,
   AGENT_DRAFT_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
   AGENT_STATUS_CHANNEL,
@@ -30,7 +31,16 @@ export interface DraftGenerator {
   readonly provider: string;
   readonly model: string;
   buildRequestBody(prompt: string): unknown;
-  requestDraft(apiKey: string, prompt: string): Promise<AgentDraftResult>;
+  /**
+   * `cancel` is the analyst abandoning the request, not a deadline — the
+   * adapter keeps its own timeout and distinguishes the two, so an aborted
+   * request reports CANCELLED rather than blaming the provider for being slow.
+   */
+  requestDraft(
+    apiKey: string,
+    prompt: string,
+    cancel?: AbortSignal,
+  ): Promise<AgentDraftResult>;
 }
 
 export interface DraftGeneratorFactory {
@@ -98,9 +108,29 @@ export function registerAgentHandlers(
     },
   );
 
+  /**
+   * The draft this window has in flight, so `agent:cancel` has something to
+   * abort. Keyed by sender rather than held as a single controller: one window
+   * cancelling another's request would be a cross-talk bug that only appears
+   * once someone opens a second window, which is exactly when nobody is looking
+   * for it.
+   *
+   * Main-process state, but not the kind the week-5 seam forbids — provider and
+   * model still travel with every request. What lives here is one in-flight
+   * request's abort handle, which cannot outlive the request that made it.
+   */
+  const inFlight = new Map<number, AbortController>();
+
+  ipcMain.handle(AGENT_CANCEL_CHANNEL, (event): void => {
+    // A cancel that races the reply finds nothing and does nothing. That is the
+    // ordinary case, not an error: the analyst pressed a button that had just
+    // stopped meaning anything.
+    inFlight.get(event.sender.id)?.abort();
+  });
+
   ipcMain.handle(
     AGENT_DRAFT_CHANNEL,
-    async (_event, payload: unknown): Promise<AgentDraftResult> => {
+    async (event, payload: unknown): Promise<AgentDraftResult> => {
       const request = readDraftRequest(AGENT_DRAFT_CHANNEL, payload);
       const generator = generatorFor(generators, request);
       const credentialStore = vault[request.provider];
@@ -127,7 +157,22 @@ export function registerAgentHandlers(
           "agent:draft requires a configured credential. Check window.agent.getStatus().available before requesting a draft.",
         );
       }
-      return generator.requestDraft(apiKey, request.prompt);
+
+      // Registered only now: a cancel arriving before the credential is read has
+      // nothing to stop, and an entry left in the map by an early return would
+      // let the NEXT request be cancelled by a stale press of the last one.
+      const controller = new AbortController();
+      const sender = event.sender.id;
+      inFlight.get(sender)?.abort();
+      inFlight.set(sender, controller);
+      try {
+        return await generator.requestDraft(apiKey, request.prompt, controller.signal);
+      } finally {
+        // Only if it is still ours. A second request that started while this one
+        // was in flight already owns the slot, and clearing it unconditionally
+        // would leave that one uncancellable.
+        if (inFlight.get(sender) === controller) inFlight.delete(sender);
+      }
     },
   );
 }

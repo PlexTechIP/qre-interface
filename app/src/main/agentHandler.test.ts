@@ -5,28 +5,56 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentDraftResult, AgentProviderStatus } from "../shared/agentTypes.js";
 import { registerAgentHandlers, type DraftGenerator } from "./agentHandler.js";
 import type { CredentialStore } from "./credentialStore.js";
-import { AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
+import { AGENT_CANCEL_CHANNEL, AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 type Store = Pick<CredentialStore, "hasCredential" | "readForRequest">;
 const request = { prompt: "estimate Grover search", generationSchema: "runconfig-generation-v1.4.0", provider: "openai" as const, model: "gpt-5.6-terra" };
 
-function setup(options: { anthropic?: boolean; openai?: boolean; key?: string | null; readError?: Error; result?: AgentDraftResult } = {}) {
+/**
+ * The handler keys in-flight requests by sender, so the event is no longer
+ * ignorable: two windows must not be able to cancel each other's draft.
+ */
+const senderEvent = (id: number): IpcMainInvokeEvent =>
+  ({ sender: { id } }) as unknown as IpcMainInvokeEvent;
+
+interface SetupOptions {
+  anthropic?: boolean;
+  openai?: boolean;
+  key?: string | null;
+  readError?: Error;
+  result?: AgentDraftResult;
+  /** Hold the request open until its signal aborts, so cancel has a target. */
+  awaitCancel?: boolean;
+}
+
+function setup(options: SetupOptions = {}) {
   const handlers = new Map<string, Listener>();
   const ipcMain: Pick<IpcMain, "handle"> = { handle(channel, listener) { handlers.set(channel, listener as Listener); } };
   const store = (configured: boolean): Store => ({ hasCredential: vi.fn(() => configured), readForRequest: vi.fn(() => { if (options.readError) throw options.readError; return options.key ?? null; }) });
   const vault = { anthropic: store(options.anthropic ?? false), openai: store(options.openai ?? false) };
+  const seenSignals: (AbortSignal | undefined)[] = [];
+  const respond = (provider: string, model: string) =>
+    vi.fn(async (_key: string, _prompt: string, cancel?: AbortSignal): Promise<AgentDraftResult> => {
+      seenSignals.push(cancel);
+      if (options.awaitCancel === true) {
+        await new Promise<void>((resolve) => cancel?.addEventListener("abort", () => resolve()));
+        return { ok: false, code: "CANCELLED", message: "Request cancelled. Nothing was applied to the form." };
+      }
+      return options.result ?? { ok: true, draft: {} as never, provider, model };
+    });
   const generators = {
-    anthropic: { create: vi.fn((model: string): DraftGenerator => ({ provider: "Anthropic", model, buildRequestBody: vi.fn((prompt) => ({ provider: "anthropic", model, prompt })), requestDraft: vi.fn(async (): Promise<AgentDraftResult> => options.result ?? ({ ok: true, draft: {} as never, provider: "Anthropic", model })) })) },
-    openai: { create: vi.fn((model: string): DraftGenerator => ({ provider: "OpenAI", model, buildRequestBody: vi.fn((prompt) => ({ provider: "openai", model, prompt })), requestDraft: vi.fn(async (): Promise<AgentDraftResult> => options.result ?? ({ ok: true, draft: {} as never, provider: "OpenAI", model })) })) },
+    anthropic: { create: vi.fn((model: string): DraftGenerator => ({ provider: "Anthropic", model, buildRequestBody: vi.fn((prompt) => ({ provider: "anthropic", model, prompt })), requestDraft: respond("Anthropic", model) })) },
+    openai: { create: vi.fn((model: string): DraftGenerator => ({ provider: "OpenAI", model, buildRequestBody: vi.fn((prompt) => ({ provider: "openai", model, prompt })), requestDraft: respond("OpenAI", model) })) },
   };
   registerAgentHandlers(ipcMain, vault, generators);
-  const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
+  const invokeFrom = <T>(sender: number, channel: string, ...args: unknown[]): Promise<T> => {
     const handler = handlers.get(channel);
     if (!handler) return Promise.reject(new Error(`no handler registered for ${channel}`));
-    try { return Promise.resolve(handler(undefined as unknown as IpcMainInvokeEvent, ...args) as T); } catch (error) { return Promise.reject(error); }
+    try { return Promise.resolve(handler(senderEvent(sender), ...args) as T); } catch (error) { return Promise.reject(error); }
   };
-  return { invoke, vault, generators };
+  const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => invokeFrom<T>(1, channel, ...args);
+  return { invoke, invokeFrom, vault, generators, seenSignals };
 }
 
 describe("registerAgentHandlers", () => {
@@ -59,10 +87,12 @@ describe("registerAgentHandlers", () => {
     expect(result).toMatchObject({ ok: false, code: "CREDENTIAL_UNREADABLE" });
   });
 
-  // The surface itself is the security boundary: a fourth channel here would
+  // The surface itself is the security boundary: an unlisted channel here would
   // be the place a key getter would appear, so the channel set is asserted
-  // exactly rather than by membership.
-  it("registers exactly the status, preview and draft channels — no getter", () => {
+  // exactly rather than by membership. `cancel` joined it deliberately — it
+  // takes no argument and returns nothing, so there is nothing for a key to
+  // ride out on.
+  it("registers exactly the status, preview, draft and cancel channels — no getter", () => {
     const handlers = new Map<string, Listener>();
     const ipcMain: Pick<IpcMain, "handle"> = { handle(channel, listener) { handlers.set(channel, listener as Listener); } };
     const store = (): Store => ({ hasCredential: vi.fn(() => false), readForRequest: vi.fn(() => null) });
@@ -70,8 +100,49 @@ describe("registerAgentHandlers", () => {
     registerAgentHandlers(ipcMain, { anthropic: store(), openai: store() }, { anthropic: generator(), openai: generator() });
 
     expect([...handlers.keys()].sort()).toEqual(
-      [AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
+      [AGENT_CANCEL_CHANNEL, AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
     );
+  });
+
+  describe("agent:cancel", () => {
+    it("aborts the draft this window has in flight", async () => {
+      const { invoke, seenSignals } = setup({ openai: true, key: "sk-secret", awaitCancel: true });
+      const draft = invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request);
+      // Let the handler reach requestDraft and register its controller.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await invoke(AGENT_CANCEL_CHANNEL);
+
+      await expect(draft).resolves.toMatchObject({ ok: false, code: "CANCELLED" });
+      expect(seenSignals[0]?.aborted).toBe(true);
+    });
+
+    it("does nothing when there is no request in flight", async () => {
+      // A cancel that races the reply is the ordinary case, not an error.
+      const { invoke } = setup({ openai: true, key: "sk-secret" });
+      await expect(invoke(AGENT_CANCEL_CHANNEL)).resolves.toBeUndefined();
+    });
+
+    it("cannot cancel another window's draft", async () => {
+      // Keyed by sender precisely so this stays true once a second window
+      // exists — which is exactly when nobody would be looking for it.
+      const { invokeFrom } = setup({ openai: true, key: "sk-secret", awaitCancel: true });
+      const draft = invokeFrom<AgentDraftResult>(1, AGENT_DRAFT_CHANNEL, request);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await invokeFrom(2, AGENT_CANCEL_CHANNEL);
+
+      let settled = false;
+      void draft.then(() => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      // ...and the window that owns it can still stop it.
+      await invokeFrom(1, AGENT_CANCEL_CHANNEL);
+      await expect(draft).resolves.toMatchObject({ ok: false, code: "CANCELLED" });
+    });
   });
 
   it("status reports unavailable when no provider holds a key", async () => {
