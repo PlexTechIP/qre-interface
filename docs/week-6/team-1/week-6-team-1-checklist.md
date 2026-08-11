@@ -24,7 +24,7 @@ it.**
 ## A. Day 0
 
 - [ ] `git fetch && git switch week-6/team-1` — **the PMs created it off `main`
-      at `b6a5091`.** Do not create your own team branch
+      at kickoff.** Do not create your own team branch
 - [ ] **Do not commit directly to the team branch.** Every piece of work gets its
       own branch off it, named `week-6/team-1-<thing>`, which PRs back in. For this
       track that is roughly:

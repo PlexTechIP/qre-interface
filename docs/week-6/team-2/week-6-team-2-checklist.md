@@ -25,7 +25,7 @@ Your mission in one line: **prove the design runs, then build its read half.**
 ## A. Day 0
 
 - [ ] `git fetch && git switch week-6/team-2` — **the PMs created it off `main`
-      at `b6a5091`.** Do not create your own team branch; do not branch off week 5
+      at kickoff.** Do not create your own team branch; do not branch off week 5
 - [ ] **Do not commit directly to the team branch.** Every piece of work gets its
       own branch off it, named `week-6/team-2-<thing>`, which PRs back in. For this
       track that is roughly:

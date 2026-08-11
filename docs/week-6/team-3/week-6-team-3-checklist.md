@@ -27,7 +27,7 @@ asking you a question.**
 ## A. Day 0
 
 - [ ] `git fetch && git switch week-6/team-3` — **the PMs created it off `main`
-      at `b6a5091`.** Do not create your own team branch
+      at kickoff.** Do not create your own team branch
 - [ ] **Do not commit directly to the team branch.** Each section of the document
       gets its own branch off it, named `week-6/team-3-<thing>`, which PRs back in
       — e.g. `week-6/team-3-licensing` · `week-6/team-3-history-audit` ·

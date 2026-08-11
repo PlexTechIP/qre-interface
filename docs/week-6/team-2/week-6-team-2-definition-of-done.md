@@ -140,7 +140,7 @@ The bar for **Tue Aug 18 EOD**. Demoed from `main`, not a branch.
 
 ## Process
 
-- [ ] **Worked under `week-6/team-2`**, the branch the PMs created off `b6a5091`
+- [ ] **Worked under `week-6/team-2`**, the branch the PMs created off `main` at kickoff
 - [ ] **Each piece of work had its own `week-6/team-2-<thing>` branch** that PR'd
       into the team branch. Nothing was committed straight to the team branch, and
       every feature branch kept the `week-6/` prefix so CI picked it up

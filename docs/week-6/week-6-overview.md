@@ -262,9 +262,12 @@ discipline becomes.
 ## Shared context for all teams
 
 - **Team branches already exist.** `week-6/team-1`, `week-6/team-2`, and
-  `week-6/team-3` were created off `main` at `b6a5091` **by the PMs**, so that the
-  week-5 failure mode — a branch that was never created, or created off a stale
-  base — cannot repeat.
+  `week-6/team-3` were created off the tip of `main` at kickoff **by the PMs**, so
+  that the week-5 failure mode — a branch that was never created, or created off a
+  stale base — cannot repeat. *(Every SHA cited in these docs is `b6a5091`. Your
+  branch base is a couple of commits past it, but everything in between is
+  docs-only — `git diff b6a5091 main -- app/` is empty — so every code claim below
+  still holds exactly.)*
 - **Branch flow, stated once and unambiguously**, because three weeks running the
   team branch sat empty while the work lived somewhere else:
 
