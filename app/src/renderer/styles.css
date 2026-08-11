@@ -39,6 +39,12 @@
   --color-chart-axis: #cbd5e1;
   --color-chart-line: #0891b2;
   --color-chart-point-stroke: #a5e8f3;
+  /* The networked-features dot. The only green in the palette, and the only
+     colour on that surface that has to read against both themes — so it is
+     defined per theme like everything else here rather than written into the
+     rule. Contrast against --color-well-bg: 3.2:1 light, 7.1:1 dark, both
+     clearing WCAG 1.4.11's 3:1 for a non-text indicator. */
+  --color-status-online: #22a06b;
 
   /* Comparison series. Marker SHAPE also varies per series, so these never
      carry meaning on their own — they are picked for separation on light. */
@@ -97,6 +103,9 @@
   --color-chart-axis: #3a4a64;
   --color-chart-line: #22d3ee;
   --color-chart-point-stroke: #17545f;
+  /* Lifted the same way the series colours below are: the light value was
+     picked against a white card and reads muddy on the navy well. */
+  --color-status-online: #34d399;
 
   /* Same six series, lifted for contrast against the dark surface. */
   --color-series-1: #22d3ee;
@@ -363,8 +372,10 @@ select {
 }
 
 .agent-status--on .agent-status__dot {
-  background: #22a06b;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #22a06b 18%, transparent);
+  background: var(--color-status-online);
+  /* Derived from the same token rather than a second one, so the halo can
+     never drift away from the dot it surrounds. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-status-online) 18%, transparent);
 }
 
 /* Collapsed: sidebar narrows to an icon rail; labels are hidden. */
@@ -2847,6 +2858,88 @@ input[type="range"]:focus-visible,
 .validation-box--pending .validation-box__jump:hover,
 .validation-box--pending .validation-box__jump:focus-visible {
   background: var(--color-input-border);
+}
+
+/* --- Model proposal summary -----------------------------------------*/
+/* What the model chose, above the form it filled in. Styled as a quiet     */
+/* accent card rather than an alert: it is context for the review, not a    */
+/* problem to resolve, and it shares the validation box's jump affordance.  */
+.model-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: var(--color-accent-bg);
+}
+
+.model-proposal__title {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.model-proposal__lede {
+  margin: 0;
+  max-width: 74ch;
+  color: var(--color-body);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.model-proposal__lede strong {
+  color: var(--color-heading);
+}
+
+/* Two columns on anything wider than a narrow pane; the list runs long on a
+   Neutral Atom draft, which sets twelve architecture fields. */
+.model-proposal__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-proposal__jump {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  margin: 0;
+  padding: 4px 6px;
+  background: transparent;
+  font: inherit;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-proposal__jump:hover,
+.model-proposal__jump:focus-visible {
+  background: var(--color-surface);
+}
+
+.model-proposal__field {
+  min-width: 0;
+  color: var(--color-body);
+  font-size: 13px;
+}
+
+.model-proposal__value {
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
+  /* Long values (a joined factory set) wrap rather than pushing the label
+     out of the row. */
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 /* Transient highlight on the field a jump lands on. */
