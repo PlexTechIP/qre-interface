@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAgentHandlers } from "./agentHandler.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
+import { registerChatHandlers } from "./chatHandler.js";
+import { SqliteChatStore } from "./sqliteChatStore.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
 import { CredentialStore, migrateLegacyAnthropicCredential } from "./credentialStore.js";
 import { OpenAiDraftGenerator } from "./openAiDraftGenerator.js";
@@ -57,10 +59,12 @@ registerEstimatorHandler(ipcMain, engine);
 // Form-level pre-flight for uploaded programs (main-process filesystem access).
 registerUploadHandler(ipcMain);
 
-// The run store is main-process only. Its DB file resolves under the app's
-// per-user data dir, which is valid only after `whenReady` — so it's constructed
-// and wired there (not at module top-level like the engine). QRE_DB_PATH overrides.
+// The stores are main-process only. Their DB files resolve under the app's
+// per-user data dir, which is valid only after `whenReady` — so they're
+// constructed and wired there (not at module top-level like the engine).
+// QRE_DB_PATH / QRE_CHAT_DB_PATH override.
 let runStore: SqliteRunStore | null = null;
+let chatStore: SqliteChatStore | null = null;
 
 app.whenReady().then(() => {
   const dbOverride = process.env["QRE_DB_PATH"];
@@ -70,6 +74,18 @@ app.whenReady().then(() => {
       : path.join(app.getPath("userData"), "run-history.sqlite");
   runStore = new SqliteRunStore(dbPath);
   registerStoreHandlers(ipcMain, runStore);
+
+  // A separate file from run history, deliberately: see sqliteChatStore.ts.
+  // Run records are immutable forever; a transcript is the analyst's own prose
+  // and `chat:clear` has to be able to remove all of it without going anywhere
+  // near the store that holds their results.
+  const chatDbOverride = process.env["QRE_CHAT_DB_PATH"];
+  chatStore = new SqliteChatStore(
+    chatDbOverride && chatDbOverride.length > 0
+      ? chatDbOverride
+      : path.join(app.getPath("userData"), "chat-history.sqlite"),
+  );
+  registerChatHandlers(ipcMain, chatStore);
 
   // A separate, non-SQLite file for the encrypted provider key — never in
   // the same store as run history, never JSON.
@@ -108,6 +124,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   killLiveEngineProcesses();
   runStore?.close();
+  chatStore?.close();
 });
 app.on("window-all-closed", () => {
   killLiveEngineProcesses();

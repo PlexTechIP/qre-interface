@@ -103,10 +103,36 @@ export type GeneratedRunDraft = Pick<
  */
 export const GENERATION_SCHEMA_ID = "runconfig-generation-v1.4.0";
 
-/** The exact, renderer-visible envelope sent to a configured provider. */
-export interface AgentDraftRequest {
-  /** Natural-language configuration request entered by the analyst. */
-  prompt: string;
+export type ChatRole = "user" | "assistant";
+
+/**
+ * One turn as it travels to the provider: role and content, nothing else.
+ *
+ * Stored messages carry an id, a timestamp, an attributed model and a parsed
+ * draft (see `chatTypes.ts`); none of that is the provider's business, and
+ * sending it would put app-local identity into a prompt. An assistant turn's
+ * `content` is the JSON envelope the model itself emitted, replayed verbatim,
+ * so the transcript the model reads back is one it could have written.
+ */
+export interface ChatTurn {
+  readonly role: ChatRole;
+  readonly content: string;
+}
+
+/**
+ * The exact, renderer-visible envelope sent to a configured provider.
+ *
+ * The whole transcript travels with every request, for the same reason provider
+ * and model do: main holds no conversation. Week 5 deferred multi-turn on the
+ * grounds that "context has to live somewhere" — it lives here, in the request,
+ * and durably in the renderer-owned chat store. The main process still learns
+ * nothing between two calls, which is what keeps `previewRequest` honest: what
+ * it renders is the entire input to the next completion, not a summary of
+ * something main is holding.
+ */
+export interface AgentChatRequest {
+  /** The conversation so far, oldest first, ending on the analyst's new turn. */
+  messages: readonly ChatTurn[];
   /** Identifies the lowered structured-output contract used for generation. */
   generationSchema: typeof GENERATION_SCHEMA_ID;
   /** Provider and model travel with every request, never as main-process state. */
@@ -139,7 +165,7 @@ export type AgentProviderStatus =
       message: string;
     };
 
-export type AgentDraftFailureCode =
+export type AgentFailureCode =
   | "AUTHENTICATION"
   | "RATE_LIMITED"
   | "NETWORK"
@@ -166,17 +192,28 @@ export type AgentDraftFailureCode =
    */
   | "CREDENTIAL_UNREADABLE";
 
-/** Provider failures are expected outcomes and therefore resolve as data. */
-export type AgentDraftResult =
+/**
+ * Provider failures are expected outcomes and therefore resolve as data.
+ *
+ * `draft` is nullable because an assistant turn is allowed to be a question.
+ * The one-shot surface this replaced could only answer with a complete
+ * configuration — structured output left it no other shape — so "what error
+ * budget do you want?" was unrepresentable and the model guessed instead. A
+ * turn that carries no draft carries no draft; it is not a failure, and the
+ * transcript is where the work of narrowing actually happens.
+ */
+export type AgentChatResult =
   | {
       ok: true;
-      draft: GeneratedRunDraft;
+      /** Prose addressed to the analyst. Never the JSON envelope around it. */
+      reply: string;
+      draft: GeneratedRunDraft | null;
       provider: string;
       model: string;
     }
   | {
       ok: false;
-      code: AgentDraftFailureCode;
+      code: AgentFailureCode;
       message: string;
     };
 
@@ -190,7 +227,7 @@ export type CredentialStorageFailureCode = "BACKEND_UNAVAILABLE" | "WRITE_FAILED
  */
 export type CredentialConfigureResult =
   | { ok: true }
-  | { ok: false; code: AgentDraftFailureCode | CredentialStorageFailureCode; message: string };
+  | { ok: false; code: AgentFailureCode | CredentialStorageFailureCode; message: string };
 
 /**
  * Removing a stored key. Deleting a file the analyst asked to be gone can fail
@@ -216,14 +253,14 @@ export type CredentialClearResult =
  */
 export interface AgentService {
   getStatus(): Promise<AgentProviderStatus>;
-  /** The exact request body `requestDraft` would send. Carries no credential. */
-  previewRequest(request: AgentDraftRequest): Promise<unknown>;
-  requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult>;
+  /** The exact request body `requestReply` would send. Carries no credential. */
+  previewRequest(request: AgentChatRequest): Promise<unknown>;
+  requestReply(request: AgentChatRequest): Promise<AgentChatResult>;
   /**
-   * Abandon the draft this window has in flight, if any. Resolves either way —
+   * Abandon the turn this window has in flight, if any. Resolves either way —
    * a cancel that races the reply is not an error, it is a no-op.
    */
-  cancelDraft(): Promise<void>;
+  cancelReply(): Promise<void>;
   configureCredential(
     provider: ProviderId,
     apiKey: string,

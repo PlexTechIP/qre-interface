@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentService } from "../shared/agentTypes";
+import { InMemoryChatStore } from "../shared/chatStore";
 import { InMemoryRunStore } from "../shared/runStore";
 import {
   SAMPLE_RUN_RECORDS,
@@ -15,17 +16,32 @@ import {
 import { App, resolveAgentService } from "./App";
 
 /**
- * The three preload seams the shell reads. `window.agent` is populated here for
- * the same reason `estimator` and `store` are: preload defines all three in
- * every shipped build, so a test that leaves one out is testing a shape the app
- * never has.
+ * The preload seams the shell reads. `window.agent` and `window.chats` are
+ * populated here for the same reason `estimator` and `store` are: preload
+ * defines all of them in every shipped build, so a test that leaves one out is
+ * testing a shape the app never has. (`window.chats` also has a default in
+ * `test/setup.ts`; it is restated here beside the others for that reason.)
  */
 describe("App shell wiring", () => {
   beforeEach(() => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
     window.store = new InMemoryRunStore(SAMPLE_RUN_RECORDS);
     window.agent = fakeAgentService();
+    window.chats = new InMemoryChatStore();
   });
+
+  /** One turn on the chat page, ending with the proposal handed to the form. */
+  async function proposeViaChat(): Promise<void> {
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Your message" }),
+      "Estimate Grover search",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Use this configuration" }),
+    );
+  }
 
   it("opens on the Run Configuration surface", () => {
     render(<App />);
@@ -45,15 +61,7 @@ describe("App shell wiring", () => {
     window.estimator = { run: estimatorRun };
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "Run description" }),
-      "Estimate Grover search",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Review request" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Send and create draft" }),
-    );
+    await proposeViaChat();
 
     expect(
       await screen.findByRole("heading", { name: "Run Configuration" }),
@@ -71,15 +79,7 @@ describe("App shell wiring", () => {
   it("says which fields the model chose on the form it hands over", async () => {
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "Run description" }),
-      "Estimate Grover search",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Review request" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Send and create draft" }),
-    );
+    await proposeViaChat();
 
     const panel = (
       await screen.findByRole("heading", { name: /drafted by/i })

@@ -2,7 +2,8 @@
 import { describe, expect, it } from "vitest";
 
 import { FAKE_GENERATED_DRAFT } from "../shared/testing/fakeAgentService.js";
-import { validateGeneratedDraft } from "./draftValidation.js";
+import { validateChatReply, validateGeneratedDraft } from "./draftValidation.js";
+import { WIRE_CHAT_SCHEMA } from "./generationSchemaWire.js";
 
 /**
  * These pin the three failures that made "the real gate is downstream" the
@@ -106,5 +107,67 @@ describe("validateGeneratedDraft", () => {
     if (result.ok) return;
     expect(result.reason.split(";").length).toBeLessThanOrEqual(3);
     expect(result.reason).not.toMatch(/anyOf/);
+  });
+});
+
+/**
+ * The envelope check. A turn is accepted or refused whole: rendering the prose
+ * from a reply whose draft is malformed would put "here is a configuration for
+ * Grover" in the transcript above a card that cannot be opened, and the
+ * conversation would carry on from a proposal that was never made.
+ */
+describe("validateChatReply", () => {
+  const draft = (): unknown => structuredClone(FAKE_GENERATED_DRAFT);
+
+  it("accepts prose with a proposal", () => {
+    expect(validateChatReply({ reply: "Here is a starting point.", draft: draft() })).toEqual({
+      ok: true,
+      reply: "Here is a starting point.",
+      draft: FAKE_GENERATED_DRAFT,
+    });
+  });
+
+  it("accepts prose with no proposal — a turn may be a question", () => {
+    expect(validateChatReply({ reply: "Which error budget?", draft: null })).toEqual({
+      ok: true,
+      reply: "Which error budget?",
+      draft: null,
+    });
+  });
+
+  it.each([
+    ["a missing reply", { draft: null }],
+    ["a non-string reply", { reply: 7, draft: null }],
+    ["a missing draft key", { reply: "hello" }],
+    ["an unknown extra field", { reply: "hello", draft: null, confidence: 0.9 }],
+    ["a bare draft with no envelope", FAKE_GENERATED_DRAFT],
+  ])("refuses %s", (_label, value) => {
+    expect(validateChatReply(value)).toMatchObject({ ok: false });
+  });
+
+  it("names the offending field inside a malformed draft", () => {
+    const result = validateChatReply({
+      reply: "Here is a Grover setup.",
+      draft: { ...structuredClone(FAKE_GENERATED_DRAFT), maxError: "very small" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain("maxError");
+  });
+
+  /**
+   * The wire copy and the validating copy are both derived from the committed
+   * contract, so they cannot say different things about what a turn is. This is
+   * the assertion that keeps that true if one of them is edited.
+   */
+  it("validates the same envelope shape the provider is asked for", () => {
+    expect(WIRE_CHAT_SCHEMA).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["reply", "draft"],
+    });
+    // Descriptions are stripped for the grammar compiler; structure is not.
+    expect(JSON.stringify(WIRE_CHAT_SCHEMA)).not.toContain("description");
   });
 });

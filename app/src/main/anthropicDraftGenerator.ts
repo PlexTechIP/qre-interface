@@ -1,7 +1,11 @@
-import type { AgentDraftFailureCode, AgentDraftResult } from "../shared/agentTypes.js";
+import type {
+  AgentChatResult,
+  AgentFailureCode,
+  ChatTurn,
+} from "../shared/agentTypes.js";
 import type { DraftGenerator } from "./agentHandler.js";
-import { validateGeneratedDraft } from "./draftValidation.js";
-import { DRAFT_SYSTEM_PROMPT, WIRE_GENERATION_SCHEMA } from "./generationSchemaWire.js";
+import { validateChatReply } from "./draftValidation.js";
+import { CHAT_SYSTEM_PROMPT, WIRE_CHAT_SCHEMA } from "./generationSchemaWire.js";
 import { readProviderErrorReason } from "./providerErrorBody.js";
 
 /**
@@ -44,7 +48,8 @@ export interface AnthropicDraftRequestBody {
   readonly model: string;
   readonly max_tokens: number;
   readonly system: string;
-  readonly messages: readonly { role: "user"; content: string }[];
+  /** The whole conversation, oldest first. Main holds none of it between calls. */
+  readonly messages: readonly ChatTurn[];
   readonly output_config: {
     /** Absent on models that reject it — see `EFFORT_UNSUPPORTED_MODELS`. */
     readonly effort?: "low";
@@ -67,12 +72,12 @@ export class AnthropicDraftGenerator implements DraftGenerator {
    * of the brief asks for exactly what will be sent, not a summary of it —
    * this is the function that keeps that promise honest.
    */
-  buildRequestBody(prompt: string): AnthropicDraftRequestBody {
+  buildRequestBody(messages: readonly ChatTurn[]): AnthropicDraftRequestBody {
     return {
       model: this.model,
       max_tokens: MAX_TOKENS,
-      system: DRAFT_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: prompt }],
+      system: CHAT_SYSTEM_PROMPT,
+      messages,
       // On the 5-generation models thinking is left at its default (adaptive,
       // on) and paced with a low effort level rather than disabled: drafting one
       // small JSON object does not need deep reasoning, and disabling thinking
@@ -81,16 +86,16 @@ export class AnthropicDraftGenerator implements DraftGenerator {
       // which on those models means no thinking — the right trade for this task.
       output_config: {
         ...(EFFORT_UNSUPPORTED_MODELS.has(this.model) ? {} : { effort: "low" as const }),
-        format: { type: "json_schema", schema: WIRE_GENERATION_SCHEMA },
+        format: { type: "json_schema", schema: WIRE_CHAT_SCHEMA },
       },
     };
   }
 
-  async requestDraft(
+  async requestReply(
     apiKey: string,
-    prompt: string,
+    messages: readonly ChatTurn[],
     cancel?: AbortSignal,
-  ): Promise<AgentDraftResult> {
+  ): Promise<AgentChatResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -102,7 +107,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
           "x-api-key": apiKey,
           "anthropic-version": ANTHROPIC_VERSION,
         },
-        body: JSON.stringify(this.buildRequestBody(prompt)),
+        body: JSON.stringify(this.buildRequestBody(messages)),
         // Two independent reasons to give up, combined rather than merged, so
         // the catch below can still tell which one fired. Aborting the timeout
         // controller from the cancel path would have collapsed them.
@@ -114,7 +119,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
       if (!response.ok) return await this.describeHttpFailure(response);
 
       const payload: unknown = await response.json();
-      return this.readDraft(payload);
+      return this.readReply(payload);
     } catch (error) {
       return this.describeTransportFailure(error, cancel);
     } finally {
@@ -131,7 +136,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
    * bad parameter); reporting only the status code discards the single thing
    * that makes it fixable.
    */
-  private async describeHttpFailure(response: Response): Promise<AgentDraftResult> {
+  private async describeHttpFailure(response: Response): Promise<AgentChatResult> {
     const reason = await readProviderErrorReason(response);
 
     if (response.status === 401 || response.status === 403) {
@@ -163,13 +168,13 @@ export class AnthropicDraftGenerator implements DraftGenerator {
   private describeTransportFailure(
     error: unknown,
     cancel?: AbortSignal,
-  ): AgentDraftResult {
+  ): AgentChatResult {
     if (error instanceof Error && error.name === "AbortError") {
       return cancel?.aborted === true
-        ? fail("CANCELLED", "Request cancelled. Nothing was applied to the form.")
+        ? fail("CANCELLED", "Request cancelled. Nothing was added to the conversation.")
         : fail(
             "TIMEOUT",
-            "The provider did not respond in time. Nothing was applied to the form.",
+            "The provider did not respond in time. Nothing was added to the conversation.",
           );
     }
     const detail = error instanceof Error ? error.message : String(error);
@@ -177,12 +182,13 @@ export class AnthropicDraftGenerator implements DraftGenerator {
   }
 
   /**
-   * Reads the draft out of a Messages response. Two refusal-shaped outcomes
-   * are distinguished deliberately: a safety decline is REFUSED (the analyst
-   * should rephrase), while a truncated or unparseable body is INVALID_RESPONSE
-   * (the analyst should retry). Both leave the form untouched.
+   * Reads one assistant turn out of a Messages response. Two refusal-shaped
+   * outcomes are distinguished deliberately: a safety decline is REFUSED (the
+   * analyst should rephrase), while a truncated or unparseable body is
+   * INVALID_RESPONSE (the analyst should retry). Both leave the transcript
+   * untouched.
    */
-  private readDraft(payload: unknown): AgentDraftResult {
+  private readReply(payload: unknown): AgentChatResult {
     const message = asRecord(payload);
     if (message === null) {
       return fail("INVALID_RESPONSE", "The provider returned a response this app could not read.");
@@ -197,7 +203,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
     if (message["stop_reason"] === "max_tokens") {
       return fail(
         "INVALID_RESPONSE",
-        "The proposal was cut off before it was complete. Try a shorter description.",
+        "The reply was cut off before it was complete. Try a shorter description, or start a new conversation if this one has grown long.",
       );
     }
 
@@ -206,33 +212,34 @@ export class AnthropicDraftGenerator implements DraftGenerator {
       .map(asRecord)
       .find((block) => block !== null && block["type"] === "text")?.["text"];
     if (typeof text !== "string") {
-      return fail("INVALID_RESPONSE", "The provider returned no proposal to read.");
+      return fail("INVALID_RESPONSE", "The provider returned no reply to read.");
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      return fail("INVALID_RESPONSE", "The provider's proposal was not valid JSON.");
+      return fail("INVALID_RESPONSE", "The provider's reply was not valid JSON.");
     }
     if (asRecord(parsed) === null) {
-      return fail("INVALID_RESPONSE", "The provider's proposal was not a configuration object.");
+      return fail("INVALID_RESPONSE", "The provider's reply was not a chat envelope.");
     }
 
-    // Checked against the generation schema before anything downstream treats
-    // it as a draft. The gate further down IS stricter, but it is silent about
-    // a type-confused value — see `draftValidation.ts` for the dead end that
+    // Checked against the generation contract before anything downstream treats
+    // it as a turn. The gate further down IS stricter, but it is silent about a
+    // type-confused value — see `draftValidation.ts` for the dead end that
     // produced.
-    const validated = validateGeneratedDraft(parsed);
+    const validated = validateChatReply(parsed);
     if (!validated.ok) {
       return fail(
         "INVALID_RESPONSE",
-        `The provider's proposal did not match the generation contract (${validated.reason}). Nothing was applied to the form.`,
+        `The provider's reply did not match the generation contract (${validated.reason}). Nothing was added to the conversation.`,
       );
     }
 
     return {
       ok: true,
+      reply: validated.reply,
       draft: validated.draft,
       provider: this.provider,
       model: this.model,
@@ -240,7 +247,7 @@ export class AnthropicDraftGenerator implements DraftGenerator {
   }
 }
 
-function fail(code: AgentDraftFailureCode, message: string): AgentDraftResult {
+function fail(code: AgentFailureCode, message: string): AgentChatResult {
   return { ok: false, code, message };
 }
 

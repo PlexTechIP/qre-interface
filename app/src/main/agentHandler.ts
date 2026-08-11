@@ -3,17 +3,18 @@ import type { IpcMain } from "electron";
 import {
   GENERATION_SCHEMA_ID,
   PROVIDER_IDS,
-  type AgentDraftRequest,
-  type AgentDraftResult,
+  type AgentChatRequest,
+  type AgentChatResult,
   type AgentProviderStatus,
+  type ChatTurn,
   type ProviderId,
 } from "../shared/agentTypes.js";
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels.js";
 import type { CredentialStore } from "./credentialStore.js";
 import {
   AGENT_CANCEL_CHANNEL,
-  AGENT_DRAFT_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
+  AGENT_REPLY_CHANNEL,
   AGENT_STATUS_CHANNEL,
 } from "./ipcChannels.js";
 
@@ -30,17 +31,23 @@ import {
 export interface DraftGenerator {
   readonly provider: string;
   readonly model: string;
-  buildRequestBody(prompt: string): unknown;
+  /**
+   * Takes the whole transcript, because the adapter is given no memory of its
+   * own. The conversation is the renderer's, persisted in the chat store; this
+   * process learns nothing between two calls, which is what keeps a preview
+   * equal to the thing that would actually be sent.
+   */
+  buildRequestBody(messages: readonly ChatTurn[]): unknown;
   /**
    * `cancel` is the analyst abandoning the request, not a deadline — the
    * adapter keeps its own timeout and distinguishes the two, so an aborted
    * request reports CANCELLED rather than blaming the provider for being slow.
    */
-  requestDraft(
+  requestReply(
     apiKey: string,
-    prompt: string,
+    messages: readonly ChatTurn[],
     cancel?: AbortSignal,
-  ): Promise<AgentDraftResult>;
+  ): Promise<AgentChatResult>;
 }
 
 export interface DraftGeneratorFactory {
@@ -103,13 +110,13 @@ export function registerAgentHandlers(
   ipcMain.handle(
     AGENT_PREVIEW_CHANNEL,
     (_event, payload: unknown): unknown => {
-      const request = readDraftRequest(AGENT_PREVIEW_CHANNEL, payload);
-      return generatorFor(generators, request).buildRequestBody(request.prompt);
+      const request = readChatRequest(AGENT_PREVIEW_CHANNEL, payload);
+      return generatorFor(generators, request).buildRequestBody(request.messages);
     },
   );
 
   /**
-   * The draft this window has in flight, so `agent:cancel` has something to
+   * The turn this window has in flight, so `agent:cancel` has something to
    * abort. Keyed by sender rather than held as a single controller: one window
    * cancelling another's request would be a cross-talk bug that only appears
    * once someone opens a second window, which is exactly when nobody is looking
@@ -129,9 +136,9 @@ export function registerAgentHandlers(
   });
 
   ipcMain.handle(
-    AGENT_DRAFT_CHANNEL,
-    async (event, payload: unknown): Promise<AgentDraftResult> => {
-      const request = readDraftRequest(AGENT_DRAFT_CHANNEL, payload);
+    AGENT_REPLY_CHANNEL,
+    async (event, payload: unknown): Promise<AgentChatResult> => {
+      const request = readChatRequest(AGENT_REPLY_CHANNEL, payload);
       const generator = generatorFor(generators, request);
       const credentialStore = vault[request.provider];
 
@@ -154,7 +161,7 @@ export function registerAgentHandlers(
 
       if (apiKey === null) {
         throw new Error(
-          "agent:draft requires a configured credential. Check window.agent.getStatus().available before requesting a draft.",
+          "agent:reply requires a configured credential. Check window.agent.getStatus().available before sending a turn.",
         );
       }
 
@@ -166,7 +173,7 @@ export function registerAgentHandlers(
       inFlight.get(sender)?.abort();
       inFlight.set(sender, controller);
       try {
-        return await generator.requestDraft(apiKey, request.prompt, controller.signal);
+        return await generator.requestReply(apiKey, request.messages, controller.signal);
       } finally {
         // Only if it is still ours. A second request that started while this one
         // was in flight already owns the slot, and clearing it unconditionally
@@ -178,27 +185,34 @@ export function registerAgentHandlers(
 }
 
 /**
- * Narrow an IPC payload to an `AgentDraftRequest`.
+ * Narrow an IPC payload to an `AgentChatRequest`.
  *
  * The parameter is typed on the renderer side, but it arrives here as whatever
  * the renderer actually sent — `ipcMain.handle` does no checking, and a typed
- * signature on the listener is a claim, not a guard. Both agent channels
- * dereference `.prompt`, and an unchecked one turns a missing argument into a
- * bare TypeError and a non-string prompt into JSON in an outbound provider
- * request body.
+ * signature on the listener is a claim, not a guard. Both agent channels feed
+ * `.messages` straight into an outbound provider request body, so an unchecked
+ * one turns a missing argument into a bare TypeError and a malformed turn into
+ * a 400 whose text names no field the analyst has ever seen.
+ *
+ * Ordering is deliberately NOT checked. Providers disagree about whether a
+ * transcript may end on an assistant turn, and a rule invented here would be
+ * this app's rule rather than theirs — enforced by a rejection, which is the
+ * harshest outcome on this surface. Shape is checked because shape is what this
+ * process can be sure about.
  *
  * Throws, deliberately: every failure here means the renderer half of this app
  * is not the half that was built against this main process, which is the
  * programmer-error category the estimator convention reserves rejection for.
  */
-function readDraftRequest(channel: string, value: unknown): AgentDraftRequest {
+function readChatRequest(channel: string, value: unknown): AgentChatRequest {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${channel} requires an AgentDraftRequest object.`);
+    throw new Error(`${channel} requires an AgentChatRequest object.`);
   }
-  const { prompt, generationSchema, provider, model } = value as Record<string, unknown>;
-  if (typeof prompt !== "string") {
-    throw new Error(`${channel} requires a string prompt.`);
+  const { messages, generationSchema, provider, model } = value as Record<string, unknown>;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error(`${channel} requires a non-empty messages array.`);
   }
+  const turns = messages.map((turn, index) => readChatTurn(channel, turn, index));
   if (generationSchema !== GENERATION_SCHEMA_ID) {
     throw new Error(
       `${channel} expects generationSchema ${JSON.stringify(GENERATION_SCHEMA_ID)}, got ${JSON.stringify(generationSchema)}. The renderer and main bundles disagree about the generation contract.`,
@@ -210,12 +224,34 @@ function readDraftRequest(channel: string, value: unknown): AgentDraftRequest {
   if (!isModelForProvider(provider, model)) {
     throw new Error(`${channel} requires a supported model for ${provider}.`);
   }
-  return { prompt, generationSchema, provider, model };
+  return { messages: turns, generationSchema, provider, model };
+}
+
+/**
+ * One turn, narrowed to exactly `role` and `content`.
+ *
+ * Rebuilt rather than passed through: a renderer that sent a whole stored
+ * `ChatMessage` by mistake would otherwise put its id, timestamps and model
+ * attribution into the outbound body, where the analyst's preview would show
+ * them and the provider would be billed for them.
+ */
+function readChatTurn(channel: string, value: unknown, index: number): ChatTurn {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${channel} requires message ${index} to be an object.`);
+  }
+  const { role, content } = value as Record<string, unknown>;
+  if (role !== "user" && role !== "assistant") {
+    throw new Error(`${channel} requires message ${index} to have role "user" or "assistant".`);
+  }
+  if (typeof content !== "string") {
+    throw new Error(`${channel} requires message ${index} to have string content.`);
+  }
+  return { role, content };
 }
 
 function generatorFor(
   registry: DraftGeneratorRegistry,
-  request: AgentDraftRequest,
+  request: AgentChatRequest,
 ): DraftGenerator {
   return registry[request.provider].create(request.model);
 }

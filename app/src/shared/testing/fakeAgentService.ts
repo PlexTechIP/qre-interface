@@ -18,8 +18,8 @@
 
 import {
   PROVIDER_IDS,
-  type AgentDraftRequest,
-  type AgentDraftResult,
+  type AgentChatRequest,
+  type AgentChatResult,
   type AgentProviderStatus,
   type AgentService,
   type CredentialClearResult,
@@ -50,14 +50,18 @@ export const FAKE_GENERATED_DRAFT: GeneratedRunDraft = {
 };
 
 export interface FakeAgentServiceOptions {
-  /** The proposal `requestDraft` resolves with. Defaults to Grover. */
-  draft?: GeneratedRunDraft;
+  /** The proposal `requestReply` resolves with. Defaults to Grover. */
+  draft?: GeneratedRunDraft | null;
+  /** The prose `requestReply` resolves with. */
+  reply?: string;
+  /** Resolve as a typed failure instead, the way a real provider outcome does. */
+  failure?: Extract<AgentChatResult, { ok: false }>;
 }
 
 export function fakeAgentService(
   options: FakeAgentServiceOptions = {},
 ): AgentService {
-  const draft = options.draft ?? FAKE_GENERATED_DRAFT;
+  const draft = options.draft === undefined ? FAKE_GENERATED_DRAFT : options.draft;
   return {
     async getStatus(): Promise<AgentProviderStatus> {
       return {
@@ -77,21 +81,23 @@ export function fakeAgentService(
     },
 
     /** Nothing is sent, so the honest preview is the request and nothing else. */
-    async previewRequest(request: AgentDraftRequest): Promise<unknown> {
+    async previewRequest(request: AgentChatRequest): Promise<unknown> {
       return { note: "Test fixture — no request leaves this machine.", ...request };
     },
 
-    async requestDraft(_request: AgentDraftRequest): Promise<AgentDraftResult> {
+    async requestReply(_request: AgentChatRequest): Promise<AgentChatResult> {
+      if (options.failure !== undefined) return options.failure;
       return {
         ok: true,
-        draft: structuredClone(draft),
+        reply: options.reply ?? "Here is a starting point for that estimate.",
+        draft: draft === null ? null : structuredClone(draft),
         provider: "Test fixture",
         model: "deterministic fixture",
       };
     },
 
     /** Nothing is in flight behind a fixture, so cancelling is a no-op. */
-    async cancelDraft(): Promise<void> {},
+    async cancelReply(): Promise<void> {},
 
     /** There is no store behind a fixture, so accepting a key would be a lie. */
     async configureCredential(): Promise<CredentialConfigureResult> {

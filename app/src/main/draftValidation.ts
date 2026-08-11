@@ -41,6 +41,22 @@ import type { GeneratedRunDraft } from "../shared/agentTypes.js";
 const ajv = new Ajv({ allErrors: true, strict: false });
 const validate = ajv.compile(generationSchema);
 
+/**
+ * The chat envelope, assembled from the same committed artifact rather than
+ * from `WIRE_CHAT_SCHEMA`. The wire copy has had its descriptions stripped for
+ * the grammar compiler; validating against the descriptive original is how
+ * there comes to be exactly one contract here instead of two that agree today.
+ */
+const validateEnvelope = ajv.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["reply", "draft"],
+  properties: {
+    reply: { type: "string" },
+    draft: { anyOf: [generationSchema, { type: "null" }] },
+  },
+});
+
 export type DraftValidationResult =
   | { ok: true; draft: GeneratedRunDraft }
   | { ok: false; reason: string };
@@ -50,6 +66,27 @@ export function validateGeneratedDraft(value: unknown): DraftValidationResult {
     return { ok: true, draft: value as GeneratedRunDraft };
   }
   return { ok: false, reason: describe(validate.errors) };
+}
+
+export type ChatReplyValidationResult =
+  | { ok: true; reply: string; draft: GeneratedRunDraft | null }
+  | { ok: false; reason: string };
+
+/**
+ * The whole assistant turn, checked before any of it is shown or applied.
+ *
+ * A turn is refused whole rather than in halves. Rendering the prose from a
+ * reply whose draft is malformed would put a sentence like "here is a
+ * configuration for Grover" in the transcript above a draft card that could not
+ * be opened — the analyst reads the claim, not the missing card, and the
+ * conversation carries on from a proposal that was never made.
+ */
+export function validateChatReply(value: unknown): ChatReplyValidationResult {
+  if (validateEnvelope(value)) {
+    const { reply, draft } = value as { reply: string; draft: GeneratedRunDraft | null };
+    return { ok: true, reply, draft };
+  }
+  return { ok: false, reason: describe(validateEnvelope.errors) };
 }
 
 /**

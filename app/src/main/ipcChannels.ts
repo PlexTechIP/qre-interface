@@ -25,11 +25,28 @@ export const CREDENTIAL_CLEAR_CHANNEL = "credential:clear";
 // convention: provider failures resolve carrying a typed failure; only a
 // programmer error rejects). See agentHandler.ts.
 export const AGENT_STATUS_CHANNEL = "agent:status";
-export const AGENT_DRAFT_CHANNEL = "agent:draft";
-// Abandon the draft this window has in flight. A draft is a two-minute
+// One turn of a conversation. Was `agent:draft`, which could only ever answer
+// with a configuration; a turn may now also be a question, so the channel is
+// named for the exchange rather than for one of its two outcomes.
+export const AGENT_REPLY_CHANNEL = "agent:reply";
+// Abandon the turn this window has in flight. A reply is a two-minute
 // commitment; without this the analyst's only exit was to wait it out.
 export const AGENT_CANCEL_CHANNEL = "agent:cancel";
 // The exact outbound request body, credential-free, so the analyst can read
 // what will leave the machine before it does (brief constraint 8). Returning a
 // summary here instead would make the UI's "exact outbound request" a lie.
 export const AGENT_PREVIEW_CHANNEL = "agent:preview";
+
+// ChatStore over IPC — the same one-channel-per-operation shape as the run
+// store, backed by the main-process SqliteChatStore and its OWN database file.
+// `chat:clear` has no run-store counterpart on purpose: run records are
+// immutable history, while a transcript is the analyst's own prose and they are
+// entitled to take it back off the disk it was put on.
+export const CHAT_LIST_CHANNEL = "chat:list";
+export const CHAT_GET_CHANNEL = "chat:get";
+export const CHAT_CREATE_CHANNEL = "chat:create";
+export const CHAT_APPEND_CHANNEL = "chat:append";
+export const CHAT_RENAME_CHANNEL = "chat:rename";
+export const CHAT_DELETE_CHANNEL = "chat:delete";
+export const CHAT_CLEAR_CHANNEL = "chat:clear";
+export const CHAT_SEARCH_CHANNEL = "chat:search";

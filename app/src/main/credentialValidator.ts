@@ -1,9 +1,9 @@
-import type { AgentDraftFailureCode } from "../shared/agentTypes.js";
+import type { AgentFailureCode } from "../shared/agentTypes.js";
 import { readProviderErrorReason } from "./providerErrorBody.js";
 
 export type CredentialValidationResult =
   | { ok: true }
-  | { ok: false; code: AgentDraftFailureCode; message: string };
+  | { ok: false; code: AgentFailureCode; message: string };
 
 export interface CredentialValidator {
   /** Confirms a key actually authenticates, once, before it is ever stored. */

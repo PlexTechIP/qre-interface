@@ -4,6 +4,7 @@ import type {
   UploadedProgramFormat,
 } from "../shared/types";
 import type { AgentService } from "../shared/agentTypes";
+import type { ChatStore } from "../shared/chatTypes";
 
 /** Mirrors main/engine/uploadValidation.ts's result, which the renderer cannot import. */
 export type UploadPreflightResult =
@@ -34,6 +35,12 @@ declare global {
      * fixture when it is missing; see `resolveAgentService` in App.tsx.
      */
     agent?: AgentService;
+    /**
+     * The sixth preload surface: conversation persistence, backed by its own
+     * SQLite file. A store, not a second agent — it reaches no provider, which
+     * is why chat history stays readable with the network off.
+     */
+    chats: ChatStore;
   }
 }
 

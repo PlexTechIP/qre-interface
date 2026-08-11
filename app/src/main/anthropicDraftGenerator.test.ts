@@ -6,8 +6,17 @@ import { PROVIDER_MODELS } from "../shared/providerModels.js";
 import { FAKE_GENERATED_DRAFT } from "../shared/testing/fakeAgentService.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 
-const PROMPT = "Grover search over 20 qubits on a gate-based QPU";
+import type { ChatTurn } from "../shared/agentTypes.js";
+
+const TURNS: readonly ChatTurn[] = [
+  { role: "user", content: "Grover search over 20 qubits on a gate-based QPU" },
+];
 const API_KEY = "sk-ant-secret-value";
+
+/** The `{ reply, draft }` envelope every assistant turn is decoded into. */
+function envelope(draft: unknown, reply = "Here is a starting point."): unknown {
+  return { reply, draft };
+}
 
 /** A minimal Messages-API success envelope carrying `json` as the text block. */
 function messageResponse(json: unknown, overrides: Record<string, unknown> = {}): Response {
@@ -33,23 +42,44 @@ function errorResponse(status: number, body = ""): Response {
 
 describe("AnthropicDraftGenerator request body", () => {
   it("carries the lowered generation schema as the structured-output format", () => {
-    const body = new AnthropicDraftGenerator().buildRequestBody(PROMPT);
+    const body = new AnthropicDraftGenerator().buildRequestBody(TURNS);
 
     expect(body.model).toBe("claude-sonnet-5");
-    expect(body.messages).toEqual([{ role: "user", content: PROMPT }]);
+    expect(body.messages).toEqual(TURNS);
     expect(body.output_config.format.type).toBe("json_schema");
-    // The schema shipped is the real artifact, not a copy that can drift from
-    // the one the drift test guards.
+    // The schema shipped wraps the real artifact, not a copy that can drift
+    // from the one the drift test guards.
     // The WIRE schema is description- and title-free: those strings are
     // compiled into the decoding grammar and pushed it over the provider's size
     // ceiling, so they travel in the system prompt instead. Structure only here.
     const schema = body.output_config.format.schema as Record<string, unknown>;
-    expect(schema).toMatchObject({ type: "object", additionalProperties: false });
+    expect(schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["reply", "draft"],
+    });
     expect(JSON.stringify(schema)).not.toContain("description");
     expect(schema).not.toHaveProperty("title");
     // …and the guidance is not lost, only relocated.
     expect(body.system).toContain("Field guidance");
     expect(body.system).toContain("searchQubits");
+  });
+
+  /**
+   * The whole conversation goes out on every turn. Main holds none of it, so a
+   * body missing the earlier turns is a model with no memory of what it just
+   * proposed — and a "make the gate time 80" that re-derives every other field.
+   */
+  it("sends the whole transcript, oldest first", () => {
+    const transcript: ChatTurn[] = [
+      { role: "user", content: "Grover, 20 qubits" },
+      { role: "assistant", content: '{"reply":"Here it is.","draft":null}' },
+      { role: "user", content: "make the gate time 80" },
+    ];
+
+    expect(new AnthropicDraftGenerator().buildRequestBody(transcript).messages).toEqual(
+      transcript,
+    );
   });
 
   /**
@@ -59,13 +89,13 @@ describe("AnthropicDraftGenerator request body", () => {
    * opaque provider rejection rather than as anything naming the cause.
    */
   it.each(["claude-sonnet-5", "claude-opus-5"])("paces thinking with low effort on %s", (model) => {
-    const body = new AnthropicDraftGenerator(model).buildRequestBody(PROMPT);
+    const body = new AnthropicDraftGenerator(model).buildRequestBody(TURNS);
 
     expect(body.output_config.effort).toBe("low");
   });
 
   it("omits effort entirely on a model that rejects the parameter", () => {
-    const body = new AnthropicDraftGenerator("claude-haiku-4-5").buildRequestBody(PROMPT);
+    const body = new AnthropicDraftGenerator("claude-haiku-4-5").buildRequestBody(TURNS);
 
     // Absent, not undefined: `JSON.stringify` drops an undefined value, but the
     // preview panel renders this object directly and would show the key.
@@ -82,7 +112,7 @@ describe("AnthropicDraftGenerator request body", () => {
    */
   it("builds a body for every Anthropic model the picker offers", () => {
     for (const model of PROVIDER_MODELS.anthropic.models) {
-      const body = new AnthropicDraftGenerator(model).buildRequestBody(PROMPT);
+      const body = new AnthropicDraftGenerator(model).buildRequestBody(TURNS);
       expect(body.model).toBe(model);
       expect(body.output_config.format.schema).toBeDefined();
     }
@@ -90,19 +120,19 @@ describe("AnthropicDraftGenerator request body", () => {
 
   it("never puts a credential in the request body", () => {
     const generator = new AnthropicDraftGenerator();
-    const serialized = JSON.stringify(generator.buildRequestBody(PROMPT));
+    const serialized = JSON.stringify(generator.buildRequestBody(TURNS));
 
     expect(serialized).not.toContain(API_KEY);
     expect(serialized).not.toContain("x-api-key");
     // The preview shown to the analyst is this exact object — if a key could
     // reach it, the UI would be displaying the secret it exists to protect.
-    expect(Object.keys(generator.buildRequestBody(PROMPT))).not.toContain("apiKey");
+    expect(Object.keys(generator.buildRequestBody(TURNS))).not.toContain("apiKey");
   });
 
   it("sends the key as a header, and only as a header", async () => {
     const fetchImpl = vi.fn(async (): Promise<Response> => messageResponse({ name: "draft" }));
     await new AnthropicDraftGenerator("claude-opus-5", fetchImpl as unknown as typeof fetch)
-      .requestDraft(API_KEY, PROMPT);
+      .requestReply(API_KEY, TURNS);
 
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect((init.headers as Record<string, string>)["x-api-key"]).toBe(API_KEY);
@@ -119,17 +149,35 @@ describe("AnthropicDraftGenerator outcomes", () => {
     return new AnthropicDraftGenerator(
       "claude-opus-5",
       fetchImpl as unknown as typeof fetch,
-    ).requestDraft(API_KEY, PROMPT);
+    ).requestReply(API_KEY, TURNS);
   }
 
-  it("returns the parsed draft on success", async () => {
-    const result = await draftWith(messageResponse(FAKE_GENERATED_DRAFT));
+  it("returns the prose and the parsed draft on success", async () => {
+    const result = await draftWith(messageResponse(envelope(FAKE_GENERATED_DRAFT)));
 
     expect(result).toEqual({
       ok: true,
+      reply: "Here is a starting point.",
       draft: FAKE_GENERATED_DRAFT,
       provider: "Anthropic",
       model: "claude-opus-5",
+    });
+  });
+
+  /**
+   * A turn is allowed to be a question. The one-shot surface this replaced could
+   * only answer with a complete configuration, so "which error budget?" was
+   * unrepresentable and the model guessed instead.
+   */
+  it("accepts a turn that proposes nothing", async () => {
+    const result = await draftWith(
+      messageResponse(envelope(null, "Which error budget do you want?")),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      reply: "Which error budget do you want?",
+      draft: null,
     });
   });
 
@@ -141,33 +189,59 @@ describe("AnthropicDraftGenerator outcomes", () => {
    */
   it("refuses a schema-valid-looking reply whose types are wrong, naming the field", async () => {
     const result = await draftWith(
-      messageResponse({
-        ...FAKE_GENERATED_DRAFT,
-        architecture: {
-          type: "gateBased",
-          errorRate: "1e-3",
-          gateTime: 50,
-          measurementTime: 100,
-          twoQubitGateTime: null,
-        },
-      }),
+      messageResponse(
+        envelope({
+          ...FAKE_GENERATED_DRAFT,
+          architecture: {
+            type: "gateBased",
+            errorRate: "1e-3",
+            gateTime: 50,
+            measurementTime: 100,
+            twoQubitGateTime: null,
+          },
+        }),
+      ),
     );
 
     expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
     if (result.ok) return;
     expect(result.message).toContain("architecture.errorRate");
-    expect(result.message).toContain("Nothing was applied to the form.");
+    expect(result.message).toContain("Nothing was added to the conversation.");
   });
 
   it("refuses a reply missing a required section", async () => {
     const draft: Record<string, unknown> = structuredClone(FAKE_GENERATED_DRAFT);
     delete draft["traceTransform"];
 
-    const result = await draftWith(messageResponse(draft));
+    const result = await draftWith(messageResponse(envelope(draft)));
 
     expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
     if (result.ok) return;
     expect(result.message).toContain("traceTransform");
+  });
+
+  /**
+   * Refused WHOLE, not in halves. Showing the prose above a draft card that
+   * cannot be opened puts "here is a configuration for Grover" in the
+   * transcript and lets the conversation continue from a proposal that was
+   * never actually made.
+   */
+  it("refuses the whole turn when only the draft is malformed", async () => {
+    const result = await draftWith(
+      messageResponse(
+        envelope({ ...FAKE_GENERATED_DRAFT, maxError: "very small" }, "Here is a Grover setup."),
+      ),
+    );
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
+    if (result.ok) return;
+    expect(result.message).not.toContain("Here is a Grover setup.");
+  });
+
+  it("refuses an envelope with no prose in it", async () => {
+    const result = await draftWith(messageResponse({ draft: FAKE_GENERATED_DRAFT }));
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
   });
 
   // Every provider failure resolves — the estimator convention this surface is
@@ -198,7 +272,7 @@ describe("AnthropicDraftGenerator outcomes", () => {
     expect(truncated).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
   });
 
-  it("treats a non-JSON proposal as a failure rather than a draft", async () => {
+  it("treats a non-JSON reply as a failure rather than a turn", async () => {
     const result = await draftWith({
       ok: true,
       status: 200,
@@ -286,11 +360,11 @@ describe("AnthropicDraftGenerator outcomes", () => {
     const result = await new AnthropicDraftGenerator(
       "claude-opus-5",
       fetchImpl as unknown as typeof fetch,
-    ).requestDraft(API_KEY, PROMPT, cancel.signal);
+    ).requestReply(API_KEY, TURNS, cancel.signal);
 
     expect(result).toMatchObject({ ok: false, code: "CANCELLED" });
     if (result.ok) return;
-    expect(result.message).toContain("Nothing was applied to the form.");
+    expect(result.message).toContain("Nothing was added to the conversation.");
     expect(result.message).not.toMatch(/did not respond in time/);
   });
 
@@ -305,7 +379,7 @@ describe("AnthropicDraftGenerator outcomes", () => {
     const result = await new AnthropicDraftGenerator(
       "claude-opus-5",
       fetchImpl as unknown as typeof fetch,
-    ).requestDraft(API_KEY, PROMPT, cancel.signal);
+    ).requestReply(API_KEY, TURNS, cancel.signal);
 
     expect(result).toMatchObject({ ok: false, code: "TIMEOUT" });
   });

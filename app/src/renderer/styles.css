@@ -1341,7 +1341,6 @@ select {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 920px;
   border: 1px solid var(--color-card-border);
   border-radius: 12px;
   padding: 20px;
@@ -1546,6 +1545,576 @@ select {
   padding: 10px 12px;
   background: var(--color-danger-bg);
   color: var(--color-danger-text) !important;
+}
+
+/* ================================================================== */
+/* Conversation surface — views, list, transcript, composer            */
+/* ================================================================== */
+
+/*
+ * ONE full-width column, like every other page in this app. The 280px rail
+ * this replaced put a second vertical rule at x≈572, close enough to the nav's
+ * at x=260 to read as two competing sidebars — on the only page that had two.
+ */
+.chat-page {
+  display: grid;
+  /*
+   * `minmax(0, 1fr)`, not the implicit `auto`: a grid track sized `auto` takes
+   * its child's min-content width, so the conversation table pushed the column
+   * — and the page — sideways instead of scrolling inside its own box. The
+   * same clamp is needed on every grid in the chain down to the scroller.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+/* Two views of one store, the shape History and Comparison already use. */
+.chat-views {
+  display: inline-flex;
+  justify-self: start;
+  overflow: hidden;
+  border: 1px solid var(--color-input-border);
+  border-radius: 9px;
+}
+
+.chat-views__tab {
+  border: 0;
+  padding: 9px 18px;
+  background: none;
+  color: var(--color-button-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-views__tab:hover {
+  background: var(--color-row-hover);
+}
+
+.chat-views__tab--active {
+  background: var(--color-accent-bg);
+  color: var(--color-accent);
+}
+
+.chat-views__tab:focus-visible,
+.conversation-list__search:focus-visible,
+.conversation-actions__input:focus-visible,
+.conversation-table__title:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+/* --- All conversations ---------------------------------------------*/
+
+.conversation-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.conversation-list__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.conversation-list__spacer {
+  flex: 1 1 auto;
+}
+
+.conversation-list__search {
+  width: min(340px, 100%);
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  /* See `--color-input-bg` note on the composer: the token is referenced by
+     the agent inputs and defined by neither theme. */
+  background: var(--color-input-bg, var(--color-surface));
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.conversation-list__empty {
+  margin: 0;
+  padding: 24px 0;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.conversation-list__confirm {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-danger-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--color-danger-bg);
+}
+
+.conversation-list__table-wrap {
+  /*
+   * `min-width: 0` is what makes the `overflow-x` below actually contain the
+   * table. A grid child defaults to `min-width: auto`, so a table wider than
+   * the column pushed the column — and with it the page — sideways instead of
+   * scrolling inside its own box.
+   */
+  min-width: 0;
+  overflow-x: auto;
+  /*
+   * A containing block, so nothing escapes the scroller. `.sr-only` is
+   * `position: absolute` with no offsets, and `overflow` only clips an
+   * absolutely-positioned descendant when the scroller is POSITIONED — so the
+   * hidden "Actions" label in the header row was laid out at its static
+   * position inside the wide table, escaped the clip into the initial
+   * containing block, and gave the whole page 19px of horizontal scroll that no
+   * visible element accounted for.
+   */
+  position: relative;
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+.conversation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.conversation-table th {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-table-head-bg);
+  color: var(--color-label);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.conversation-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-hairline);
+  color: var(--color-body);
+  vertical-align: middle;
+}
+
+.conversation-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.conversation-table tbody tr:hover td {
+  background: var(--color-row-hover);
+}
+
+/* The one currently open, so switching views does not lose your place. */
+.conversation-table__row--open td {
+  background: var(--color-accent-bg);
+}
+
+.conversation-table__title {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-heading);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-table__title:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+/*
+ * The elastic column. `width: 100%` with `max-width: 0` is the idiom for a
+ * table cell that absorbs all remaining space AND still ellipsises: without
+ * the zero max-width the cell sizes to its content and pushes every other
+ * column — including the buttons — off the end of the table.
+ */
+.conversation-table__preview {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-table__number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.conversation-table__when {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.conversation-table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chat-thread__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * No wrapping: the buttons sit on one line and the preview column above gives
+ * up the space for them. They wrapped onto three lines before, which made
+ * every row 190px tall.
+ */
+.conversation-table__actions {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-table__actions .conversation-actions {
+  flex-wrap: nowrap;
+}
+
+.conversation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-actions--renaming {
+  flex: 1 1 240px;
+}
+
+.conversation-actions__input {
+  flex: 1 1 160px;
+  min-width: 140px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--color-input-bg, var(--color-surface));
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* --- The open conversation -----------------------------------------*/
+
+/*
+ * ONE CONTINUOUS CHAT.
+ *
+ * This was a card of fixed height with the transcript scrolling inside it:
+ * `max-height: calc(100vh - 400px)` left a 205px letterbox holding 1500px of
+ * conversation, so the analyst read one and a half messages at a time through
+ * a slot, with the previous turn clipped mid-word at the top edge — while 400px
+ * of empty page sat underneath.
+ *
+ * Now the transcript is as tall as the conversation and the PAGE scrolls, the
+ * way a chat with Claude or ChatGPT does. The composer sticks to the bottom of
+ * the viewport so it is always reachable, and the conversation header sticks to
+ * the top so you always know which one you are in. One scrollbar, not three.
+ */
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px var(--color-shadow);
+  padding: 0 18px;
+  /* A conversation with nothing in it yet is still a page, not a stub. */
+  min-height: 460px;
+}
+
+.chat-thread__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  /* Sticky needs an opaque background and the card's own padding back. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -18px;
+  border-bottom: 1px solid var(--color-border-soft);
+  padding: 14px 18px;
+  background: var(--color-surface);
+  border-radius: 12px 12px 0 0;
+}
+
+.chat-thread__identity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.chat-thread__title {
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-heading);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-thread__meta {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.chat-thread__spacer {
+  flex: 1 1 auto;
+}
+
+/*
+ * A reading column, centred. Prose set the full 1068px of the workspace runs
+ * ~150 characters a line, which is roughly twice what anyone reads comfortably;
+ * the reference chat apps all settle around this measure for the same reason.
+ */
+.chat-transcript,
+.chat-composer,
+.chat-thread__empty,
+.chat-retry {
+  width: 100%;
+  max-width: 820px;
+  margin-inline: auto;
+}
+
+/*
+ * Grows to fill the empty card so the composer lands at the bottom, where it
+ * will be once there is a conversation above it — rather than floating in the
+ * middle with dead space underneath.
+ */
+.chat-thread__empty {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: center;
+  margin: 0;
+  padding: 32px 0;
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/*
+ * Compact and left-aligned under the turn it belongs to. Stretched to the full
+ * column it was an 820px outlined box in the card's own colour — technically
+ * visible, effectively a gap.
+ */
+.chat-retry {
+  display: flex;
+  padding-bottom: 4px;
+}
+
+.chat-transcript {
+  display: flex;
+  flex-direction: column;
+  /* Turns breathe. 14px made a six-turn conversation read as one grey block. */
+  gap: 28px;
+  padding: 26px 0;
+  list-style: none;
+}
+
+.chat-turn {
+  display: grid;
+  gap: 7px;
+}
+
+/*
+ * The assistant is NOT a bubble. Full-width prose on the card, the way Claude
+ * and ChatGPT set model output — a bordered box at 82% width made every reply
+ * look like a quoted aside rather than the substance of the page.
+ *
+ * Side and treatment together, never colour alone: each turn also carries its
+ * role as an accessible name, so nothing here is the only thing saying who
+ * spoke.
+ */
+.chat-turn--assistant {
+  justify-self: stretch;
+}
+
+.chat-turn--user {
+  justify-self: end;
+  max-width: 88%;
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: var(--color-accent-bg);
+}
+
+.chat-turn--user .chat-turn__who {
+  color: var(--color-accent);
+}
+
+.chat-turn--pending .chat-turn__text {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.chat-turn__who {
+  margin: 0;
+  color: var(--color-label);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chat-turn__text {
+  margin: 0;
+  color: var(--color-body);
+  /* 14px/1.55 was cramped for multi-paragraph model output. */
+  font-size: 15px;
+  line-height: 1.7;
+  /* Model prose arrives with its own paragraph breaks; collapsing them turns
+     a three-point answer into one run-on sentence. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-draft {
+  display: grid;
+  gap: 9px;
+  margin-top: 8px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-surface);
+}
+
+.chat-draft__heading {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: 14px;
+}
+
+.chat-draft__fields dt,
+.chat-draft__fields dd,
+.chat-draft__note {
+  font-size: 13px;
+}
+
+.chat-draft__fields {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.chat-draft__fields > div {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.chat-draft__fields dt {
+  min-width: 92px;
+  color: var(--color-label);
+  font-weight: 700;
+}
+
+.chat-draft__fields dd {
+  margin: 0;
+  color: var(--color-body);
+}
+
+.chat-draft__note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.chat-draft__raw > summary,
+.chat-preview > summary {
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-draft__raw pre,
+.chat-preview pre {
+  max-height: 280px;
+  overflow: auto;
+  margin: 8px 0 0;
+  border: 1px solid var(--color-input-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--color-well-bg);
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/*
+ * At the end of the conversation, in normal flow.
+ *
+ * It was sticky to the viewport bottom for a while, which kept it permanently
+ * reachable but also permanently in the way: a floating slab over the last two
+ * messages, with the newest turn arriving underneath it. The transcript already
+ * scrolls itself to the newest turn on every send, so being at the end of the
+ * page is being exactly where the analyst is looking.
+ */
+.chat-composer {
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid var(--color-border-soft);
+  padding: 16px 0 20px;
+}
+
+/* Grows with what is typed, from two lines rather than four. */
+.chat-composer .agent-prompt {
+  min-height: 76px;
+  max-height: 40vh;
+}
+
+/* Keyboard affordance beside Send, not another line of chrome under it. */
+.chat-composer__hint {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.chat-composer .agent-actions {
+  align-items: center;
+}
+
+/*
+ * The outbound preview shares the Send row's line rather than adding one. It
+ * is a disclosure the analyst opens deliberately, not something that needs its
+ * own band of space on every turn.
+ */
+.chat-composer .chat-preview {
+  margin-top: -2px;
+}
+
+.chat-composer .chat-preview > summary {
+  font-size: 12px;
+}
+
+.chat-preview > p {
+  margin: 8px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* --- Section cards --------------------------------------------------*/

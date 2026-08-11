@@ -40,11 +40,22 @@ from QDK, a test double, or a future estimator implementation.
 
 ## IPC boundary
 
-The preload exposes exactly three renderer surfaces:
+The preload exposes exactly six renderer surfaces:
 
 - `window.estimator`: estimation runs, backed by QRE.
 - `window.store`: run history persistence, backed by SQLite.
 - `window.files`: file path lookup for uploaded programs.
+- `window.uploads`: pre-flight validation of an uploaded program file.
+- `window.agent`: provider status, the outbound-request preview, one turn of a
+  conversation, cancelling one, and one-way credential entry. **There is no
+  credential getter and no channel on the other side that could be one.**
+- `window.chats`: conversation persistence, backed by its own SQLite file.
+
+`agent` and `chats` are deliberately separate, and the split is load-bearing:
+`chats` reaches a database and never a provider, `agent` reaches a provider and
+never a database. That is what makes chat history readable with the network off,
+and what keeps "delete all my transcripts" a database operation with no
+credential anywhere near it.
 
 The BrowserWindow security posture is deliberate:
 
@@ -92,6 +103,32 @@ stamps a fresh id and timestamp, executes again, and saves a new record.
 `SqliteRunStore` and `InMemoryRunStore` are kept behaviorally aligned so tests
 can exercise UI flows without SQLite while production still uses durable local
 storage.
+
+### Chat history
+
+Conversations live in a **separate database file**, `chat-history.sqlite`
+(`QRE_CHAT_DB_PATH` overrides), behind the `ChatStore` interface — three tables:
+`conversations`, append-only `chat_messages`, and an FTS5 `chat_search` index
+that backs the rail's search box.
+
+Two files rather than two table groups in one, for two reasons. Runs and
+conversations share no join and no lifetime: a run record is immutable forever,
+while a transcript is the analyst's own prose and they are entitled to delete
+all of it. And the week-6 walkthrough verified by grepping the shipped store
+that no prompt text ever reaches `run-history.sqlite`; chat history *is* prompt
+text, so putting it there would make a check someone deliberately performed
+permanently false.
+
+`SqliteChatStore` and `InMemoryChatStore` are held to one shared suite
+(`shared/testing/chatStoreContract.ts`) rather than to two test files that
+happen to assert similar things — "kept behaviorally aligned" holds only for as
+long as someone remembers to edit both.
+
+Storing transcripts reverses an earlier decision, knowingly: the Describe-a-Run
+prompt was session state that never touched disk. A conversation the analyst
+cannot come back to is not a conversation, it is a long prompt. What follows
+from the reversal is `ChatStore.clear`, wired to a two-step "Delete all history"
+control. The *unsent* composer text is still session-only.
 
 ## Python QRE engine
 

@@ -2,14 +2,15 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentDraftResult, AgentProviderStatus } from "../shared/agentTypes.js";
+import type { AgentChatResult, AgentProviderStatus, ChatTurn } from "../shared/agentTypes.js";
 import { registerAgentHandlers, type DraftGenerator } from "./agentHandler.js";
 import type { CredentialStore } from "./credentialStore.js";
-import { AGENT_CANCEL_CHANNEL, AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
+import { AGENT_CANCEL_CHANNEL, AGENT_REPLY_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 type Store = Pick<CredentialStore, "hasCredential" | "readForRequest">;
-const request = { prompt: "estimate Grover search", generationSchema: "runconfig-generation-v1.4.0", provider: "openai" as const, model: "gpt-5.6-terra" };
+const TURNS = [{ role: "user" as const, content: "estimate Grover search" }];
+const request = { messages: TURNS, generationSchema: "runconfig-generation-v1.4.0", provider: "openai" as const, model: "gpt-5.6-terra" };
 
 /**
  * The handler keys in-flight requests by sender, so the event is no longer
@@ -23,7 +24,7 @@ interface SetupOptions {
   openai?: boolean;
   key?: string | null;
   readError?: Error;
-  result?: AgentDraftResult;
+  result?: AgentChatResult;
   /** Hold the request open until its signal aborts, so cancel has a target. */
   awaitCancel?: boolean;
 }
@@ -34,18 +35,20 @@ function setup(options: SetupOptions = {}) {
   const store = (configured: boolean): Store => ({ hasCredential: vi.fn(() => configured), readForRequest: vi.fn(() => { if (options.readError) throw options.readError; return options.key ?? null; }) });
   const vault = { anthropic: store(options.anthropic ?? false), openai: store(options.openai ?? false) };
   const seenSignals: (AbortSignal | undefined)[] = [];
+  const seenMessages: (readonly ChatTurn[])[] = [];
   const respond = (provider: string, model: string) =>
-    vi.fn(async (_key: string, _prompt: string, cancel?: AbortSignal): Promise<AgentDraftResult> => {
+    vi.fn(async (_key: string, messages: readonly ChatTurn[], cancel?: AbortSignal): Promise<AgentChatResult> => {
       seenSignals.push(cancel);
+      seenMessages.push(messages);
       if (options.awaitCancel === true) {
         await new Promise<void>((resolve) => cancel?.addEventListener("abort", () => resolve()));
-        return { ok: false, code: "CANCELLED", message: "Request cancelled. Nothing was applied to the form." };
+        return { ok: false, code: "CANCELLED", message: "Request cancelled. Nothing was added to the conversation." };
       }
-      return options.result ?? { ok: true, draft: {} as never, provider, model };
+      return options.result ?? { ok: true, reply: "ok", draft: null, provider, model };
     });
   const generators = {
-    anthropic: { create: vi.fn((model: string): DraftGenerator => ({ provider: "Anthropic", model, buildRequestBody: vi.fn((prompt) => ({ provider: "anthropic", model, prompt })), requestDraft: respond("Anthropic", model) })) },
-    openai: { create: vi.fn((model: string): DraftGenerator => ({ provider: "OpenAI", model, buildRequestBody: vi.fn((prompt) => ({ provider: "openai", model, prompt })), requestDraft: respond("OpenAI", model) })) },
+    anthropic: { create: vi.fn((model: string): DraftGenerator => ({ provider: "Anthropic", model, buildRequestBody: vi.fn((messages) => ({ provider: "anthropic", model, messages })), requestReply: respond("Anthropic", model) })) },
+    openai: { create: vi.fn((model: string): DraftGenerator => ({ provider: "OpenAI", model, buildRequestBody: vi.fn((messages) => ({ provider: "openai", model, messages })), requestReply: respond("OpenAI", model) })) },
   };
   registerAgentHandlers(ipcMain, vault, generators);
   const invokeFrom = <T>(sender: number, channel: string, ...args: unknown[]): Promise<T> => {
@@ -54,7 +57,7 @@ function setup(options: SetupOptions = {}) {
     try { return Promise.resolve(handler(senderEvent(sender), ...args) as T); } catch (error) { return Promise.reject(error); }
   };
   const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => invokeFrom<T>(1, channel, ...args);
-  return { invoke, invokeFrom, vault, generators, seenSignals };
+  return { invoke, invokeFrom, vault, generators, seenSignals, seenMessages };
 }
 
 describe("registerAgentHandlers", () => {
@@ -68,14 +71,14 @@ describe("registerAgentHandlers", () => {
 
   it("previews the selected provider without reading a credential", async () => {
     const { invoke, vault, generators } = setup({ openai: true, key: "sk-secret" });
-    await expect(invoke(AGENT_PREVIEW_CHANNEL, request)).resolves.toEqual({ provider: "openai", model: "gpt-5.6-terra", prompt: request.prompt });
+    await expect(invoke(AGENT_PREVIEW_CHANNEL, request)).resolves.toEqual({ provider: "openai", model: "gpt-5.6-terra", messages: TURNS });
     expect(vault.openai.readForRequest).not.toHaveBeenCalled();
     expect(generators.openai.create).toHaveBeenCalledWith("gpt-5.6-terra");
   });
 
   it("sends through the same selected provider and keeps key decryption in main", async () => {
     const { invoke, vault } = setup({ openai: true, key: "sk-secret" });
-    await expect(invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request)).resolves.toMatchObject({ ok: true, provider: "OpenAI", model: "gpt-5.6-terra" });
+    await expect(invoke<AgentChatResult>(AGENT_REPLY_CHANNEL, request)).resolves.toMatchObject({ ok: true, provider: "OpenAI", model: "gpt-5.6-terra" });
     expect(vault.openai.readForRequest).toHaveBeenCalledOnce();
     expect(vault.anthropic.readForRequest).not.toHaveBeenCalled();
   });
@@ -83,7 +86,7 @@ describe("registerAgentHandlers", () => {
   it("rejects an unknown provider and resolves an unreadable key as data", async () => {
     const unknown = { ...request, provider: "unknown" };
     await expect(setup().invoke(AGENT_PREVIEW_CHANNEL, unknown)).rejects.toThrow(/provider id/);
-    const result = await setup({ openai: true, readError: new Error("locked keychain") }).invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request);
+    const result = await setup({ openai: true, readError: new Error("locked keychain") }).invoke<AgentChatResult>(AGENT_REPLY_CHANNEL, request);
     expect(result).toMatchObject({ ok: false, code: "CREDENTIAL_UNREADABLE" });
   });
 
@@ -96,19 +99,19 @@ describe("registerAgentHandlers", () => {
     const handlers = new Map<string, Listener>();
     const ipcMain: Pick<IpcMain, "handle"> = { handle(channel, listener) { handlers.set(channel, listener as Listener); } };
     const store = (): Store => ({ hasCredential: vi.fn(() => false), readForRequest: vi.fn(() => null) });
-    const generator = (): { create: (model: string) => DraftGenerator } => ({ create: (model) => ({ provider: "x", model, buildRequestBody: () => ({}), requestDraft: async () => ({ ok: true, draft: {} as never, provider: "x", model }) }) });
+    const generator = (): { create: (model: string) => DraftGenerator } => ({ create: (model) => ({ provider: "x", model, buildRequestBody: () => ({}), requestReply: async () => ({ ok: true, reply: "ok", draft: null, provider: "x", model }) }) });
     registerAgentHandlers(ipcMain, { anthropic: store(), openai: store() }, { anthropic: generator(), openai: generator() });
 
     expect([...handlers.keys()].sort()).toEqual(
-      [AGENT_CANCEL_CHANNEL, AGENT_DRAFT_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
+      [AGENT_CANCEL_CHANNEL, AGENT_REPLY_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL].sort(),
     );
   });
 
   describe("agent:cancel", () => {
     it("aborts the draft this window has in flight", async () => {
       const { invoke, seenSignals } = setup({ openai: true, key: "sk-secret", awaitCancel: true });
-      const draft = invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request);
-      // Let the handler reach requestDraft and register its controller.
+      const draft = invoke<AgentChatResult>(AGENT_REPLY_CHANNEL, request);
+      // Let the handler reach requestReply and register its controller.
       await Promise.resolve();
       await Promise.resolve();
 
@@ -128,7 +131,7 @@ describe("registerAgentHandlers", () => {
       // Keyed by sender precisely so this stays true once a second window
       // exists — which is exactly when nobody would be looking for it.
       const { invokeFrom } = setup({ openai: true, key: "sk-secret", awaitCancel: true });
-      const draft = invokeFrom<AgentDraftResult>(1, AGENT_DRAFT_CHANNEL, request);
+      const draft = invokeFrom<AgentChatResult>(1, AGENT_REPLY_CHANNEL, request);
       await Promise.resolve();
       await Promise.resolve();
 
@@ -161,14 +164,68 @@ describe("registerAgentHandlers", () => {
     const { invoke } = setup();
     await expect(invoke(AGENT_PREVIEW_CHANNEL, request)).resolves.toMatchObject({
       provider: "openai",
-      prompt: request.prompt,
+      messages: TURNS,
+    });
+  });
+
+  describe("the transcript it accepts", () => {
+    it("passes the whole conversation through to the generator", async () => {
+      const { invoke, seenMessages } = setup({ openai: true, key: "sk-secret" });
+      const messages = [
+        { role: "user" as const, content: "Grover, 20 qubits" },
+        { role: "assistant" as const, content: '{"reply":"Here it is.","draft":null}' },
+        { role: "user" as const, content: "make the gate time 80" },
+      ];
+
+      await invoke(AGENT_REPLY_CHANNEL, { ...request, messages });
+
+      expect(seenMessages[0]).toEqual(messages);
+    });
+
+    /**
+     * Narrowed to `role` and `content` and rebuilt. A renderer that sent whole
+     * stored `ChatMessage` objects would otherwise put ids, timestamps and
+     * model attribution into the outbound body — visible in the preview,
+     * charged for by the provider, and no part of the conversation.
+     */
+    it("strips everything that is not role and content", async () => {
+      const { invoke, seenMessages } = setup({ openai: true, key: "sk-secret" });
+
+      await invoke(AGENT_REPLY_CHANNEL, {
+        ...request,
+        messages: [
+          {
+            role: "user",
+            content: "Grover",
+            id: "m-local-id",
+            createdAt: "2026-08-10T09:00:00.000Z",
+            draft: null,
+            model: "Anthropic/claude-sonnet-5",
+          },
+        ],
+      });
+
+      expect(seenMessages[0]).toEqual([{ role: "user", content: "Grover" }]);
+    });
+
+    it.each([
+      ["a missing messages array", undefined],
+      ["an empty transcript", []],
+      ["a turn that is not an object", ["hello"]],
+      ["an unknown role", [{ role: "system", content: "hi" }]],
+      ["non-string content", [{ role: "user", content: { text: "hi" } }]],
+    ])("rejects %s", async (_label, messages) => {
+      const { invoke } = setup({ openai: true, key: "sk-secret" });
+      const { messages: _omitted, ...rest } = request;
+      const payload = messages === undefined ? rest : { ...rest, messages };
+      await expect(invoke(AGENT_REPLY_CHANNEL, payload)).rejects.toThrow();
     });
   });
 
   it("draft rejects with no credential configured — the one programmer error", async () => {
     const { invoke, vault } = setup({ openai: false, key: null });
 
-    await expect(invoke(AGENT_DRAFT_CHANNEL, request)).rejects.toThrow(
+    await expect(invoke(AGENT_REPLY_CHANNEL, request)).rejects.toThrow(
       /requires a configured credential/,
     );
     // The generator is resolved before the key is read, so what matters is
@@ -180,10 +237,10 @@ describe("registerAgentHandlers", () => {
   it("draft resolves a provider failure as data rather than rejecting", async () => {
     // The estimator convention: 401/429/network are expected outcomes the UI
     // renders, not exceptions that blow up the channel.
-    const failure: AgentDraftResult = { ok: false, code: "AUTHENTICATION", message: "bad key" };
+    const failure: AgentChatResult = { ok: false, code: "AUTHENTICATION", message: "bad key" };
     const { invoke } = setup({ openai: true, key: "sk-secret", result: failure });
 
-    await expect(invoke<AgentDraftResult>(AGENT_DRAFT_CHANNEL, request)).resolves.toEqual(failure);
+    await expect(invoke<AgentChatResult>(AGENT_REPLY_CHANNEL, request)).resolves.toEqual(failure);
   });
 
   it("rejects a model that does not belong to the selected provider", async () => {
@@ -192,7 +249,7 @@ describe("registerAgentHandlers", () => {
     // request no provider would accept.
     const { invoke } = setup({ openai: true });
     await expect(
-      invoke(AGENT_DRAFT_CHANNEL, { ...request, model: "claude-sonnet-5" }),
+      invoke(AGENT_REPLY_CHANNEL, { ...request, model: "claude-sonnet-5" }),
     ).rejects.toThrow(/supported model/);
   });
 });

@@ -1,12 +1,19 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
-  AgentDraftRequest,
-  AgentDraftResult,
+  AgentChatRequest,
+  AgentChatResult,
   AgentProviderStatus,
   AgentService,
   CredentialClearResult,
   CredentialConfigureResult,
 } from "../shared/agentTypes.js";
+import type {
+  ChatMessage,
+  ChatStore,
+  Conversation,
+  ConversationSummary,
+  NewConversation,
+} from "../shared/chatTypes.js";
 import type {
   EstimatorService,
   RunConfig,
@@ -19,9 +26,17 @@ import type {
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
   AGENT_CANCEL_CHANNEL,
-  AGENT_DRAFT_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
+  AGENT_REPLY_CHANNEL,
   AGENT_STATUS_CHANNEL,
+  CHAT_APPEND_CHANNEL,
+  CHAT_CLEAR_CHANNEL,
+  CHAT_CREATE_CHANNEL,
+  CHAT_DELETE_CHANNEL,
+  CHAT_GET_CHANNEL,
+  CHAT_LIST_CHANNEL,
+  CHAT_RENAME_CHANNEL,
+  CHAT_SEARCH_CHANNEL,
   CREDENTIAL_CLEAR_CHANNEL,
   CREDENTIAL_CONFIGURE_CHANNEL,
   ESTIMATOR_RUN_CHANNEL,
@@ -76,21 +91,21 @@ const uploads = {
 
 // window.agent — the fifth surface. No credential getter: the renderer can ask
 // getStatus() (a boolean-shaped "is a provider configured"), previewRequest()
-// and requestDraft() (which rejects only if the status check was skipped),
-// cancelDraft() and clearCredential() (both of which only ever DESTROY state),
+// and requestReply() (which rejects only if the status check was skipped),
+// cancelReply() and clearCredential() (both of which only ever DESTROY state),
 // and hand a key one-way to configureCredential(). Nothing here returns a key,
 // and there is no channel on the other side that could.
 const agent: AgentService = {
   getStatus(): Promise<AgentProviderStatus> {
     return ipcRenderer.invoke(AGENT_STATUS_CHANNEL) as Promise<AgentProviderStatus>;
   },
-  previewRequest(request: AgentDraftRequest): Promise<unknown> {
+  previewRequest(request: AgentChatRequest): Promise<unknown> {
     return ipcRenderer.invoke(AGENT_PREVIEW_CHANNEL, request);
   },
-  requestDraft(request: AgentDraftRequest): Promise<AgentDraftResult> {
-    return ipcRenderer.invoke(AGENT_DRAFT_CHANNEL, request) as Promise<AgentDraftResult>;
+  requestReply(request: AgentChatRequest): Promise<AgentChatResult> {
+    return ipcRenderer.invoke(AGENT_REPLY_CHANNEL, request) as Promise<AgentChatResult>;
   },
-  cancelDraft(): Promise<void> {
+  cancelReply(): Promise<void> {
     return ipcRenderer.invoke(AGENT_CANCEL_CHANNEL) as Promise<void>;
   },
   configureCredential(
@@ -113,10 +128,43 @@ const agent: AgentService = {
   },
 };
 
+// window.chats — the sixth surface, and a STORE, not a second agent. It reaches
+// its own SQLite file and never a provider; window.agent sends and never
+// persists. Splitting them that way is what makes the chat history readable
+// with the network off, and keeps "delete all my transcripts" a database
+// operation rather than something that has to be coordinated with a key.
+const chats: ChatStore = {
+  list(): Promise<ConversationSummary[]> {
+    return ipcRenderer.invoke(CHAT_LIST_CHANNEL) as Promise<ConversationSummary[]>;
+  },
+  get(id: string): Promise<Conversation | null> {
+    return ipcRenderer.invoke(CHAT_GET_CHANNEL, id) as Promise<Conversation | null>;
+  },
+  create(conversation: NewConversation): Promise<void> {
+    return ipcRenderer.invoke(CHAT_CREATE_CHANNEL, conversation) as Promise<void>;
+  },
+  append(conversationId: string, message: ChatMessage): Promise<void> {
+    return ipcRenderer.invoke(CHAT_APPEND_CHANNEL, conversationId, message) as Promise<void>;
+  },
+  rename(id: string, title: string): Promise<void> {
+    return ipcRenderer.invoke(CHAT_RENAME_CHANNEL, id, title) as Promise<void>;
+  },
+  delete(id: string): Promise<void> {
+    return ipcRenderer.invoke(CHAT_DELETE_CHANNEL, id) as Promise<void>;
+  },
+  clear(): Promise<void> {
+    return ipcRenderer.invoke(CHAT_CLEAR_CHANNEL) as Promise<void>;
+  },
+  search(query: string): Promise<ConversationSummary[]> {
+    return ipcRenderer.invoke(CHAT_SEARCH_CHANNEL, query) as Promise<ConversationSummary[]>;
+  },
+};
+
 contextBridge.exposeInMainWorld("estimator", estimator);
 contextBridge.exposeInMainWorld("uploads", uploads);
 contextBridge.exposeInMainWorld("store", store);
 contextBridge.exposeInMainWorld("agent", agent);
+contextBridge.exposeInMainWorld("chats", chats);
 contextBridge.exposeInMainWorld("files", {
   getPathForFile(
     file: Parameters<typeof webUtils.getPathForFile>[0],

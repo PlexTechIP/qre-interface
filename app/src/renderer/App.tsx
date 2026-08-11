@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/agentTypes";
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
-import { AgentInterface } from "./agent/AgentInterface";
+import { ChatPage, type ChatView } from "./agent/ChatPage";
 import type { DraftHandoff } from "./agent/draftToFormState";
 import { NetworkStatus } from "./agent/NetworkStatus";
 import { QRE_VERSION } from "./constants/staticOptions";
@@ -127,21 +127,24 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   );
   const [draftHandoff, setDraftHandoff] = useState<DraftHandoff | null>(null);
   /**
-   * The Describe-a-Run prompt, held by the shell rather than by the panel.
+   * Which conversation is open, and the unsent text in its composer — held by
+   * the shell rather than by the page.
    *
-   * Every page here is a conditional render, so `AgentInterface` unmounts on any
-   * sidebar click and used to take a typed description with it — check a default
-   * on Run Configuration, come back, start again. It also made the trip back
-   * from a draft ("that is not quite what I meant") begin from an empty box,
-   * which is most of why the round trip through this page never worked.
+   * Every page here is a conditional render, so `ChatPage` unmounts on any
+   * sidebar click and would otherwise take both with it: check a default on Run
+   * Configuration, come back, and find no conversation selected and an empty
+   * box. That round trip — draft, look at the form, come back and rephrase — is
+   * the entire point of the page.
    *
-   * Session state only, deliberately NOT localStorage like the theme and the
-   * provider selection beside it: those are inert preferences, while this is
-   * text the analyst composed to send to a third party. It survives navigation,
-   * which is the actual complaint; it does not survive quitting the app, and it
-   * never lands on disk.
+   * The composer text is session state only, deliberately NOT localStorage like
+   * the theme and the provider selection beside it, and deliberately not in the
+   * chat store either. A SENT message is a record of something that happened
+   * and belongs on disk; a half-typed one is a thought in progress, and quitting
+   * the app is a reasonable way to abandon it.
    */
-  const [agentPrompt, setAgentPrompt] = useState("");
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [chatComposer, setChatComposer] = useState("");
+  const [chatView, setChatView] = useState<ChatView>("conversation");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -286,13 +289,18 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             />
           ) : null}
           {activePage === "agent" ? (
-            <AgentInterface
+            <ChatPage
               service={resolvedAgentService}
+              store={window.chats}
               status={agentStatus}
               provider={agentSelection.provider}
               model={agentSelection.model}
-              prompt={agentPrompt}
-              onPromptChange={setAgentPrompt}
+              activeConversationId={activeConversationId}
+              onActiveConversationChange={setActiveConversationId}
+              composer={chatComposer}
+              onComposerChange={setChatComposer}
+              view={chatView}
+              onViewChange={setChatView}
               onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
               onCredentialChange={refreshAgentStatus}
               onReviewDraft={(handoff) => {

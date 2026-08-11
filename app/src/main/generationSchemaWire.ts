@@ -27,11 +27,40 @@ const DESCRIPTIVE_KEYS = new Set(["description", "title"]);
 /** Structure only — what the grammar compiler actually needs. */
 export const WIRE_GENERATION_SCHEMA = stripDescriptive(generationSchema) as JsonRecord;
 
+/**
+ * The envelope every assistant turn is decoded into: prose, and a proposal when
+ * there is one.
+ *
+ * Structured output is all-or-nothing — a schema of `GeneratedRunDraft` alone
+ * left the model no way to say anything except a complete configuration, so
+ * "which error budget do you want?" was unrepresentable and it guessed instead.
+ * Wrapping rather than loosening keeps the guarantee that made structured
+ * output worth using: when a draft IS present it is schema-valid, and the only
+ * new degree of freedom is `null`.
+ *
+ * Built HERE, at the wire layer, from the committed contract. The contract file
+ * is not edited and the drift test that pins it is untouched: this is a shape
+ * the provider is asked for, not a change to what a draft is.
+ */
+export const WIRE_CHAT_SCHEMA: JsonRecord = {
+  type: "object",
+  additionalProperties: false,
+  required: ["reply", "draft"],
+  properties: {
+    reply: { type: "string" },
+    // One more union at the top level. The provider caps a structured-output
+    // schema at 16 union-typed parameters — the reason `parameters` is one
+    // variant per benchmark rather than every key nulled — so the budget is
+    // spent deliberately, once, on the field that makes conversation possible.
+    draft: { anyOf: [WIRE_GENERATION_SCHEMA, { type: "null" }] },
+  },
+};
+
 /** The same prose, addressed to the model as `path — description` lines. */
 export const GENERATION_FIELD_GUIDE = collectDescriptions(generationSchema as JsonRecord);
 
 /**
- * The system prompt every adapter sends, built from the guide above.
+ * The system prompt every adapter sends on every turn, built from the guide above.
  *
  * It lives here, beside the guide it ends with, because it was previously
  * copy-pasted byte-for-byte into both adapters — the exact second copy this
@@ -44,10 +73,14 @@ export const GENERATION_FIELD_GUIDE = collectDescriptions(generationSchema as Js
  * `createdAt`, `schemaVersion`, `qecCode` and `qreVersion` are absent from the
  * schema and rejected by `additionalProperties: false`.
  */
-export const DRAFT_SYSTEM_PROMPT = [
-  "You translate a quantum-resource-estimation request written in prose into a draft configuration.",
+export const CHAT_SYSTEM_PROMPT = [
+  "You help an analyst arrive at a quantum-resource-estimation configuration by talking it through.",
   "",
-  "The analyst reviews and edits every field before anything runs, so prefer a complete, plausible draft over a cautious one — but never invent a benchmark, architecture, or factory that is not in the schema's enums.",
+  "Every reply is one JSON object with two fields. `reply` is what you say to the analyst, as plain prose — no markdown, no JSON, and never a restatement of the draft field by field, which they can already see. `draft` is a complete configuration proposal, or null.",
+  "",
+  "Propose a draft as soon as you can propose a plausible one. The analyst reviews and edits every field before anything runs, so a complete draft they can correct beats a question they have to answer first. Use null only when the request is genuinely ambiguous in a way no sensible default settles, or when they asked something that is not a configuration change.",
+  "When they ask you to change something you already proposed, repeat the WHOLE draft with that change applied, carrying every other field through unchanged. A draft is always complete; there is no partial update, and a field you drop is a field you have silently reset.",
+  "Never invent a benchmark, architecture, or factory that is not in the schema's enums.",
   "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
   "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
   "",
