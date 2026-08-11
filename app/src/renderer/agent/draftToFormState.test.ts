@@ -270,3 +270,151 @@ describe("draftToFormState", () => {
     });
   });
 });
+
+/**
+ * The review step is only honest if the analyst can see WHICH of the form's
+ * ~40 fields the model chose. A proposal arrives as a fully-populated form, so
+ * without this the analyst is asked to approve a screen of numbers with no way
+ * to tell a model's decision from a default it never mentioned.
+ *
+ * The mapping reports what it wrote; it does not diff the result against the
+ * defaults. That distinction is the whole point — a diff calls the model's
+ * deliberate 20 T-states-per-rotation "a default", because 20 IS the default.
+ */
+describe("draftToFormState reports what the model actually chose", () => {
+  const proposalOf = (draft: GeneratedRunDraft) => {
+    const result = draftToFormState(draft, "provider/model");
+    if (!result.ok) throw new Error(result.message);
+    return result.handoff.proposed;
+  };
+
+  const labelled = (draft: GeneratedRunDraft) =>
+    Object.fromEntries(proposalOf(draft).map((field) => [field.label, field.value]));
+
+  it("lists each value it carried into the form, with the control's own label", () => {
+    expect(labelled(gateBasedDraft())).toMatchObject({
+      "Run name": "Editable proposal",
+      "Application Type": "Benchmark",
+      Benchmark: "Grover's Search",
+      "Search Qubits": "24",
+      Architecture: "Superconducting",
+      "Error rate": "0.0001",
+      "Gate time": "50",
+      "Measurement time": "100",
+      "Magic State Factory": "Round-Based",
+      "T Count Per Rotation": "18",
+      "CCX Magic States": "Off",
+      "Total Fault Tolerant Execution Error": "0.25",
+    });
+  });
+
+  it("reports a chosen value even when it equals the form's default", () => {
+    const draft = gateBasedDraft();
+    draft.traceTransform.tStatesPerRotation = 20; // the form's default
+    draft.maxError = 1; // the form's default
+
+    // A diff would drop both and tell the analyst the model said nothing about
+    // the error budget. It picked one, and it happens to be the default.
+    expect(labelled(draft)).toMatchObject({
+      "T Count Per Rotation": "20",
+      "Total Fault Tolerant Execution Error": "1",
+    });
+  });
+
+  it("omits the fields the model declined to choose", () => {
+    const draft = gateBasedDraft();
+    draft.name = null;
+    // `twoQubitGateTime` is already null on the base draft — required-and-
+    // nullable is how the generation schema spells "the model may decline".
+    draft.magicStateFactories = [];
+    draft.secondaryFactories = [];
+
+    const labels = proposalOf(draft).map((field) => field.label);
+
+    // A null in a required-nullable field is the schema's "no opinion", and an
+    // empty factory set is replaced by the form's round_based default — neither
+    // is a choice, so neither may be presented as one.
+    expect(labels).not.toContain("Run name");
+    expect(labels).not.toContain("Two-qubit gate time");
+    expect(labels).not.toContain("Magic State Factory");
+  });
+
+  it("points every entry at a control the analyst can jump to", () => {
+    for (const field of proposalOf(gateBasedDraft())) {
+      expect(field.anchors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("describes the other architecture's fields when the model picks it", () => {
+    const draft = gateBasedDraft();
+    draft.architecture = { type: "majorana", errorRate: 0.000001, operationTime: 800 };
+
+    expect(labelled(draft)).toMatchObject({
+      Architecture: "Majorana",
+      "Error rate": "0.000001",
+      "Operation time": "800",
+    });
+  });
+
+  /**
+   * The widest variant: twelve architecture fields, every one of them
+   * generated. If a generated field is ever mapped into the form without being
+   * reported, the analyst is back to approving a value nobody told them about.
+   */
+  it("leaves none of a Neutral Atom proposal's twelve fields unreported", () => {
+    const draft = gateBasedDraft();
+    draft.architecture = {
+      type: "neutralAtom",
+      rydbergTime: 400,
+      rydbergError: 0.002,
+      singleQubitTime: 900,
+      singleQubitError: 0.0002,
+      measurementTime: 9000,
+      measurementError: 0.0003,
+      handoffTime: 5,
+      atomSpacing: 3.5,
+      maxVelocity: 0.3,
+      maxAcceleration: 4000,
+      surfaceCodeOneQubitTimeFactor: 2,
+      surfaceCodeTwoQubitTimeFactor: 3,
+    };
+
+    expect(labelled(draft)).toMatchObject({
+      Architecture: "Neutral Atom",
+      "Rydberg time": "400",
+      "Rydberg error": "0.002",
+      "Single-qubit time": "900",
+      "Single-qubit error": "0.0002",
+      "Measurement time": "9000",
+      "Measurement error": "0.0003",
+      "Handoff time": "5",
+      "Atom spacing": "3.5",
+      "Max velocity": "0.3",
+      "Max acceleration": "4000",
+      "Surface code 1-qubit time factor": "2",
+      "Surface code 2-qubit time factor": "3",
+    });
+  });
+
+  it("describes manual logical counts rather than a benchmark", () => {
+    const draft = gateBasedDraft();
+    draft.application = {
+      type: "manualCounts",
+      numQubits: 12,
+      tCount: 30,
+      rotationCount: 4,
+      rotationDepth: 2,
+      cczCount: 1,
+      ccixCount: 0,
+      measurementCount: 7,
+    };
+
+    expect(labelled(draft)).toMatchObject({
+      "Application Type": "Manual Logical Counts",
+      "Number of qubits": "12",
+      "T count": "30",
+      "Measurement count": "7",
+    });
+    expect(proposalOf(draft).map((field) => field.label)).not.toContain("Benchmark");
+  });
+});
