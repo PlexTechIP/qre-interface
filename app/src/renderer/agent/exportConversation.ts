@@ -14,6 +14,23 @@ import type { Conversation } from "../../shared/chatTypes";
  * chronology. Sharing a generator between them would mean one function with a
  * mode flag and two disjoint halves.
  */
+/**
+ * A code fence longer than any backtick run in the content it must survive.
+ *
+ * A three-backtick fence is not safe here: message text is model prose and
+ * routinely contains its own fenced snippet, and a `name` the model chose can
+ * contain backticks too. An unbalanced run in the prose above would otherwise
+ * be closed by this block's opener, after which the configuration JSON renders
+ * as body text and everything below it inherits the confusion.
+ */
+function fenceFor(content: string): string {
+  const longest = [...content.matchAll(/`+/g)].reduce(
+    (max, match) => Math.max(max, match[0].length),
+    0,
+  );
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
 export function buildConversationMarkdown(conversation: Conversation): string {
   const proposals = conversation.messages.filter((message) => message.draft !== null).length;
 
@@ -52,12 +69,14 @@ export function buildConversationMarkdown(conversation: Conversation): string {
     );
 
     if (message.draft !== null) {
+      const json = JSON.stringify(message.draft, null, 2);
+      const fence = fenceFor(`${message.text}\n${json}`);
       lines.push(
         "### Proposed configuration",
         "",
-        "```json",
-        JSON.stringify(message.draft, null, 2),
-        "```",
+        `${fence}json`,
+        json,
+        fence,
         "",
       );
     }

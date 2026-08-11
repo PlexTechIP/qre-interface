@@ -1793,6 +1793,22 @@ select {
   flex-wrap: nowrap;
 }
 
+/*
+ * Renaming must not widen the column it happens in. The input replaces three
+ * buttons in a `nowrap` cell, and at its old `1 1 240px` it asked for more than
+ * they occupied — so starting a rename shifted every other column left, and on
+ * a narrow window pushed the table into horizontal scroll mid-edit.
+ */
+.conversation-table__actions .conversation-actions--renaming {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.conversation-table__actions .conversation-actions__input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
 .conversation-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1930,6 +1946,10 @@ select {
   flex-direction: column;
   /* Turns breathe. 14px made a six-turn conversation read as one grey block. */
   gap: 28px;
+  /* `margin: 0` is load-bearing: an `<ol>` carries a 1em UA block margin, so
+     without it the 26px below silently rendered as 42px and the next person
+     tuning this number would not get what they typed. */
+  margin: 0;
   padding: 26px 0;
   list-style: none;
 }

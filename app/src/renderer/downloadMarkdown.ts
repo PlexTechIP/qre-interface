@@ -19,7 +19,15 @@ export function downloadMarkdown(contents: string, name: string, fallback?: stri
   anchor.href = url;
   anchor.download = `${markdownFilename(name, fallback)}.md`;
   anchor.click();
-  URL.revokeObjectURL(url);
+  /*
+   * Revoked on the next task, not on the next line. `click()` returns as soon
+   * as the event dispatches; the browser fetches the blob afterwards, so
+   * revoking synchronously is a documented race that can produce a failed or
+   * zero-byte download for a large export. Carried over unchanged from the two
+   * copies this was extracted from — which is exactly why fixing it once here
+   * fixes it for all three export paths.
+   */
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   PROVIDER_IDS,
@@ -82,6 +82,16 @@ function renderChat(options: HarnessOptions = {}) {
   render(<Harness />);
   return { store, service, onReviewDraft };
 }
+
+/*
+ * The export tests stub `URL.createObjectURL` and `HTMLAnchorElement.click` on
+ * shared prototypes. Restoring at the end of a test body only runs when every
+ * assertion above it passed, so one real failure used to leave those stubs in
+ * place for the rest of the file and bury the cause under cascading ones.
+ */
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const composer = (): HTMLElement => screen.getByRole("textbox", { name: "Your message" });
 
@@ -529,6 +539,25 @@ describe("ChatPage — conversations", () => {
     return store;
   }
 
+  /** An `<ol>` may contain only `<li>`; a sentinel div also drew a 28px gap. */
+  it("builds the transcript from list items only", async () => {
+    renderChat({ store: await seedTwo() });
+    await openConversation("Grover baseline");
+
+    const children = [...(await within(transcript()).findAllByRole("listitem"))];
+    expect(children).toHaveLength(2);
+    expect([...transcript().children].every((node) => node.tagName === "LI")).toBe(true);
+  });
+
+  /** The visible speaker line already names the turn; the label doubled it. */
+  it("does not announce each turn's speaker twice", async () => {
+    renderChat({ store: await seedTwo() });
+    await openConversation("Grover baseline");
+
+    const [first] = await within(transcript()).findAllByRole("listitem");
+    expect(first).not.toHaveAttribute("aria-label");
+  });
+
   it("opens on the conversation, not on the list", async () => {
     renderChat({ store: await seedTwo() });
 
@@ -578,6 +607,84 @@ describe("ChatPage — conversations", () => {
 
     expect(screen.getByRole("heading", { name: "Grover baseline" })).toBeVisible();
     expect(screen.getByText("2 messages · 1 proposal")).toBeVisible();
+  });
+
+  /**
+   * The header used to read `conversations.find(...)`, and that list holds
+   * search RESULTS — so a filter excluding the open conversation made its
+   * header claim to be new and empty while its transcript rendered below.
+   */
+  it("keeps the open conversation's identity while a search hides it", async () => {
+    renderChat({ store: await seedTwo() });
+    await openConversation("Grover baseline");
+    expect(await within(transcript()).findByText("Estimate Grover search")).toBeVisible();
+
+    const table = await showList();
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search conversations" }),
+      "factoring",
+    );
+    await waitFor(() => expect(within(table).queryByText("Grover baseline")).toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Conversation" }));
+
+    // Still itself: name, counts, and the controls that act on it.
+    expect(screen.getByRole("heading", { name: "Grover baseline" })).toBeVisible();
+    expect(screen.getByText("2 messages · 1 proposal")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Rename" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Export" })).toBeVisible();
+    expect(within(transcript()).getByText("Estimate Grover search")).toBeVisible();
+  });
+
+  /** "All conversations · 1" beside twelve stored ones is a lie. */
+  it("does not badge the tab with a filtered count", async () => {
+    renderChat({ store: await seedTwo() });
+    expect(await screen.findByRole("button", { name: "All conversations · 2" })).toBeVisible();
+
+    await showList();
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search conversations" }),
+      "factoring",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "All conversations" })).toBeVisible(),
+    );
+    expect(screen.queryByRole("button", { name: /All conversations · 1$/ })).toBeNull();
+  });
+
+  /**
+   * `??` kept an empty snippet, and FTS5 returns "" when the best-ranked hit is
+   * a zero-length body — a blank cell in the column that exists to tell
+   * conversations apart.
+   */
+  it("falls back to the last message when a search snippet is empty", async () => {
+    const store = await seedTwo();
+    vi.spyOn(store, "search").mockImplementation(async () => [
+      {
+        id: "c1",
+        title: "Grover baseline",
+        createdAt: "2026-08-10T09:00:00.000Z",
+        updatedAt: "2026-08-10T09:02:00.000Z",
+        messageCount: 2,
+        lastMessage: "Here is a starting point.",
+        proposalCount: 1,
+        snippet: "   ",
+      },
+    ]);
+    renderChat({ store });
+    const table = await showList();
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search conversations" }),
+      "grover",
+    );
+
+    // Wait for the MOCKED result set to land — asserting before the debounced
+    // search fires would measure the unfiltered list, whose snippet is absent
+    // and which therefore passes whatever the fallback does.
+    await waitFor(() => expect(within(table).queryByText("Shor factoring")).toBeNull());
+    const row = within(table).getByRole("row", { name: /Grover baseline/ });
+    expect(within(row).getByText("Here is a starting point.")).toBeVisible();
   });
 
   it("titles a new conversation from its opening message", async () => {
@@ -678,7 +785,9 @@ describe("ChatPage — conversations", () => {
     // The whole transcript, not the summary the row was rendered from.
     expect(saved[0]?.text).toContain("Estimate Grover search");
     expect(saved[0]?.text).toContain("### Proposed configuration");
-    vi.restoreAllMocks();
+    // One object URL created, and released rather than leaked.
+    expect(created).toHaveLength(1);
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1));
   });
 
   it("reports an export of a conversation that is no longer stored", async () => {
@@ -691,7 +800,6 @@ describe("ChatPage — conversations", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Export" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/no longer stored/);
-    vi.restoreAllMocks();
   });
 
   it("renames a conversation from the list", async () => {

@@ -80,10 +80,20 @@ type Note = { tone: "error" | "notice"; text: string };
  */
 interface Thread {
   readonly conversationId: string | null;
+  /**
+   * The open conversation's name, held HERE rather than looked up in the list.
+   *
+   * The header used to read `conversations.find(row => row.id === activeId)`,
+   * and `conversations` holds search RESULTS when a search is active — so a
+   * filter that excluded the open conversation made its header claim to be a
+   * new, empty one while its transcript rendered underneath. Identity belongs
+   * to the thread, not to a view of the list.
+   */
+  readonly title: string;
   readonly messages: readonly ChatMessage[];
 }
 
-const NO_THREAD: Thread = { conversationId: null, messages: [] };
+const NO_THREAD: Thread = { conversationId: null, title: "", messages: [] };
 
 /** Stable identity, so deriving an empty transcript does not churn memos. */
 const NO_MESSAGES: readonly ChatMessage[] = [];
@@ -212,6 +222,7 @@ export function ChatPage({
         if (current) {
           setThread({
             conversationId: activeConversationId,
+            title: conversation?.title ?? "",
             messages: conversation?.messages ?? [],
           });
         }
@@ -219,7 +230,9 @@ export function ChatPage({
       () => {
         // Tagged with the id even on failure, so this settles rather than
         // retrying on every unrelated render.
-        if (current) setThread({ conversationId: activeConversationId, messages: [] });
+        if (current) {
+          setThread({ conversationId: activeConversationId, title: "", messages: [] });
+        }
       },
     );
     return () => {
@@ -292,7 +305,7 @@ export function ChatPage({
         // where it was sent from — the store already has it there.
         setThread((current) =>
           current.conversationId === conversationId
-            ? { conversationId, messages: [...current.messages, reply] }
+            ? { ...current, messages: [...current.messages, reply] }
             : current,
         );
         refreshList();
@@ -308,6 +321,13 @@ export function ChatPage({
   const send = async (): Promise<void> => {
     const text = composer.trim();
     if (text.length === 0 || busy.current) return;
+    /*
+     * `messages` is empty while a conversation is still being read back, so
+     * sending in that window would post the new turn against an empty
+     * transcript — the model would lose every earlier turn and the thread on
+     * screen would disagree with the store. Narrow, but silent.
+     */
+    if (activeConversationId !== null && thread.conversationId !== activeConversationId) return;
     busy.current = true;
     try {
       setNote(null);
@@ -316,6 +336,7 @@ export function ChatPage({
       let conversationId = activeConversationId;
       let transcript = messages;
       let outgoing: ChatMessage;
+      let newTitle = "";
 
       // Persisted BEFORE the request goes out. A message that reached the
       // provider but not the disk would vanish from a transcript that is
@@ -325,6 +346,7 @@ export function ChatPage({
           const started = startConversation(text);
           await store.create(started.conversation);
           conversationId = started.conversation.id;
+          newTitle = started.conversation.title;
           outgoing = started.message;
           transcript = [];
           onActiveConversationChange(conversationId);
@@ -340,7 +362,11 @@ export function ChatPage({
         return;
       }
 
-      setThread({ conversationId, messages: [...transcript, outgoing] });
+      setThread((current) => ({
+        conversationId,
+        title: current.conversationId === conversationId ? current.title : newTitle,
+        messages: [...transcript, outgoing],
+      }));
       onComposerChange("");
       refreshList();
       await runTurn(conversationId, [...transcript, outgoing]);
@@ -418,6 +444,10 @@ export function ChatPage({
     setNote(null);
     setDraftError(null);
     setPreviewOpen(false);
+    // Cleared, or the conversation about to be created would not appear in the
+    // list the analyst returns to — filtered out by a term they typed before
+    // it existed.
+    setSearchQuery("");
     onViewChange("conversation");
   };
 
@@ -429,7 +459,10 @@ export function ChatPage({
   };
 
   const renameConversation = (id: string, title: string): void => {
-    mutateStore(store.rename(id, title), "This conversation could not be renamed");
+    mutateStore(store.rename(id, title), "This conversation could not be renamed", () => {
+      // The header reads the thread, not the list, so it needs telling too.
+      setThread((current) => (current.conversationId === id ? { ...current, title } : current));
+    });
   };
 
   const deleteConversation = (id: string): void => {
@@ -465,7 +498,8 @@ export function ChatPage({
   };
 
   const unanswered = activeConversationId !== null && awaitingReply(messages) && !sending;
-  const open = conversations.find((row) => row.id === activeConversationId) ?? null;
+  const openTitle = thread.conversationId === activeConversationId ? thread.title : "";
+  const proposalCount = messages.filter((message) => message.draft !== null).length;
 
   return (
     <div className="chat-page">
@@ -509,7 +543,14 @@ export function ChatPage({
           onClick={() => onViewChange("list")}
         >
           All conversations
-          {conversations.length > 0 ? ` · ${conversations.length}` : ""}
+          {/*
+            Suppressed while a search is running: `conversations` then holds
+            MATCHES, and "All conversations · 1" beside twelve stored ones is a
+            label naming everything next to a number counting a subset.
+          */}
+          {searchQuery.trim().length === 0 && conversations.length > 0
+            ? ` · ${conversations.length}`
+            : ""}
         </button>
       </div>
 
@@ -549,22 +590,24 @@ export function ChatPage({
         <section className="chat-thread">
           <div className="chat-thread__header">
             <div className="chat-thread__identity">
-              <h2 className="chat-thread__title">{open?.title ?? "New conversation"}</h2>
+              <h2 className="chat-thread__title">
+                {activeConversationId === null ? "New conversation" : openTitle}
+              </h2>
               <p className="chat-thread__meta">
-                {open === null
+                {activeConversationId === null
                   ? "Nothing sent yet — your first message names it."
-                  : `${open.messageCount === 1 ? "1 message" : `${open.messageCount} messages`}${
-                      open.proposalCount > 0
-                        ? ` · ${open.proposalCount === 1 ? "1 proposal" : `${open.proposalCount} proposals`}`
+                  : `${messages.length === 1 ? "1 message" : `${messages.length} messages`}${
+                      proposalCount > 0
+                        ? ` · ${proposalCount === 1 ? "1 proposal" : `${proposalCount} proposals`}`
                         : ""
                     }`}
               </p>
             </div>
             <span className="chat-thread__spacer" />
-            {open === null ? null : (
+            {activeConversationId === null ? null : (
               <ConversationActions
-                id={open.id}
-                title={open.title}
+                id={activeConversationId}
+                title={openTitle}
                 onRename={renameConversation}
                 onDelete={deleteConversation}
                 onExport={exportConversation}

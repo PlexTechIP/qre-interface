@@ -64,6 +64,37 @@ describe("buildConversationMarkdown", () => {
     expect(md).toContain("```json");
   });
 
+  /**
+   * Model prose routinely contains its own fenced snippet. At three backticks
+   * the proposal's opener was closed by the prose's stray fence, after which
+   * the configuration JSON rendered as body text and everything below it
+   * inherited the confusion.
+   */
+  it("fences a proposal so prose containing a fence cannot close it", () => {
+    const md = buildConversationMarkdown(
+      conversation({
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            text: "Set it like this:\n\n```\nerrorRate: 1e-4\n```\n\nThat is the starting point.",
+            draft: FAKE_GENERATED_DRAFT,
+            model: "Anthropic/claude-sonnet-5",
+            createdAt: "2026-08-11T09:01:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(md).toContain("````json");
+    // The prose's own fence survives as the author wrote it.
+    expect(md).toContain("```\nerrorRate: 1e-4\n```");
+    // ...and the proposal is still a complete, balanced block.
+    const opens = md.split("````json").length - 1;
+    expect(opens).toBe(1);
+    expect(md.split("````").length - 1).toBe(2);
+  });
+
   it("attributes an assistant turn that has no model recorded", () => {
     const md = buildConversationMarkdown(
       conversation({

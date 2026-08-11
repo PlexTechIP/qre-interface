@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import type { GeneratedRunDraft } from "../../shared/agentTypes";
 import type { ChatMessage } from "../../shared/chatTypes";
 import { ARCHITECTURE_LABELS } from "../constants/labels";
-import { findBenchmark } from "../constants/staticOptions";
+import { applicationLabel } from "../history/historyLabels";
 
 interface ChatTranscriptProps {
   messages: readonly ChatMessage[];
@@ -23,10 +23,14 @@ interface ChatTranscriptProps {
  * no controls to point at.
  */
 function describeDraft(draft: GeneratedRunDraft): { label: string; value: string }[] {
-  const application =
-    draft.application.type === "benchmark"
-      ? (findBenchmark(draft.application.benchmarkId)?.name ?? draft.application.benchmarkId)
-      : "Manual logical counts";
+  // `applicationLabel` rather than a second benchmark lookup: History, the run
+  // export and the comparison table all name an application through it, and a
+  // benchmark renamed in the registry must not read one way here and another
+  // way three screens later. It takes the `application` field, which a draft
+  // carries in exactly the RunConfig shape.
+  const application = applicationLabel({ application: draft.application } as Parameters<
+    typeof applicationLabel
+  >[0]);
   return [
     ...(draft.name === null ? [] : [{ label: "Name", value: draft.name }]),
     { label: "Application", value: application },
@@ -40,39 +44,46 @@ export function ChatTranscript({
   onUseDraft,
   draftError,
 }: ChatTranscriptProps): React.JSX.Element {
-  const end = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLOListElement>(null);
   const newest = messages.at(-1)?.id ?? null;
 
   /**
-   * Bring the newest turn into view.
+   * Bring the newest turn into view — but only when it is not already there.
    *
-   * `scrollIntoView` on a sentinel rather than `scrollTop = scrollHeight` on the
-   * list: the transcript is no longer its own scroll container — the page
-   * scrolls — so there is no element here whose scrollTop means anything. The
-   * sentinel works whichever ancestor is actually scrolling.
+   * The last `<li>` is the target, not a sentinel element. A sentinel `<div>`
+   * was invalid inside an `<ol>` and, being a flex child of a `gap: 28px`
+   * column, rendered as 28px of unexplained space at the end of every
+   * transcript.
    *
-   * Fires on OPEN too, because a conversation reopened from the list should
-   * resume where it was left rather than at a question asked twenty turns ago.
+   * The visibility check is what stops this being a nuisance: `scrollIntoView`
+   * moves the WINDOW now that the page is the scroll container, so opening a
+   * two-message conversation that already fits used to scroll the page heading
+   * and the provider panel off the top for no benefit.
    *
    * Not unit-tested: jsdom reports every element as 0×0 and implements
    * `scrollIntoView` as a no-op, so an assertion here would pass whatever the
    * code did. Verified in the running app instead.
    */
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
+    const target = list.current?.lastElementChild;
+    if (!(target instanceof HTMLElement)) return;
+    const box = target.getBoundingClientRect();
+    const alreadyVisible = box.top >= 0 && box.bottom <= window.innerHeight;
+    if (!alreadyVisible) target.scrollIntoView({ block: "end" });
   }, [newest, sending]);
 
   return (
-    <ol className="chat-transcript" aria-label="Transcript">
+    <ol className="chat-transcript" aria-label="Transcript" ref={list}>
       {messages.map((message) => (
         <li
           key={message.id}
           className={`chat-turn chat-turn--${message.role}`}
           /*
-           * The role is on the element, not only in the styling, so a screen
-           * reader is not left inferring who is speaking from indentation.
+           * No `aria-label` here. It duplicated the visible speaker line
+           * directly below it, so every turn was announced "You … You …", and
+           * `aria-label` on a `listitem` is honoured inconsistently anyway. The
+           * visible label does the job on its own.
            */
-          aria-label={message.role === "user" ? "You" : (message.model ?? "Assistant")}
         >
           <p className="chat-turn__who">
             {message.role === "user" ? "You" : (message.model ?? "Assistant")}
@@ -127,9 +138,6 @@ export function ChatTranscript({
           </p>
         </li>
       ) : null}
-
-      {/* The scroll target. Renders nothing; it only marks the end. */}
-      <div ref={end} aria-hidden="true" />
     </ol>
   );
 }

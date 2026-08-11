@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { ConversationSummary } from "../../shared/chatTypes";
+import { formatDateTime } from "../formatDateTime";
 import { ConversationActions } from "./ConversationActions";
 
 interface ConversationListProps {
@@ -160,12 +161,12 @@ export function ConversationList({
                     conversations to find out.
                   */}
                   <td className="conversation-table__preview">
-                    {conversation.snippet ?? conversation.lastMessage ?? "—"}
+                    {previewOf(conversation)}
                   </td>
                   <td className="conversation-table__number">{conversation.messageCount}</td>
                   <td className="conversation-table__number">{conversation.proposalCount}</td>
                   <td className="conversation-table__when">
-                    {formatUpdated(conversation.updatedAt)}
+                    {formatDateTime(conversation.updatedAt)}
                   </td>
                   {/*
                     No separate "Open" button: the title in the first column is
@@ -193,17 +194,14 @@ export function ConversationList({
 }
 
 /**
- * A timestamp the analyst can scan. Absolute, never "3 hours ago": this column
- * sits beside Run History's own absolute timestamps, and two ways of saying
- * when something happened in one app is one too many.
+ * What the Last message column shows.
+ *
+ * `??` was wrong here: it falls through on null and undefined but NOT on the
+ * empty string, and FTS5's `snippet()` returns "" when the best-ranked hit is a
+ * zero-length body — so a title-only match rendered a blank cell in the one
+ * view whose job is telling conversations apart. `||` treats every empty value
+ * as absent, which is what "show me something to recognise this by" means.
  */
-function formatUpdated(iso: string): string {
-  const when = new Date(iso);
-  if (Number.isNaN(when.getTime())) return iso;
-  return when.toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function previewOf(conversation: ConversationSummary): string {
+  return conversation.snippet?.trim() || conversation.lastMessage?.trim() || "—";
 }
