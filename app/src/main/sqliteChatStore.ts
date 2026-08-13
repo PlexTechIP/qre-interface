@@ -80,10 +80,6 @@ const INITIAL_SCHEMA = `
  */
 const TITLE_ROW_ID = "";
 
-/** Column index of `body` in `chat_search`, for `snippet()`. */
-const SNIPPET_COLUMN = 2;
-const SNIPPET_TOKENS = 12;
-
 /**
  * The derived columns every list row shows, as correlated subqueries against
  * `chat_messages`.
@@ -97,9 +93,6 @@ const SNIPPET_TOKENS = 12;
 const SUMMARY_COLUMNS = `
   (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id = c.id)
     AS message_count,
-  (SELECT m.text FROM chat_messages m WHERE m.conversation_id = c.id
-     ORDER BY m.seq DESC LIMIT 1)
-    AS last_message,
   (SELECT COUNT(*) FROM chat_messages m
      WHERE m.conversation_id = c.id AND m.draft_json IS NOT NULL)
     AS proposal_count
@@ -273,30 +266,23 @@ export class SqliteChatStore implements ChatStore {
      * characters that could escape the quotes.
      */
     const match = terms.map((term) => `"${term}"*`).join(" AND ");
-    const hits = this.database
-      .prepare(
-        `
-        SELECT conversation_id,
-               snippet(chat_search, ${SNIPPET_COLUMN}, '', '', '…', ${SNIPPET_TOKENS}) AS snippet
-        FROM chat_search
-        WHERE chat_search MATCH ?
-        ORDER BY rank
-      `,
-      )
-      .all(match);
-
-    // Best-ranked hit per conversation, in one pass; `ORDER BY rank` means the
-    // first row seen for a conversation is the strongest match in it.
-    const snippets = new Map<string, string>();
-    for (const hit of hits) {
-      const id = readText(hit, "conversation_id");
-      if (!snippets.has(id)) snippets.set(id, readText(hit, "snippet"));
-    }
-    if (snippets.size === 0) return [];
+    /*
+     * Which conversations matched, and nothing else. This used to select a
+     * `snippet()` per hit and rank the results to pick the best one per
+     * conversation — both only ever fed a Last message column that no longer
+     * exists. `DISTINCT` does the de-duplication FTS5 was being ranked for, and
+     * dropping `ORDER BY rank` means bm25 is not computed for a set that gets
+     * re-sorted by `updated_at` two statements later anyway.
+     */
+    const ids = this.database
+      .prepare(`SELECT DISTINCT conversation_id FROM chat_search WHERE chat_search MATCH ?`)
+      .all(match)
+      .map((row) => readText(row, "conversation_id"));
+    if (ids.length === 0) return [];
 
     // Ordered by the same clause `list` uses, so search reads as a filter over
     // the rail rather than as a differently-sorted second list.
-    const placeholders = [...snippets.keys()].map(() => "?").join(", ");
+    const placeholders = ids.map(() => "?").join(", ");
     return this.database
       .prepare(
         `
@@ -307,11 +293,8 @@ export class SqliteChatStore implements ChatStore {
         ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
       `,
       )
-      .all(...snippets.keys())
-      .map((row) => {
-        const summary = readSummary(row);
-        return { ...summary, snippet: snippets.get(summary.id) ?? summary.title };
-      });
+      .all(...ids)
+      .map(readSummary);
   }
 
   /** Close the underlying connection during application shutdown or test cleanup. */
@@ -384,16 +367,12 @@ function readText(row: Record<string, unknown>, column: string): string {
 }
 
 function readSummary(row: Record<string, unknown>): ConversationSummary {
-  const lastMessage = row["last_message"];
   return {
     id: readText(row, "id"),
     title: readText(row, "title"),
     createdAt: readText(row, "created_at"),
     updatedAt: readText(row, "updated_at"),
     messageCount: Number(row["message_count"] ?? 0),
-    // NULL for a conversation with no messages, which is what the subquery
-    // returns and what the in-memory twin reports for the same state.
-    lastMessage: typeof lastMessage === "string" ? lastMessage : null,
     proposalCount: Number(row["proposal_count"] ?? 0),
   };
 }

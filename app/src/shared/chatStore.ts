@@ -131,10 +131,7 @@ export class InMemoryChatStore implements ChatStore {
       [...this.conversations.values()].filter((conversation) =>
         searchableText(conversation).some((text) => matchesSearchTerms(text, terms)),
       ),
-    ).map((conversation) => ({
-      ...summarize(conversation),
-      snippet: snippetFor(conversation, terms),
-    }));
+    ).map(summarize);
   }
 
   private require(id: string): Conversation {
@@ -151,7 +148,6 @@ function summarize(conversation: Conversation): ConversationSummary {
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     messageCount: conversation.messages.length,
-    lastMessage: conversation.messages.at(-1)?.text ?? null,
     proposalCount: conversation.messages.filter((message) => message.draft !== null).length,
   };
 }
@@ -165,10 +161,3 @@ function searchableText(conversation: Conversation): string[] {
   return [conversation.title, ...conversation.messages.map((message) => message.text)];
 }
 
-/** The first matching text, which is what the rail shows under the title. */
-function snippetFor(conversation: Conversation, terms: readonly string[]): string {
-  return (
-    conversation.messages.find((message) => matchesSearchTerms(message.text, terms))?.text ??
-    conversation.title
-  );
-}

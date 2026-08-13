@@ -57,6 +57,12 @@ export interface Conversation {
  * slowest thing in an app. What it does carry is the handful of derived values
  * the list shows instead — cheap to compute in SQL, and the reason the table
  * earns the room a sidebar of bare titles did not.
+ *
+ * Every field here has a column. `lastMessage` and `snippet` used to live here
+ * too, feeding a Last message column that has since been removed — and once
+ * nothing rendered them they were a per-row correlated subquery and an FTS5
+ * `snippet()` call computed on every list and search, serialised across IPC,
+ * and dropped on the floor.
  */
 export interface ConversationSummary {
   readonly id: string;
@@ -64,12 +70,8 @@ export interface ConversationSummary {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly messageCount: number;
-  /** The most recent turn's text, for the list's preview column. */
-  readonly lastMessage: string | null;
   /** How many assistant turns carried a configuration. */
   readonly proposalCount: number;
-  /** Populated by `search` only: the matching text around the hit. */
-  readonly snippet?: string;
 }
 
 /** The fields a conversation is born with. `updatedAt` starts at `createdAt`. */

@@ -78,7 +78,6 @@ export function describeChatStoreContract(
           createdAt: at(0),
           updatedAt: at(0),
           messageCount: 0,
-          lastMessage: null,
           proposalCount: 0,
         },
       ]);
@@ -90,7 +89,7 @@ export function describeChatStoreContract(
      * implementations or the table quietly reports different numbers depending
      * on whether it is running against SQLite or the twin.
      */
-    it("summarises the last message and how many turns carried a proposal", async () => {
+    it("summarises how many turns there are and how many carried a proposal", async () => {
       const store = await seeded();
       await store.append(
         "c1",
@@ -101,7 +100,6 @@ export function describeChatStoreContract(
       expect(await store.list()).toEqual([
         expect.objectContaining({
           messageCount: 4,
-          lastMessage: "Thanks, that is what I needed",
           proposalCount: 2,
         }),
       ]);
@@ -111,7 +109,7 @@ export function describeChatStoreContract(
       const store = await seeded();
       const [listed] = await store.list();
       const [found] = await store.search("Grover");
-      expect({ ...found, snippet: undefined }).toEqual({ ...listed, snippet: undefined });
+      expect(found).toEqual(listed);
     });
 
     it("rejects a duplicate conversation id", async () => {
@@ -260,10 +258,6 @@ export function describeChatStoreContract(
         expect((await store.search("baseline")).map((row) => row.id)).toEqual(["c1"]);
       });
 
-      it("carries a snippet of the matching text", async () => {
-        const store = await seeded();
-        expect((await store.search("Grover"))[0]?.snippet).toMatch(/Grover/i);
-      });
 
       it("treats query syntax as ordinary text", async () => {
         const store = await seeded();
