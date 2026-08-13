@@ -336,7 +336,6 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               selectedRowByRunId={selectedRowByRunId}
               onSelectedRowChange={handleSelectedRowChange}
               onRerunRequest={handleRerunRequest}
-              exportMode="complete"
             />
           ) : null}
         </section>

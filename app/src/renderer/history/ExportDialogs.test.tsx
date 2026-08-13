@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SAMPLE_RUN_RECORDS } from "../../shared/testing";
 import { withClipboard } from "../test/clipboard";
-import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
-import { ExportStubDialog } from "./ExportStubDialog";
+import { ComparisonExportDialog } from "./ComparisonExportDialog";
+import { ExportDialog } from "./ExportDialog";
 
 const noop = () => {};
 
@@ -27,14 +27,14 @@ afterEach(() => {
 describe.each([
   {
     what: "run export",
-    render: () => render(<ExportStubDialog record={FIRST} mode="complete" onClose={noop} />),
+    render: () => render(<ExportDialog record={FIRST} onClose={noop} />),
     resting: "Copy Markdown",
   },
   {
     what: "comparison export",
     render: () =>
       render(
-        <ComparisonExportStubDialog records={[FIRST, SECOND]} mode="complete" onClose={noop} />,
+        <ComparisonExportDialog records={[FIRST, SECOND]} onClose={noop} />,
       ),
     resting: "Copy Markdown",
   },
@@ -117,13 +117,13 @@ function captureDownloads(): string[] {
 describe.each([
   {
     what: "run export",
-    element: <ExportStubDialog record={FIRST} mode="complete" onClose={noop} />,
+    element: <ExportDialog record={FIRST} onClose={noop} />,
     extension: "md",
   },
   {
     what: "comparison export",
     element: (
-      <ComparisonExportStubDialog records={[FIRST, SECOND]} mode="complete" onClose={noop} />
+      <ComparisonExportDialog records={[FIRST, SECOND]} onClose={noop} />
     ),
     extension: "md",
   },
@@ -199,7 +199,7 @@ describe("export dialogs — CSV", () => {
       saved.push({ name: this.download, text: "" });
     });
 
-    render(<ExportStubDialog record={FIRST} mode="complete" onClose={noop} />);
+    render(<ExportDialog record={FIRST} onClose={noop} />);
 
     await act(async () => {
       screen.getByRole("button", { name: "Download .csv" }).click();
@@ -227,7 +227,7 @@ describe("export dialogs — CSV", () => {
     });
 
     render(
-      <ComparisonExportStubDialog records={[FIRST, SECOND]} mode="complete" onClose={noop} />,
+      <ComparisonExportDialog records={[FIRST, SECOND]} onClose={noop} />,
     );
 
     await act(async () => {
@@ -238,10 +238,16 @@ describe("export dialogs — CSV", () => {
     await vi.waitFor(() => expect(saved[0]?.text).toContain("Run ID,Run,Status"));
   });
 
-  it("offers no CSV from the placeholder preview, just as it offers no .md", () => {
-    render(<ExportStubDialog record={FIRST} onClose={noop} />);
+  /**
+   * There is no longer a mode in which the dialog offers less. It used to
+   * default to a week-3 placeholder with neither download, which is what every
+   * call site except `App.tsx` got.
+   */
+  it("always offers both formats, with no mode that withholds them", () => {
+    render(<ExportDialog record={FIRST} onClose={noop} />);
 
-    expect(screen.queryByRole("button", { name: "Download .csv" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Download .md" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download .md" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download .csv" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/export preview/i)).not.toHaveTextContent(/placeholder/i);
   });
 });

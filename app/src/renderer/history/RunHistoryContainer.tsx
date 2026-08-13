@@ -11,10 +11,10 @@ import { RunHistoryFilters } from "./RunHistoryFilters";
 import { RunDetailPanel } from "./RunDetailPanel";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { BulkDeleteConfirmDialog } from "./BulkDeleteConfirmDialog";
-import { ExportStubDialog } from "./ExportStubDialog";
+import { ExportDialog } from "./ExportDialog";
 import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
-import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
+import { ComparisonExportDialog } from "./ComparisonExportDialog";
 import type { SelectedRowByRunId } from "../results/selectedRows";
 import { COMPARE_MIN_SELECTION } from "./comparisonModel";
 import {
@@ -50,8 +50,6 @@ interface RunHistoryContainerProps {
   /** App-shell handoff: load a reconstructed config into the live form (Rerun).
    *  When omitted, Rerun falls back to the read-only preview dialog. */
   onRerunRequest?: (request: RerunRequest) => void;
-  /** The app ships the complete Markdown export; isolated tests keep the stub. */
-  exportMode?: "preview" | "complete";
   /** App-level session selection for each immutable run record. */
   selectedRowByRunId?: SelectedRowByRunId;
   onSelectedRowChange?: (runId: string, selectedIndex: number) => void;
@@ -64,7 +62,6 @@ export function RunHistoryContainer({
   onNavigateToConfig,
   onViewRun,
   onRerunRequest,
-  exportMode = "preview",
   selectedRowByRunId: controlledSelectedRows,
   onSelectedRowChange,
 }: RunHistoryContainerProps = {}) {
@@ -498,21 +495,16 @@ export function RunHistoryContainer({
         />
       ) : null}
       {exportRecord ? (
-        <ExportStubDialog
-          record={exportRecord}
-          mode={exportMode}
-          onClose={() => setExportRecord(null)}
-        />
+        <ExportDialog record={exportRecord} onClose={() => setExportRecord(null)} />
       ) : null}
       {rerunRequest ? (
         <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
       ) : null}
       {comparisonExportHiddenKeys ? (
-        <ComparisonExportStubDialog
+        <ComparisonExportDialog
           records={comparisonRecords}
           selectedRowByRunId={selectedRowByRunId}
           hiddenKeys={comparisonExportHiddenKeys}
-          mode={exportMode}
           onClose={() => setComparisonExportHiddenKeys(null)}
         />
       ) : null}

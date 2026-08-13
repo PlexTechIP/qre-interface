@@ -741,14 +741,38 @@ describe("ChatPage — conversations", () => {
    * screen, so a row in the list — which only ever holds a summary — can still
    * export a full transcript.
    */
-  it("exports a conversation from the list as Markdown", async () => {
+  /**
+   * A preview first, not an immediate download. The other two export surfaces
+   * both open a dialog you can read and copy from; this one wrote a file
+   * straight to Downloads, so the only way to see what you had exported was to
+   * go and open it.
+   */
+  it("opens a readable preview of the whole transcript", async () => {
+    const store = await seedTwo();
+    renderChat({ store });
+    const table = await showList();
+    const row = within(table).getByRole("row", { name: /Grover baseline/ });
+
+    await userEvent.click(within(row).getByRole("button", { name: "Export" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const preview = within(dialog).getByLabelText("Conversation export preview");
+    // The whole transcript, not the summary the row was rendered from.
+    expect(preview).toHaveTextContent("# Grover baseline");
+    expect(preview).toHaveTextContent("Estimate Grover search");
+    expect(preview).toHaveTextContent("Proposed configuration");
+    expect(within(dialog).getByRole("button", { name: "Copy Markdown" })).toBeInTheDocument();
+  });
+
+  it("downloads the transcript from that preview", async () => {
     const store = await seedTwo();
     const saved: { name: string; text: string }[] = [];
     const created: string[] = [];
     vi.spyOn(URL, "createObjectURL").mockImplementation((source: Blob | MediaSource) => {
       created.push("blob:stub");
       void (source as Blob).text().then((text) => {
-        saved[saved.length - 1] = { name: saved.at(-1)?.name ?? "", text };
+        const last = saved.at(-1);
+        if (last) last.text = text;
       });
       return "blob:stub";
     });
@@ -764,20 +788,30 @@ describe("ChatPage — conversations", () => {
     const row = within(table).getByRole("row", { name: /Grover baseline/ });
     await userEvent.click(within(row).getByRole("button", { name: "Export" }));
 
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Download .md" }));
+
     await waitFor(() => expect(saved).toHaveLength(1));
-    // Stamped with the export time so two exports of one conversation do not
-    // collide. The stamp's exact formatting is pinned in `download.test.ts`;
-    // here the clock is real, so this asserts its shape.
+    // Stamped with the export time, like every other export.
     expect(saved[0]?.name).toMatch(/^grover-baseline-\d{8}-\d{4}\.md$/);
-    await waitFor(() => expect(saved[0]?.text).toContain("# Grover baseline"));
-    // The whole transcript, not the summary the row was rendered from.
-    expect(saved[0]?.text).toContain("Estimate Grover search");
-    expect(saved[0]?.text).toContain("### Proposed configuration");
+    await waitFor(() => expect(saved[0]?.text).toContain("### Proposed configuration"));
     // One object URL created, and NOT revoked out from under the download that
-    // is still fetching it. How long it then lives, and that it is released at
-    // all, is `downloadMarkdown`'s contract and is asserted there.
+    // is still fetching it; the lifetime is asserted in `download.test.ts`.
     expect(created).toHaveLength(1);
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("closes the preview without exporting anything", async () => {
+    const store = await seedTwo();
+    renderChat({ store });
+    const table = await showList();
+    const row = within(table).getByRole("row", { name: /Grover baseline/ });
+    await userEvent.click(within(row).getByRole("button", { name: "Export" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("reports an export of a conversation that is no longer stored", async () => {

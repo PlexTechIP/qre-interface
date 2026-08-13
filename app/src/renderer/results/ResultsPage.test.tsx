@@ -14,7 +14,7 @@ function latestRun(record: RunRecord) {
 }
 
 describe("Results page saved-run actions", () => {
-  it("resolves the saved record and reuses the complete Markdown export dialog", async () => {
+  it("resolves the saved record and reuses the run export dialog", async () => {
     const record = buildRunRecord();
     const get = vi.fn().mockResolvedValue(record);
 
@@ -35,7 +35,7 @@ describe("Results page saved-run actions", () => {
 
     const dialog = screen.getByRole("dialog");
     expect(
-      within(dialog).getByRole("heading", { name: "Export run as Markdown" }),
+      within(dialog).getByRole("heading", { name: "Export run" }),
     ).toBeInTheDocument();
     const preview = within(dialog).getByLabelText("Export preview");
     expect(preview).toHaveTextContent(record.config.name);

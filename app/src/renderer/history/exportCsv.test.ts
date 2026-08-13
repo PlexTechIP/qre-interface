@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SAMPLE_RUN_RECORDS, buildFrontierRow, buildRunRecord } from "../../shared/testing";
-import { buildComparisonCsv } from "./ComparisonExportStubDialog";
-import { buildFrontierCsv } from "./ExportStubDialog";
+import { buildComparisonCsv } from "./ComparisonExportDialog";
+import { buildFrontierCsv } from "./ExportDialog";
 
 /** The rows of a CSV document, split on its RFC 4180 line ending. */
 function rowsOf(csv: string): string[] {

@@ -151,13 +151,11 @@ describe("Compare / Delete Selected popups", () => {
 
 /**
  * End to end for the field filter: the analyst narrows the comparison on
- * screen, exports, and the Markdown is the comparison they narrowed. Runs
- * against the complete exporter, because the placeholder preview has no table
- * to filter.
+ * screen, exports, and the Markdown is the comparison they narrowed.
  */
 function ExportHarness() {
   const [store] = useState(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
-  return <RunHistoryContainer store={store} exportMode="complete" />;
+  return <RunHistoryContainer store={store} />;
 }
 
 describe("Comparison export ← field filter", () => {

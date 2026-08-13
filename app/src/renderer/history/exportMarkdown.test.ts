@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SAMPLE_RUN_RECORDS, buildFrontierRow, buildRunRecord } from "../../shared/testing";
-import { buildComparisonExportMarkdown } from "./ComparisonExportStubDialog";
-import { buildRunExportMarkdown } from "./ExportStubDialog";
+import { buildComparisonExportMarkdown } from "./ComparisonExportDialog";
+import { buildRunExportMarkdown } from "./ExportDialog";
 
 /**
  * The Markdown generators are correct and are NOT rewritten here. The one gap

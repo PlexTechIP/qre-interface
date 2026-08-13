@@ -1,4 +1,4 @@
-import { Modal } from "./Modal";
+import { Modal } from "../Modal";
 import type { RerunRequest } from "./rerun";
 
 /**

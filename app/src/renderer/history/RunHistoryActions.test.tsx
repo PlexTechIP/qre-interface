@@ -189,7 +189,13 @@ describe("Run History — per-run actions (Part D)", () => {
     expect(screen.getByRole("button", { name: "Compare Selected" })).toBeInTheDocument();
   });
 
-  it("Export opens the Markdown stub preview (seam only, no real generator)", async () => {
+  /**
+   * The real exporter, not a placeholder. The dialog used to default to a
+   * week-3 stub that only `App.tsx` opted out of, so this surface shipped the
+   * real generator while every test of it — and any new call site — got the
+   * placeholder.
+   */
+  it("Export opens the complete Markdown export", async () => {
     renderHistory();
     const row = await rowByName(SUCCESS_NAME);
 
@@ -197,8 +203,10 @@ describe("Run History — per-run actions (Part D)", () => {
 
     const dialog = await screen.findByRole("dialog");
     const preview = within(dialog).getByLabelText("Export preview");
-    expect(preview).toHaveTextContent(/placeholder/i);
     expect(preview).toHaveTextContent(SUCCESS_NAME);
+    expect(preview).toHaveTextContent("Pareto frontier");
+    expect(preview).not.toHaveTextContent(/placeholder/i);
+    expect(within(dialog).getByRole("button", { name: "Download .md" })).toBeInTheDocument();
   });
 
   it("Rerun surfaces a reconstructed config with an incremented name and fresh id", async () => {

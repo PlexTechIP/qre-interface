@@ -6,7 +6,7 @@ import type {
   RunResult,
   RunStore,
 } from "../../shared/types";
-import { ExportStubDialog } from "../history/ExportStubDialog";
+import { ExportDialog } from "../history/ExportDialog";
 import {
   createRerunRequest,
   type RerunRequest,
@@ -156,11 +156,7 @@ export function ResultsPage({
       />
 
       {isExportOpen && record ? (
-        <ExportStubDialog
-          record={record}
-          mode="complete"
-          onClose={() => setIsExportOpen(false)}
-        />
+        <ExportDialog record={record} onClose={() => setIsExportOpen(false)} />
       ) : null}
     </div>
   );

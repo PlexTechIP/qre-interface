@@ -5,35 +5,25 @@ import { csvDocument, csvHeader, csvValue } from "../csv";
 import { CopyButton } from "../CopyButton";
 import { exportedOnLine, useExportedAt } from "../exportProvenance";
 import { downloadCsv, downloadMarkdown } from "../download";
-import { Modal } from "./Modal";
+import { markdownRow } from "../markdown";
+import { Modal } from "../Modal";
 import {
-  buildComparisonExportStub,
   buildComparisonRows,
   type ComparisonRow,
   toComparisonColumn,
 } from "./comparisonModel";
 
 /**
- * Export the comparison set — STUB ONLY. Mirrors the per-run Export stub: it
- * builds the seam (a copyable placeholder preview of the selected runs) but not
- * the real Markdown exporter, which ships in Part 3 (week 6).
+ * The selected runs, exported: the side-by-side Markdown table, the CSV, and
+ * the dialog that offers both. Mirrors the per-run `ExportDialog`, including
+ * having lost the `mode` prop that used to default to a week-3 placeholder.
  */
-export interface ComparisonExportStubDialogProps {
+export interface ComparisonExportDialogProps {
   records: RunRecord[];
   selectedRowByRunId?: SelectedRowByRunId;
   /** The fields hidden by the comparison surface's filter when Export was pressed. */
   hiddenKeys?: ReadonlySet<string>;
   onClose: () => void;
-  mode?: "preview" | "complete";
-}
-
-function markdownCell(value: string): string {
-  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
-}
-
-/** One Markdown table row from its cells, with the outer pipes it needs. */
-function markdownRow(cells: readonly string[]): string {
-  return `| ${cells.join(" | ")} |`;
 }
 
 export function buildComparisonExportMarkdown(
@@ -78,20 +68,18 @@ export function buildComparisonExportMarkdown(
     "",
     "## Configuration and resource comparison",
     "",
-    markdownRow(["Field", ...columns.map((column) => markdownCell(column.name))]),
+    markdownRow(["Field", ...columns.map((column) => column.name)]),
     `|${["---", ...columns.map(() => "---:")].join("|")}|`,
     ...rows.map((row) =>
       markdownRow([
-        markdownCell(row.unitLabel ? `${row.label} (${row.unitLabel})` : row.label),
+        row.unitLabel ? `${row.label} (${row.unitLabel})` : row.label,
         // Matches the on-screen table: a failed run's whole column reads as failed.
         // A bare "—" here would carry the same ambiguity the table deliberately
         // removed ("field not reported" vs "the run never produced results").
         ...row.metrics.map((metric, index) =>
-          markdownCell(
-            columns[index]?.failed && !row.availableOnFailedRun
-              ? "No result data"
-              : formatMetric(metric),
-          ),
+          columns[index]?.failed && !row.availableOnFailedRun
+            ? "No result data"
+            : formatMetric(metric),
         ),
       ]),
     ),
@@ -155,71 +143,56 @@ export function buildComparisonCsv(
   ]);
 }
 
-export function ComparisonExportStubDialog({
+export function ComparisonExportDialog({
   records,
   selectedRowByRunId = {},
   hiddenKeys = new Set(),
   onClose,
-  mode = "preview",
-}: ComparisonExportStubDialogProps) {
-  const complete = mode === "complete";
+}: ComparisonExportDialogProps) {
   const exportedAt = useExportedAt();
-  const preview = complete
-    ? buildComparisonExportMarkdown(records, selectedRowByRunId, hiddenKeys, exportedAt)
-    : buildComparisonExportStub(records);
+  const preview = buildComparisonExportMarkdown(
+    records,
+    selectedRowByRunId,
+    hiddenKeys,
+    exportedAt,
+  );
 
   return (
     <Modal
       titleId="comparison-export-title"
-      title={
-        complete ? "Export comparison as Markdown" : "Export comparison (preview)"
-      }
+      title="Export comparison"
       onClose={onClose}
       footer={
         <>
-          <CopyButton value={preview} label={complete ? "Copy Markdown" : "Copy preview"} />
-          {complete ? (
-            <button
-              type="button"
-              onClick={() =>
-                downloadMarkdown(preview, "qre-run-comparison", { exportedAt })
-              }
-            >
-              Download .md
-            </button>
-          ) : null}
-          {complete ? (
-            <button
-              type="button"
-              onClick={() =>
-                downloadCsv(
-                  buildComparisonCsv(records, selectedRowByRunId, hiddenKeys),
-                  "qre-run-comparison",
-                  { exportedAt },
-                )
-              }
-            >
-              Download .csv
-            </button>
-          ) : null}
+          <CopyButton value={preview} label="Copy Markdown" />
+          <button
+            type="button"
+            onClick={() => downloadMarkdown(preview, "qre-run-comparison", { exportedAt })}
+          >
+            Download .md
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              downloadCsv(
+                buildComparisonCsv(records, selectedRowByRunId, hiddenKeys),
+                "qre-run-comparison",
+                { exportedAt },
+              )
+            }
+          >
+            Download .csv
+          </button>
           <button type="button" onClick={onClose}>
             Close
           </button>
         </>
       }
     >
-      {complete ? (
-        <p className="muted">
-          Includes selected-run metadata and the complete side-by-side resource
-          table. The CSV is one row per run, with raw numeric values.
-        </p>
-      ) : (
-        <p className="muted">
-          This is a placeholder preview of the comparison export. The real Markdown export — the selected
-          runs&rsquo; configs, timestamps, QRE versions, and the full comparison table — is built in Part 3
-          (week 6).
-        </p>
-      )}
+      <p className="muted">
+        Includes selected-run metadata and the complete side-by-side resource
+        table. The CSV is one row per run, with raw numeric values.
+      </p>
       <pre className="code-block" aria-label="Comparison export preview">
         {preview}
       </pre>

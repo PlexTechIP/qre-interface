@@ -1,4 +1,4 @@
-import { applicationKey, type FieldMetric, type FrontierRow, type RunRecord } from "../../shared/types";
+import type { FieldMetric, FrontierRow, RunRecord } from "../../shared/types";
 import { parseTraceTransform } from "../../shared/traceTransform";
 import { formatMetric } from "../results/formatMetric";
 import { DEFAULT_FIELD_DEFINITIONS, getAdditionalFieldDefinitions } from "../results/resultFields";
@@ -16,42 +16,21 @@ import { CopyButton } from "../CopyButton";
 import { csvDocument, csvHeader, csvValue } from "../csv";
 import { exportedOnLine, useExportedAt } from "../exportProvenance";
 import { downloadCsv, downloadMarkdown } from "../download";
-import { Modal } from "./Modal";
+import { markdownRow } from "../markdown";
+import { Modal } from "../Modal";
 
 /**
- * Export Markdown — STUB ONLY. The real Markdown generator ships in Part 3
- * (week 6); this builds the *seam*: the per-run affordance plus a
- * placeholder/preview the user can copy. Nothing here is the real exporter —
- * the preview is a deliberately minimal header, not the frontier table.
+ * One run, exported: the Markdown document, the CSV of its frontier, and the
+ * dialog that offers both.
+ *
+ * There used to be a `mode` prop here selecting between this and a week-3
+ * placeholder, defaulting to the placeholder — so the shipped behaviour was the
+ * one call site that opted out, and everything else (including this surface's
+ * own tests) got the stub. The placeholder is gone; there is one exporter.
  */
-export interface ExportStubDialogProps {
+export interface ExportDialogProps {
   record: RunRecord;
   onClose: () => void;
-  mode?: "preview" | "complete";
-}
-
-/** A placeholder preview payload — NOT the Part-3 exporter output. */
-export function buildExportStub(record: RunRecord): string {
-  const { config, result } = record;
-  return [
-    `# ${config.name}`,
-    "",
-    "> Export preview — placeholder. The Markdown generator ships in Part 3 (week 6).",
-    "",
-    `- Run ID: ${record.id}`,
-    `- Application: ${applicationKey(config)}`,
-    `- Architecture: ${config.architecture.type}`,
-    `- QEC code: ${config.qecCode}`,
-    `- Magic state factories: ${config.magicStateFactories.join(", ")}`,
-    `- QRE version: ${result.qreVersion}`,
-    `- Created: ${config.createdAt}`,
-    `- Saved: ${record.savedAt}`,
-    `- Status: ${result.status}`,
-  ].join("\n");
-}
-
-function markdownCell(value: string): string {
-  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
 /** A provenance line and the blank after it, or nothing at all. */
@@ -133,7 +112,7 @@ export function buildRunExportMarkdown(record: RunRecord, exportedAt?: string): 
     lines.push(
       "## Pareto frontier",
       "",
-      `| ${headers.map(markdownCell).join(" | ")} |`,
+      markdownRow(headers),
       `|${headers.map(() => "---:").join("|")}|`,
       ...frontier.map((row, index) => {
         const cells = [
@@ -148,7 +127,7 @@ export function buildRunExportMarkdown(record: RunRecord, exportedAt?: string): 
           // "—" rather than shifting the row's cells.
           ...additional.map((def) => formatMetric(row.additional?.[def.key] ?? null)),
         ];
-        return `| ${cells.map(markdownCell).join(" | ")} |`;
+        return markdownRow(cells);
       }),
       "",
     );
@@ -221,69 +200,51 @@ export function buildFrontierCsv(record: RunRecord): string {
   ]);
 }
 
-export function ExportStubDialog({
-  record,
-  onClose,
-  mode = "preview",
-}: ExportStubDialogProps) {
-  const complete = mode === "complete";
+export function ExportDialog({ record, onClose }: ExportDialogProps) {
   const exportedAt = useExportedAt();
-  const preview = complete
-    ? buildRunExportMarkdown(record, exportedAt)
-    : buildExportStub(record);
+  const preview = buildRunExportMarkdown(record, exportedAt);
 
   return (
     <Modal
-      titleId="export-stub-title"
-      title={complete ? "Export run as Markdown" : "Export Markdown (preview)"}
+      titleId="export-dialog-title"
+      title="Export run"
       onClose={onClose}
       footer={
         <>
-          <CopyButton value={preview} label={complete ? "Copy Markdown" : "Copy preview"} />
-          {complete ? (
-            <button
-              type="button"
-              onClick={() =>
-                downloadMarkdown(preview, record.config.name, {
-                  fallback: "qre-run",
-                  exportedAt,
-                })
-              }
-            >
-              Download .md
-            </button>
-          ) : null}
-          {complete ? (
-            <button
-              type="button"
-              onClick={() =>
-                downloadCsv(buildFrontierCsv(record), record.config.name, {
-                  fallback: "qre-run",
-                  exportedAt,
-                })
-              }
-            >
-              Download .csv
-            </button>
-          ) : null}
+          <CopyButton value={preview} label="Copy Markdown" />
+          <button
+            type="button"
+            onClick={() =>
+              downloadMarkdown(preview, record.config.name, {
+                fallback: "qre-run",
+                exportedAt,
+              })
+            }
+          >
+            Download .md
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              downloadCsv(buildFrontierCsv(record), record.config.name, {
+                fallback: "qre-run",
+                exportedAt,
+              })
+            }
+          >
+            Download .csv
+          </button>
           <button type="button" onClick={onClose}>
             Close
           </button>
         </>
       }
     >
-      {complete ? (
-        <p className="muted">
-          Includes the run metadata, Pareto frontier, complete configuration, and
-          raw engine output. The CSV is the frontier alone, with raw numeric
-          values for plotting.
-        </p>
-      ) : (
-        <p className="muted">
-          This is a placeholder preview. The real Markdown export — the full configuration, results,
-          and raw output — is built in Part 3 (week 6).
-        </p>
-      )}
+      <p className="muted">
+        Includes the run metadata, Pareto frontier, complete configuration, and
+        raw engine output. The CSV is the frontier alone, with raw numeric
+        values for plotting.
+      </p>
       <pre className="code-block" aria-label="Export preview">
         {preview}
       </pre>

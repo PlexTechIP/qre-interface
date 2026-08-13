@@ -196,7 +196,7 @@ describe("App shell wiring", () => {
     const exportDialog = screen.getByRole("dialog");
     expect(
       within(exportDialog).getByRole("heading", {
-        name: "Export run as Markdown",
+        name: "Export run",
       }),
     ).toBeInTheDocument();
     await userEvent.click(

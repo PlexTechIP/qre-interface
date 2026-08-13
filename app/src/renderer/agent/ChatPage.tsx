@@ -5,7 +5,12 @@ import type {
   AgentService,
   ProviderId,
 } from "../../shared/agentTypes";
-import type { ChatMessage, ChatStore, ConversationSummary } from "../../shared/chatTypes";
+import type {
+  ChatMessage,
+  ChatStore,
+  Conversation,
+  ConversationSummary,
+} from "../../shared/chatTypes";
 import { ChatTranscript } from "./ChatTranscript";
 import { CopyButton } from "../CopyButton";
 import {
@@ -15,10 +20,9 @@ import {
   startConversation,
   userTurn,
 } from "./chatSession";
-import { downloadMarkdown } from "../download";
 import { ConversationActions } from "./ConversationActions";
 import { ConversationList } from "./ConversationList";
-import { buildConversationMarkdown } from "./exportConversation";
+import { ConversationExportDialog } from "./ConversationExportDialog";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
 import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
 
@@ -166,6 +170,10 @@ export function ChatPage({
   const [draftError, setDraftError] = useState<{ messageId: string; message: string } | null>(
     null,
   );
+  // The conversation whose export preview is open (null = closed). Holding the
+  // loaded conversation itself means the dialog can never be open with nothing
+  // to render.
+  const [exportTarget, setExportTarget] = useState<Conversation | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [preview, setPreview] = useState<unknown>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -514,13 +522,17 @@ export function ChatPage({
   };
 
   /**
-   * Write a conversation out as Markdown.
+   * Open the export preview for a conversation.
    *
    * Re-reads it from the store rather than exporting what is on screen: the
    * list only holds summaries, and even in the Conversation view the export
    * should be the record on disk rather than whatever this component happens to
    * be holding. A read can fail, so it is reported like every other store
    * failure instead of silently producing nothing.
+   *
+   * The loaded conversation IS the dialog's open/closed state — there is no
+   * second boolean that could disagree with it, and no window in which the
+   * dialog is open with nothing to show.
    */
   const exportConversation = (id: string): void => {
     void store.get(id).then(
@@ -529,13 +541,7 @@ export function ChatPage({
           setNote({ tone: "error", text: "That conversation is no longer stored." });
           return;
         }
-        // One clock read, shared by the document's date line and its filename
-        // stamp, so the two can never disagree.
-        const exportedAt = new Date().toISOString();
-        downloadMarkdown(buildConversationMarkdown(conversation, exportedAt), conversation.title, {
-          fallback: "qre-conversation",
-          exportedAt,
-        });
+        setExportTarget(conversation);
       },
       (error: unknown) =>
         setNote({
@@ -889,6 +895,13 @@ export function ChatPage({
             </details>
           </form>
         </section>
+      )}
+
+      {exportTarget === null ? null : (
+        <ConversationExportDialog
+          conversation={exportTarget}
+          onClose={() => setExportTarget(null)}
+        />
       )}
     </div>
   );

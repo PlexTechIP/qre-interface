@@ -2,7 +2,7 @@
  * Save an export to the analyst's downloads.
  *
  * There were already two byte-identical copies of this — one in
- * `ExportStubDialog`, one in `ComparisonExportStubDialog`, differing only in
+ * `ExportDialog`, one in `ComparisonExportDialog`, differing only in
  * how they picked the filename. The conversation export would have been the
  * third, so it is one function now, with the slug rule stated once: whichever
  * copy someone eventually fixes, all of them get the fix.
