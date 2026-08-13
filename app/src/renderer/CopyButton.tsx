@@ -4,6 +4,13 @@ interface CopyButtonProps {
   /** The exact text to place on the clipboard. */
   value: string;
   label: string;
+  /**
+   * Left to the caller because this now serves two surfaces with different
+   * button styling: the transcript's small inline control, and the export
+   * dialogs' footer, where `.modal-footer button` already styles it and the
+   * transcript's class would fight that.
+   */
+  className?: string;
 }
 
 /**
@@ -24,15 +31,20 @@ interface CopyOutcome {
 }
 
 /**
- * Put a block of JSON on the clipboard.
+ * Put a block of text on the clipboard.
  *
  * The proposal and the outbound preview are both things the analyst is invited
  * to read literally and then take somewhere else — into a ticket, a note, a
  * message to whoever owns the parameters. Both were selectable text in a
  * scrolling `<pre>` nested inside the page's own scroll, which is the one
  * shape where dragging a selection reliably scrolls the wrong box.
+ *
+ * Lives here rather than under `agent/` because the export dialogs need it
+ * too — they had each grown a private copy handler that swallowed the refusal
+ * below and never reset its label, which is the pair of bugs the two comments
+ * in this file exist to prevent.
  */
-export function CopyButton({ value, label }: CopyButtonProps): React.JSX.Element {
+export function CopyButton({ value, label, className }: CopyButtonProps): React.JSX.Element {
   const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
   const clicks = useRef(0);
 
@@ -47,7 +59,7 @@ export function CopyButton({ value, label }: CopyButtonProps): React.JSX.Element
   return (
     <button
       type="button"
-      className="chat-copy"
+      className={className}
       onClick={() => {
         clicks.current += 1;
         const click = clicks.current;

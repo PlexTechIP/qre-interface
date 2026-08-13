@@ -1,4 +1,5 @@
 import type { Conversation } from "../../shared/chatTypes";
+import { exportedOnLine } from "../exportProvenance";
 
 /**
  * A conversation as Markdown.
@@ -31,7 +32,7 @@ function fenceFor(content: string): string {
   return "`".repeat(Math.max(3, longest + 1));
 }
 
-export function buildConversationMarkdown(conversation: Conversation): string {
+export function buildConversationMarkdown(conversation: Conversation, exportedAt?: string): string {
   const proposals = conversation.messages.filter((message) => message.draft !== null).length;
 
   const lines = [
@@ -42,8 +43,10 @@ export function buildConversationMarkdown(conversation: Conversation): string {
     `- **Started:** ${conversation.createdAt}`,
     `- **Last updated:** ${conversation.updatedAt}`,
     "",
-    "> Exported from the QRE Dashboard. Proposals are recorded as they were",
-    "> made; a run is only created when an analyst opens one in Run",
+    // Dated through the same helper the run and comparison exports use, so the
+    // three cannot drift into three different ways of saying when.
+    `${exportedOnLine(exportedAt) ?? "> Exported from the QRE Dashboard."} Proposals are recorded as they`,
+    "> were made; a run is only created when an analyst opens one in Run",
     "> Configuration and executes it.",
     "",
   ];

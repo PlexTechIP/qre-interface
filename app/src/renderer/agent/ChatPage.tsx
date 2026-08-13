@@ -7,7 +7,7 @@ import type {
 } from "../../shared/agentTypes";
 import type { ChatMessage, ChatStore, ConversationSummary } from "../../shared/chatTypes";
 import { ChatTranscript } from "./ChatTranscript";
-import { CopyButton } from "./CopyButton";
+import { CopyButton } from "../CopyButton";
 import {
   assistantTurn,
   awaitingReply,
@@ -15,7 +15,7 @@ import {
   startConversation,
   userTurn,
 } from "./chatSession";
-import { downloadMarkdown } from "../downloadMarkdown";
+import { downloadMarkdown } from "../download";
 import { ConversationActions } from "./ConversationActions";
 import { ConversationList } from "./ConversationList";
 import { buildConversationMarkdown } from "./exportConversation";
@@ -529,7 +529,13 @@ export function ChatPage({
           setNote({ tone: "error", text: "That conversation is no longer stored." });
           return;
         }
-        downloadMarkdown(buildConversationMarkdown(conversation), conversation.title);
+        // One clock read, shared by the document's date line and its filename
+        // stamp, so the two can never disagree.
+        const exportedAt = new Date().toISOString();
+        downloadMarkdown(buildConversationMarkdown(conversation, exportedAt), conversation.title, {
+          fallback: "qre-conversation",
+          exportedAt,
+        });
       },
       (error: unknown) =>
         setNote({
@@ -872,7 +878,7 @@ export function ChatPage({
                 <>
                   <pre>{previewText}</pre>
                   {preview === null ? null : (
-                    <CopyButton value={previewText} label="Copy request" />
+                    <CopyButton value={previewText} label="Copy request" className="chat-copy" />
                   )}
                 </>
               ) : (

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { Conversation } from "../../shared/chatTypes";
 import { FAKE_GENERATED_DRAFT } from "../../shared/testing/fakeAgentService";
-import { markdownFilename } from "../downloadMarkdown";
 import { buildConversationMarkdown } from "./exportConversation";
 
 const conversation = (over: Partial<Conversation> = {}): Conversation => ({
@@ -122,23 +121,21 @@ describe("buildConversationMarkdown", () => {
   });
 });
 
-describe("markdownFilename", () => {
-  it("slugs a title into something a filesystem accepts", () => {
-    expect(markdownFilename("Grover, 20 search qubits")).toBe("grover-20-search-qubits");
-    expect(markdownFilename("Shor / 2048-bit \"modulus\"")).toBe("shor-2048-bit-modulus");
+describe("buildConversationMarkdown — when", () => {
+  const EXPORTED_AT = "2026-08-12T19:04:31.000Z";
+
+  it("dates the transcript it produced", () => {
+    const md = buildConversationMarkdown(conversation(), EXPORTED_AT);
+
+    expect(md).toContain(`> Exported from the QRE Dashboard on ${EXPORTED_AT}.`);
+    // The note about what a proposal is survives alongside the date.
+    expect(md).toContain("a run is only created when an analyst opens one");
   });
 
-  /** Conversation titles are free text, so this is reachable, not theoretical. */
-  it("falls back rather than producing a file called .md", () => {
-    expect(markdownFilename("···")).toBe("qre-export");
-    expect(markdownFilename("", "qre-conversation")).toBe("qre-conversation");
-  });
+  it("keeps the note undated when it was not told the time", () => {
+    const md = buildConversationMarkdown(conversation());
 
-  /**
-   * The run export used "qre-run" before this helper was extracted out of it;
-   * a shared helper must not quietly rename anyone else's downloads.
-   */
-  it("lets each caller keep its own fallback", () => {
-    expect(markdownFilename("!!!", "qre-run")).toBe("qre-run");
+    expect(md).toContain("> Exported from the QRE Dashboard.");
+    expect(md).not.toMatch(/Exported from the QRE Dashboard on/);
   });
 });

@@ -114,3 +114,168 @@ describe("run export — frontier completeness", () => {
     expect(header.split("|").filter((cell) => cell.trim()).length).toBe(7);
   });
 });
+
+/**
+ * Cells of a Markdown table row.
+ *
+ * Strict about the outer pipes on purpose: the defect this guards against was a
+ * row built as `[..., "|"].join(" | ")`, which ends `| |` and reads as a real
+ * trailing cell to every Markdown renderer. Counting cells is the only
+ * assertion that catches it — the row still *looks* well-formed.
+ */
+function cellsOf(row: string): string[] {
+  const trimmed = row.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) {
+    throw new Error(`Not a delimited table row: ${row}`);
+  }
+  return trimmed
+    .slice(1, -1)
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim());
+}
+
+/** Every line that is part of the one Markdown table in `markdown`. */
+function tableRows(markdown: string): string[] {
+  return markdown.split("\n").filter((line) => line.trim().startsWith("|"));
+}
+
+describe("comparison export — table shape", () => {
+  it("emits one cell per run plus the field label, and no phantom trailing column", () => {
+    const [first, second] = SAMPLE_RUN_RECORDS;
+    if (!first || !second) throw new Error("Expected at least two sample records.");
+
+    const rows = tableRows(buildComparisonExportMarkdown([first, second]));
+
+    expect(rows.length).toBeGreaterThan(2);
+    for (const row of rows) {
+      expect(cellsOf(row)).toHaveLength(3);
+    }
+  });
+
+  it("keeps the delimiter row a valid alignment row for every column", () => {
+    const [first, second] = SAMPLE_RUN_RECORDS;
+    if (!first || !second) throw new Error("Expected at least two sample records.");
+
+    const delimiter = tableRows(buildComparisonExportMarkdown([first, second]))[1] ?? "";
+
+    for (const cell of cellsOf(delimiter)) {
+      expect(cell).toMatch(/^:?-+:?$/);
+    }
+  });
+});
+
+describe("comparison export — the field filter", () => {
+  it("omits a field the analyst hid on screen", () => {
+    const record = buildRunRecord({
+      result: {
+        frontier: [
+          buildFrontierRow({
+            additional: {
+              physicalFactoryQubits: { value: 12_345, unit: "qubits", display: "ignored" },
+            },
+          }),
+        ],
+      },
+    });
+
+    const shown = buildComparisonExportMarkdown([record], {}, new Set());
+    const hidden = buildComparisonExportMarkdown([record], {}, new Set(["physicalFactoryQubits"]));
+
+    expect(shown).toMatch(/Phys\. Factory Qubits/i);
+    expect(hidden).not.toMatch(/Phys\. Factory Qubits/i);
+    // Hiding one row does not disturb the rest of the table.
+    expect(hidden).toMatch(/Physical Qubits/i);
+  });
+
+  it("exports every field when nothing is hidden, as it did before the filter was honoured", () => {
+    const record = buildRunRecord();
+
+    expect(buildComparisonExportMarkdown([record])).toBe(
+      buildComparisonExportMarkdown([record], {}, new Set()),
+    );
+  });
+});
+
+describe("exports — provenance", () => {
+  it("names the frontier row each comparison column was read from", () => {
+    const record = buildRunRecord({
+      result: {
+        frontier: [buildFrontierRow(), buildFrontierRow(), buildFrontierRow()],
+      },
+    });
+
+    const markdown = buildComparisonExportMarkdown([record], { [record.id]: 1 });
+
+    // Which row these numbers came from is what makes the table reproducible —
+    // `selectedRowByRunId` changes every metric in it.
+    expect(markdown).toContain("frontier row 2 of 3");
+  });
+
+  it("does not claim a frontier row for a run that produced none", () => {
+    const failed = SAMPLE_RUN_RECORDS.find((r) => r.result.status === "failed");
+    if (!failed) throw new Error("Expected a failed sample record.");
+
+    expect(buildComparisonExportMarkdown([failed])).not.toMatch(/frontier row/i);
+  });
+
+  it("identifies each compared run by id, since run names are not unique", () => {
+    const [first, second] = SAMPLE_RUN_RECORDS;
+    if (!first || !second) throw new Error("Expected at least two sample records.");
+
+    const markdown = buildComparisonExportMarkdown([first, second]);
+
+    expect(markdown).toContain(first.id);
+    expect(markdown).toContain(second.id);
+  });
+
+  it("carries the record-level timestamps the run export used to drop", () => {
+    const record = buildRunRecord();
+    const markdown = buildRunExportMarkdown(record);
+
+    // `savedAt` and `startedAt` live on the record and the result, so neither is
+    // recoverable from the embedded config JSON the way the run id is.
+    expect(markdown).toContain(`- **Run ID:** ${record.id}`);
+    expect(markdown).toContain(`- **Saved:** ${record.savedAt}`);
+    expect(markdown).toContain(`- **Started:** ${record.result.startedAt}`);
+  });
+});
+
+/**
+ * An export leaves the app and is read later, beside other exports of the same
+ * runs. Without a date on the document itself, "which of these two is current"
+ * is answerable only from a file mtime, which copying, syncing or mailing the
+ * file destroys.
+ */
+describe("exports — when and against what", () => {
+  const EXPORTED_AT = "2026-08-12T19:04:31.000Z";
+
+  it("dates the run export", () => {
+    const markdown = buildRunExportMarkdown(buildRunRecord(), EXPORTED_AT);
+
+    expect(markdown).toContain(`> Exported from the QRE Dashboard on ${EXPORTED_AT}.`);
+  });
+
+  it("dates the comparison export", () => {
+    const markdown = buildComparisonExportMarkdown(
+      [buildRunRecord()],
+      {},
+      new Set(),
+      EXPORTED_AT,
+    );
+
+    expect(markdown).toContain(`> Exported from the QRE Dashboard on ${EXPORTED_AT}.`);
+  });
+
+  it("records the contract version the run export's numbers came from", () => {
+    const record = buildRunRecord();
+
+    expect(buildRunExportMarkdown(record, EXPORTED_AT)).toContain(
+      `- **Schema version:** ${record.schemaVersion}`,
+    );
+  });
+
+  it("omits the line rather than dating an export it was not told the time of", () => {
+    expect(buildRunExportMarkdown(buildRunRecord())).not.toMatch(/> Exported from/);
+    expect(buildComparisonExportMarkdown([buildRunRecord()])).not.toMatch(/> Exported from/);
+  });
+});

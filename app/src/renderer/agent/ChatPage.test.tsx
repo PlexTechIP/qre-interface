@@ -765,14 +765,19 @@ describe("ChatPage — conversations", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(saved).toHaveLength(1));
-    expect(saved[0]?.name).toBe("grover-baseline.md");
+    // Stamped with the export time so two exports of one conversation do not
+    // collide. The stamp's exact formatting is pinned in `download.test.ts`;
+    // here the clock is real, so this asserts its shape.
+    expect(saved[0]?.name).toMatch(/^grover-baseline-\d{8}-\d{4}\.md$/);
     await waitFor(() => expect(saved[0]?.text).toContain("# Grover baseline"));
     // The whole transcript, not the summary the row was rendered from.
     expect(saved[0]?.text).toContain("Estimate Grover search");
     expect(saved[0]?.text).toContain("### Proposed configuration");
-    // One object URL created, and released rather than leaked.
+    // One object URL created, and NOT revoked out from under the download that
+    // is still fetching it. How long it then lives, and that it is released at
+    // all, is `downloadMarkdown`'s contract and is asserted there.
     expect(created).toHaveLength(1);
-    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1));
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
 
   it("reports an export of a conversation that is no longer stored", async () => {

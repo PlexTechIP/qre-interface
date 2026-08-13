@@ -144,8 +144,12 @@ export function RunHistoryContainer({
   const isControlled = controlledView !== undefined;
   const view = controlledView ?? internalView;
   const setView = onViewChange ?? setInternalView;
-  // Whether the comparison-set export dialog is open.
-  const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
+  // The comparison-set export dialog: the fields the Comparison surface was
+  // hiding when Export was pressed, or null when the dialog is closed. The
+  // hidden set is view state owned by `ComparisonView`, so it is captured at
+  // press time rather than read back out of a child.
+  const [comparisonExportHiddenKeys, setComparisonExportHiddenKeys] =
+    useState<ReadonlySet<string> | null>(null);
 
   /**
    * Re-read the store through the query API so the view always reflects stored
@@ -434,7 +438,7 @@ export function RunHistoryContainer({
           selectedRowByRunId={selectedRowByRunId}
           onClear={clearComparison}
           onRemove={toggleComparison}
-          onExport={() => setIsComparisonExportOpen(true)}
+          onExport={setComparisonExportHiddenKeys}
           embedded={isControlled}
           {...(isControlled ? { onGoToHistory: () => setView("history") } : {})}
         />
@@ -503,12 +507,13 @@ export function RunHistoryContainer({
       {rerunRequest ? (
         <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
       ) : null}
-      {isComparisonExportOpen ? (
+      {comparisonExportHiddenKeys ? (
         <ComparisonExportStubDialog
           records={comparisonRecords}
           selectedRowByRunId={selectedRowByRunId}
+          hiddenKeys={comparisonExportHiddenKeys}
           mode={exportMode}
-          onClose={() => setIsComparisonExportOpen(false)}
+          onClose={() => setComparisonExportHiddenKeys(null)}
         />
       ) : null}
     </div>

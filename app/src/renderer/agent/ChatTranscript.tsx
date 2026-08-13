@@ -4,7 +4,7 @@ import type { GeneratedRunDraft } from "../../shared/agentTypes";
 import type { ChatMessage } from "../../shared/chatTypes";
 import { ARCHITECTURE_LABELS } from "../constants/labels";
 import { applicationLabel } from "../history/historyLabels";
-import { CopyButton } from "./CopyButton";
+import { CopyButton } from "../CopyButton";
 
 interface ChatTranscriptProps {
   messages: readonly ChatMessage[];
@@ -187,7 +187,7 @@ export function ChatTranscript({
                 <details className="chat-draft__raw">
                   <summary>Show the proposal as JSON</summary>
                   <pre>{proposalJson}</pre>
-                  <CopyButton value={proposalJson ?? ""} label="Copy JSON" />
+                  <CopyButton value={proposalJson ?? ""} label="Copy JSON" className="chat-copy" />
                 </details>
                 {draftError?.messageId === message.id ? (
                   <p className="agent-error" role="alert">
