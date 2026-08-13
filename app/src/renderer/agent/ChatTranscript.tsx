@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { GeneratedRunDraft } from "../../shared/agentTypes";
 import type { ChatMessage } from "../../shared/chatTypes";
@@ -59,7 +59,16 @@ export function ChatTranscript({
    * Nothing in the UI said which was current, and the two differ by a single
    * field an analyst is not obliged to remember.
    */
-  const newestProposal = messages.filter((message) => message.draft !== null).at(-1)?.id ?? null;
+  const newestProposal = useMemo(() => {
+    // Backwards to the first hit rather than `filter(...).at(-1)`, which built
+    // and threw away a whole array to read one id — on every keystroke, since
+    // this component re-renders with the page.
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const candidate = messages[index];
+      if (candidate !== undefined && candidate.draft !== null) return candidate.id;
+    }
+    return null;
+  }, [messages]);
 
   /**
    * Bring the newest turn into view — but only when it is not already there.
@@ -91,6 +100,9 @@ export function ChatTranscript({
       {messages.map((message) => {
         const proposal = message.draft;
         const superseded = proposal !== null && message.id !== newestProposal;
+        // Once. It was serialised for the `<pre>` and again for the copy button,
+        // for every proposal in the thread, on every render.
+        const proposalJson = proposal === null ? null : JSON.stringify(proposal, null, 2);
         return (
           <li
             key={message.id}
@@ -126,8 +138,18 @@ export function ChatTranscript({
                       a real thing to want — but no longer dressed as the
                       conversation's live answer.
                     */}
+                    {/*
+                      A POSITIONAL claim, which is the only kind this component
+                      can make honestly. It said "Replaced by a later proposal",
+                      which asserts currency — and the moment someone takes the
+                      button below, the proposal now loaded in the form is the
+                      one captioned as replaced, while the one they rejected
+                      keeps the accent-filled "Use this configuration". Which
+                      draft is live is the form's business; message order is
+                      this transcript's.
+                    */}
                     <p className="chat-draft__superseded">
-                      Replaced by a later proposal in this conversation.
+                      An earlier proposal — a later one follows in this conversation.
                     </p>
                     <button
                       type="button"
@@ -164,8 +186,8 @@ export function ChatTranscript({
                 */}
                 <details className="chat-draft__raw">
                   <summary>Show the proposal as JSON</summary>
-                  <pre>{JSON.stringify(proposal, null, 2)}</pre>
-                  <CopyButton value={JSON.stringify(proposal, null, 2)} label="Copy JSON" />
+                  <pre>{proposalJson}</pre>
+                  <CopyButton value={proposalJson ?? ""} label="Copy JSON" />
                 </details>
                 {draftError?.messageId === message.id ? (
                   <p className="agent-error" role="alert">

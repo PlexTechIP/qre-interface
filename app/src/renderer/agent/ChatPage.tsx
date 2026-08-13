@@ -215,6 +215,21 @@ export function ChatPage({
   const messages = thread.conversationId === activeConversationId ? thread.messages : NO_MESSAGES;
 
   /**
+   * An existing conversation is open but its transcript has not arrived yet.
+   *
+   * Named, because two very different things have to agree about this window:
+   * `send` refuses inside it (posting a turn against an empty transcript drops
+   * every earlier one from the request), and the EMPTY STATE must not render
+   * inside it either. `messages` is legitimately empty here, so the "nothing
+   * sent yet" branch and its starter chips used to paint over a ten-turn
+   * conversation for the length of a store round trip — a microtask against the
+   * in-memory twin, tens of milliseconds against SQLite over IPC, and long
+   * enough to click one of the chips.
+   */
+  const loadingConversation =
+    activeConversationId !== null && thread.conversationId !== activeConversationId;
+
+  /**
    * Load the open conversation, unless the thread already holds it.
    *
    * `thread.conversationId` is in the deps rather than a ref, so the skip is
@@ -292,6 +307,18 @@ export function ChatPage({
   }, [service, previewOpen, nextRequest]);
 
   /**
+   * The outbound body as text, serialised ONCE per preview.
+   *
+   * This was `JSON.stringify(preview, null, 2)` written twice in the JSX — once
+   * for the `<pre>`, once for the copy button — over a body that is the ~18 KB
+   * system prompt plus the generation schema. This component re-renders on
+   * every composer keystroke, so with the disclosure open that was two full
+   * serialisations per character typed: exactly the per-keystroke cost
+   * `useSettled` exists to keep off this data.
+   */
+  const previewText = useMemo(() => JSON.stringify(preview, null, 2), [preview]);
+
+  /**
    * The single send slot, as a ref rather than the `sending` state beside it.
    *
    * `sending` is set inside `runTurn`, two awaits after `send` begins, so a
@@ -340,13 +367,9 @@ export function ChatPage({
   const send = async (): Promise<void> => {
     const text = composer.trim();
     if (text.length === 0 || busy.current) return;
-    /*
-     * `messages` is empty while a conversation is still being read back, so
-     * sending in that window would post the new turn against an empty
-     * transcript — the model would lose every earlier turn and the thread on
-     * screen would disagree with the store. Narrow, but silent.
-     */
-    if (activeConversationId !== null && thread.conversationId !== activeConversationId) return;
+    // See `loadingConversation`: sending here would post against a transcript
+    // that has not finished loading.
+    if (loadingConversation) return;
     busy.current = true;
     try {
       setNote(null);
@@ -622,9 +645,18 @@ export function ChatPage({
               <button
                 type="button"
                 className="chat-thread__back"
+                /*
+                 * The glyph is decoration and the name is explicit. Read aloud,
+                 * "← All conversations" became "left arrow All conversations"
+                 * sitting beside a tab announcing "All conversations · 3" that
+                 * goes to the same place — two near-identical entries in a
+                 * button list, told apart by a character that means nothing
+                 * spoken.
+                 */
+                aria-label="Back to all conversations"
                 onClick={() => onViewChange("list")}
               >
-                ← All conversations
+                <span aria-hidden="true">←</span> All conversations
               </button>
               <h2 className="chat-thread__title">
                 {activeConversationId === null ? "New conversation" : openTitle}
@@ -676,30 +708,40 @@ export function ChatPage({
             </div>
           </div>
 
-          {messages.length === 0 && !sending ? (
+          {loadingConversation ? null : messages.length === 0 && !sending ? (
             <div className="chat-thread__empty">
               <p>
                 Describe the application, architecture, and constraints you care about. The
                 assistant can ask questions back, and will propose a configuration once it has
                 enough to go on.
               </p>
-              <div className="chat-thread__starters">
-                {STARTERS.map((starter) => (
-                  <button
-                    key={starter}
-                    type="button"
-                    className="chat-thread__starter"
-                    onClick={() => {
-                      onComposerChange(starter);
-                      // Into the box, not merely onto the screen: a starter is a
-                      // first draft to edit, not a button that sends for you.
-                      composerBox.current?.focus();
-                    }}
-                  >
-                    {starter}
-                  </button>
-                ))}
-              </div>
+              {/*
+                Only over an empty composer. A starter REPLACES what is in the
+                box, and the box is directly beneath these chips and holds the
+                one thing in this app that is deliberately never persisted — so
+                one mis-aimed click on a chip discarded a description someone had
+                just typed, with nothing to undo it. Clearing the box brings them
+                back.
+              */}
+              {composer.trim().length > 0 ? null : (
+                <div className="chat-thread__starters">
+                  {STARTERS.map((starter) => (
+                    <button
+                      key={starter}
+                      type="button"
+                      className="chat-thread__starter"
+                      onClick={() => {
+                        onComposerChange(starter);
+                        // Into the box, not merely onto the screen: a starter is
+                        // a first draft to edit, not a button that sends for you.
+                        composerBox.current?.focus();
+                      }}
+                    >
+                      {starter}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <ChatTranscript
@@ -828,9 +870,9 @@ export function ChatPage({
               </p>
               {previewError === null ? (
                 <>
-                  <pre>{JSON.stringify(preview, null, 2)}</pre>
+                  <pre>{previewText}</pre>
                   {preview === null ? null : (
-                    <CopyButton value={JSON.stringify(preview, null, 2)} label="Copy request" />
+                    <CopyButton value={previewText} label="Copy request" />
                   )}
                 </>
               ) : (

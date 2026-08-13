@@ -1,9 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface CopyButtonProps {
   /** The exact text to place on the clipboard. */
   value: string;
   label: string;
+}
+
+/**
+ * What the last click did, and WHICH click did it.
+ *
+ * The `click` counter is load-bearing rather than debug detail. Holding only
+ * `"copied" | "failed" | "idle"`, a second copy while the first was still
+ * showing set the state to the value it already held — React bails out of an
+ * identical update, so the effect below never re-ran and the ORIGINAL two-second
+ * timer kept counting. Copy at t=0 and again at t=1950ms and the label snapped
+ * back to "Copy JSON" fifty milliseconds after the second copy succeeded, which
+ * reads as failure on the one control whose entire job is saying whether it
+ * worked. A fresh object per click makes each one reset its own window.
+ */
+interface CopyOutcome {
+  readonly tone: "copied" | "failed";
+  readonly click: number;
 }
 
 /**
@@ -16,21 +33,24 @@ interface CopyButtonProps {
  * shape where dragging a selection reliably scrolls the wrong box.
  */
 export function CopyButton({ value, label }: CopyButtonProps): React.JSX.Element {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [outcome, setOutcome] = useState<CopyOutcome | null>(null);
+  const clicks = useRef(0);
 
   // Back to the resting label on its own, rather than sitting on "Copied" over
   // a selection the analyst pasted somewhere else a minute ago.
   useEffect(() => {
-    if (state === "idle") return;
-    const timer = setTimeout(() => setState("idle"), 2000);
+    if (outcome === null) return;
+    const timer = setTimeout(() => setOutcome(null), 2000);
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [outcome]);
 
   return (
     <button
       type="button"
       className="chat-copy"
       onClick={() => {
+        clicks.current += 1;
+        const click = clicks.current;
         /*
          * Reported, never swallowed. The async clipboard is permission-gated
          * and absent outside a secure context, so this genuinely can refuse —
@@ -40,16 +60,16 @@ export function CopyButton({ value, label }: CopyButtonProps): React.JSX.Element
          */
         const clipboard = navigator.clipboard as Clipboard | undefined;
         if (clipboard === undefined) {
-          setState("failed");
+          setOutcome({ tone: "failed", click });
           return;
         }
         void clipboard.writeText(value).then(
-          () => setState("copied"),
-          () => setState("failed"),
+          () => setOutcome({ tone: "copied", click }),
+          () => setOutcome({ tone: "failed", click }),
         );
       }}
     >
-      {state === "copied" ? "Copied" : state === "failed" ? "Could not copy" : label}
+      {outcome === null ? label : outcome.tone === "copied" ? "Copied" : "Could not copy"}
     </button>
   );
 }

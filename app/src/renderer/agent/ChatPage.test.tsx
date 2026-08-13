@@ -105,9 +105,18 @@ const transcript = (): HTMLElement => screen.getByRole("list", { name: "Transcri
 /** The "All conversations" table. Only rendered while that view is showing. */
 const list = (): HTMLElement => screen.getByRole("region", { name: "Conversations" });
 
-/** Switch to the list view, the way the analyst does. */
+/**
+ * Switch to the list view, the way the analyst does.
+ *
+ * Scoped to the view switcher. The bare name matched the header's back button
+ * too, and the two were told apart only by the `←` the back button's label
+ * happened to start with — so removing a decorative glyph for accessibility
+ * would have broken every test that routes through here with "found multiple
+ * elements".
+ */
 async function showList(): Promise<HTMLElement> {
-  await userEvent.click(screen.getByRole("button", { name: /^All conversations/ }));
+  const views = screen.getByRole("group", { name: "Chat views" });
+  await userEvent.click(within(views).getByRole("button", { name: /^All conversations/ }));
   return list();
 }
 
@@ -958,7 +967,9 @@ describe("ChatPage — audit regressions", () => {
     for (const [index, turn] of turns.entries()) {
       await store.append("c1", {
         ...turn,
-        createdAt: `2026-08-10T09:0${index + 1}:00.000Z`,
+        // Padded: `09:0${index + 1}` produced `09:010` at the tenth turn,
+        // which is not a timestamp and which no store here validates.
+        createdAt: `2026-08-10T09:${String(index + 1).padStart(2, "0")}:00.000Z`,
       });
     }
     return store;
@@ -977,7 +988,7 @@ describe("ChatPage — audit regressions", () => {
 
     expect(await turns.findByRole("button", { name: "Use this earlier proposal" })).toBeVisible();
     expect(turns.getAllByRole("button", { name: "Use this configuration" })).toHaveLength(1);
-    expect(turns.getByText(/Replaced by a later proposal/)).toBeVisible();
+    expect(turns.getByText(/a later one follows in this conversation/)).toBeVisible();
   });
 
   /** Superseded is not disabled — going back for the one you refused is real. */
@@ -1043,7 +1054,7 @@ describe("ChatPage — audit regressions", () => {
     renderChat({ store: await seedTwo() });
     await openConversation("Grover baseline");
 
-    await userEvent.click(screen.getByRole("button", { name: "← All conversations" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back to all conversations" }));
 
     expect(screen.getByRole("region", { name: "Conversations" })).toBeVisible();
   });
@@ -1074,6 +1085,40 @@ describe("ChatPage — audit regressions", () => {
     expect(screen.queryByRole("textbox", { name: "Conversation name" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Grover baseline" })).toBeVisible();
     expect((await store.get("c1"))?.title).toBe("Grover baseline");
+  });
+
+  /*
+   * `messages` is legitimately empty while an existing conversation is being
+   * read back, so the "nothing sent yet" branch used to paint over a ten-turn
+   * thread for the length of a store round trip — with three live starter chips
+   * on it. A microtask against this twin; tens of milliseconds against SQLite
+   * over IPC, which is long enough to click one.
+   */
+  it("does not paint the empty state over a conversation that is still loading", async () => {
+    const store = await seedTwo();
+    // Held open, so the load window is observable at all.
+    vi.spyOn(store, "get").mockReturnValue(new Promise<never>(() => {}));
+    renderChat({ store });
+
+    await openConversation("Grover baseline");
+
+    expect(screen.queryByText(/Describe the application, architecture/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Estimate Shor's factoring/ })).toBeNull();
+  });
+
+  /*
+   * A starter REPLACES the composer, the composer sits directly beneath the
+   * chips, and its contents are the one thing in this app deliberately never
+   * persisted — so a mis-aimed click discarded a description with no undo.
+   */
+  it("withdraws the starters once the composer holds a draft", async () => {
+    renderChat();
+    expect(screen.getByRole("button", { name: /Estimate Shor's factoring/ })).toBeVisible();
+
+    await userEvent.type(composer(), "My own description");
+
+    expect(screen.queryByRole("button", { name: /Estimate Shor's factoring/ })).toBeNull();
+    expect(composer()).toHaveValue("My own description");
   });
 
   /*

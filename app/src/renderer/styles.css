@@ -2316,8 +2316,15 @@ select {
   font-size: 12px;
 }
 
+/*
+ * No `justify-self` here. It sits inside `<details class="chat-draft__raw">`
+ * and `<details class="chat-preview">`, neither of which is a grid or flex
+ * container, so the property is dropped — the button reads as left-aligned
+ * only because it is inline-level and would do that regardless. Setting an
+ * inert alignment property is the exact mistake this stylesheet has already
+ * been caught making twice on `.chat-turn`.
+ */
 .chat-copy {
-  justify-self: start;
   margin-top: 8px;
   border: 1px solid var(--color-input-border);
   border-radius: 7px;
@@ -2373,13 +2380,19 @@ select {
  * Delete off the right edge behind a scrollbar nobody has reason to go looking
  * for. The counts are the cheapest thing on the row to lose, so they go first.
  *
- * 940px, from the budget rather than a guess: the fixed columns are the counts
- * (~180px), Updated (~110px) and the controls (~215px), plus ~130px of cell
- * padding — 635px that cannot shrink, against a card holding roughly
- * `viewport - 300`. Dropping the preview column bought back the headroom that
- * used to force this at 1360px.
+ * The budget has TWO regimes, and an earlier version of this rule only knew
+ * about one. Above 1100px the sidebar is a 235px rail and the card holds about
+ * `viewport - 300`; at 1100px `.app-shell` collapses to `grid-template-columns:
+ * 1fr` (see the breakpoint near the top of this file), the nav becomes a
+ * horizontal strip, and the card holds about `viewport - 60`. Every width this
+ * rule can fire at is in the SECOND regime — so a threshold derived from
+ * `viewport - 300` hid both counts while the row still had ~245px of slack.
+ *
+ * Against `viewport - 60`, the fixed columns — counts ~180px, Updated ~110px,
+ * controls ~215px, plus ~130px of cell padding — leave the name a usable 150px
+ * at about 860px of viewport, which is where they now go.
  */
-@media (max-width: 940px) {
+@media (max-width: 860px) {
   .conversation-table__number {
     display: none;
   }

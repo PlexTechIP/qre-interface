@@ -131,7 +131,12 @@ export function ConversationList({
           <table className="conversation-table">
             <thead>
               <tr>
-                <th scope="col">Conversation</th>
+                {/* Classed like the number columns: header and body cells carry
+                    the same class, so a breakpoint that hides this column takes
+                    the header with it instead of leaving it stranded. */}
+                <th scope="col" className="conversation-table__name">
+                  Conversation
+                </th>
                 <th scope="col" className="conversation-table__number">
                   Messages
                 </th>
