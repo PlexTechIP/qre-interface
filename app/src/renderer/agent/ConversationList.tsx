@@ -87,9 +87,16 @@ export function ConversationList({
 
       {armedClear ? (
         <div className="conversation-list__confirm">
+          {/*
+            Scope, said out loud. This button sits in a toolbar directly beside a
+            search box, so "all" is read against whatever the list is currently
+            showing — and a search narrowing three hundred conversations to two
+            makes "Delete all history" look like it means those two.
+          */}
           <p className="agent-note">
-            This permanently deletes every conversation and its transcript from this machine.
-            Run history is stored separately and is not affected.
+            This permanently deletes every conversation and its transcript from this machine
+            {searching ? ", including the ones your search is currently hiding" : ""}. Run
+            history is stored separately and is not affected.
           </p>
           <div className="conversation-actions">
             <button
@@ -116,7 +123,7 @@ export function ConversationList({
       {conversations.length === 0 ? (
         <p className="conversation-list__empty">
           {searching
-            ? "No conversation matches that search."
+            ? "No conversations match that search."
             : "No conversations yet. Start one and it will be kept here."}
         </p>
       ) : (
@@ -125,7 +132,6 @@ export function ConversationList({
             <thead>
               <tr>
                 <th scope="col">Conversation</th>
-                <th scope="col">Last message</th>
                 <th scope="col" className="conversation-table__number">
                   Messages
                 </th>
@@ -146,7 +152,9 @@ export function ConversationList({
                     conversation.id === activeId ? "conversation-table__row--open" : undefined
                   }
                 >
-                  <td>
+                  {/* The elastic column now: the name takes the slack the
+                      preview used to, so a long title ellipsises later. */}
+                  <td className="conversation-table__name">
                     <button
                       type="button"
                       className="conversation-table__title"
@@ -154,14 +162,6 @@ export function ConversationList({
                     >
                       {conversation.title}
                     </button>
-                  </td>
-                  {/*
-                    The search snippet where there is one, so a hit says why it
-                    matched rather than making the analyst open three
-                    conversations to find out.
-                  */}
-                  <td className="conversation-table__preview">
-                    {previewOf(conversation)}
                   </td>
                   <td className="conversation-table__number">{conversation.messageCount}</td>
                   <td className="conversation-table__number">{conversation.proposalCount}</td>
@@ -193,15 +193,3 @@ export function ConversationList({
   );
 }
 
-/**
- * What the Last message column shows.
- *
- * `??` was wrong here: it falls through on null and undefined but NOT on the
- * empty string, and FTS5's `snippet()` returns "" when the best-ranked hit is a
- * zero-length body — so a title-only match rendered a blank cell in the one
- * view whose job is telling conversations apart. `||` treats every empty value
- * as absent, which is what "show me something to recognise this by" means.
- */
-function previewOf(conversation: ConversationSummary): string {
-  return conversation.snippet?.trim() || conversation.lastMessage?.trim() || "—";
-}

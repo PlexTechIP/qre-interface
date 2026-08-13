@@ -7,6 +7,7 @@ import type {
 } from "../../shared/agentTypes";
 import type { ChatMessage, ChatStore, ConversationSummary } from "../../shared/chatTypes";
 import { ChatTranscript } from "./ChatTranscript";
+import { CopyButton } from "./CopyButton";
 import {
   assistantTurn,
   awaitingReply,
@@ -105,6 +106,21 @@ const describeError = (error: unknown): string =>
 const SETTLE_MS = 200;
 
 /**
+ * Somewhere to start.
+ *
+ * An empty conversation offered a single placeholder inside the box and nothing
+ * else — fine if you already know what this page accepts, a blank wall if you
+ * do not. These are the three shapes the assistant handles well: a benchmark, a
+ * comparison, and a constraint worked backwards. Three rather than one, so they
+ * teach the range instead of priming the same answer every time.
+ */
+const STARTERS: readonly string[] = [
+  "Estimate Shor's factoring for RSA-2048 on a superconducting architecture",
+  "Compare Majorana and superconducting qubits for a 20×20 Ising model",
+  "What physical error rate would I need to factor RSA-2048 in under a day?",
+];
+
+/**
  * A value that follows `value` once it has stopped changing for `delayMs`.
  *
  * Two things here are driven by a text box and are expensive per keystroke: the
@@ -155,6 +171,9 @@ export function ChatPage({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [listToken, setListToken] = useState(0);
   const refreshList = useCallback(() => setListToken((token) => token + 1), []);
+
+  /** So a starter lands the analyst IN the box, ready to edit or send. */
+  const composerBox = useRef<HTMLTextAreaElement>(null);
 
   /**
    * Whether the provider CURRENTLY SELECTED holds a key — which is not what
@@ -590,6 +609,23 @@ export function ChatPage({
         <section className="chat-thread">
           <div className="chat-thread__header">
             <div className="chat-thread__identity">
+              {/*
+                The way back.
+                
+                This header sticks, and opening a conversation scrolls its newest
+                turn into view — which carries the page heading, the provider
+                panel and the view switcher off the top along with it. Without
+                this the sticky header was a dead end: the only route back to the
+                list was scrolling up through the entire transcript to reach a
+                control that had been on screen a moment earlier.
+              */}
+              <button
+                type="button"
+                className="chat-thread__back"
+                onClick={() => onViewChange("list")}
+              >
+                ← All conversations
+              </button>
               <h2 className="chat-thread__title">
                 {activeConversationId === null ? "New conversation" : openTitle}
               </h2>
@@ -603,27 +639,68 @@ export function ChatPage({
                     }`}
               </p>
             </div>
-            <span className="chat-thread__spacer" />
-            {activeConversationId === null ? null : (
-              <ConversationActions
-                id={activeConversationId}
-                title={openTitle}
-                onRename={renameConversation}
-                onDelete={deleteConversation}
-                onExport={exportConversation}
-              />
-            )}
-            <button type="button" className="run-button agent-primary" onClick={startNew}>
-              New conversation
-            </button>
+            {/*
+              ONE group. These were siblings under the header's own `flex-wrap`,
+              so a title long enough to need the room pushed only the LAST of
+              them onto a second row — "New conversation" landing at the far
+              left, beneath the title, opposite the three buttons it belongs
+              with.
+            */}
+            <div className="chat-thread__controls">
+              {activeConversationId === null ? null : (
+                <>
+                  <ConversationActions
+                    id={activeConversationId}
+                    title={openTitle}
+                    onRename={renameConversation}
+                    onDelete={deleteConversation}
+                    onExport={exportConversation}
+                  />
+                  {/*
+                    Secondary, and absent entirely on a conversation that is
+                    already new — where it did nothing at all, under a heading
+                    that read "New conversation" beside a button reading "New
+                    conversation".
+
+                    It was the one accent-filled control here and 2.4x the width
+                    of the Delete next to it, which put the loudest button on the
+                    page on the action that discards what you are looking at,
+                    while Send — the actual point of this screen — sat below it in
+                    a plain outline.
+                  */}
+                  <button type="button" className="agent-secondary" onClick={startNew}>
+                    New conversation
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {messages.length === 0 && !sending ? (
-            <p className="chat-thread__empty">
-              Describe the application, architecture, and constraints you care about. The
-              assistant can ask questions back, and will propose a configuration once it has
-              enough to go on.
-            </p>
+            <div className="chat-thread__empty">
+              <p>
+                Describe the application, architecture, and constraints you care about. The
+                assistant can ask questions back, and will propose a configuration once it has
+                enough to go on.
+              </p>
+              <div className="chat-thread__starters">
+                {STARTERS.map((starter) => (
+                  <button
+                    key={starter}
+                    type="button"
+                    className="chat-thread__starter"
+                    onClick={() => {
+                      onComposerChange(starter);
+                      // Into the box, not merely onto the screen: a starter is a
+                      // first draft to edit, not a button that sends for you.
+                      composerBox.current?.focus();
+                    }}
+                  >
+                    {starter}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : (
             <ChatTranscript
               messages={messages}
@@ -666,6 +743,7 @@ export function ChatPage({
             </label>
             <textarea
               id="chat-composer"
+              ref={composerBox}
               className="agent-prompt"
               rows={2}
               value={composer}
@@ -749,7 +827,12 @@ export function ChatPage({
                 key travels as a header and is not part of it.
               </p>
               {previewError === null ? (
-                <pre>{JSON.stringify(preview, null, 2)}</pre>
+                <>
+                  <pre>{JSON.stringify(preview, null, 2)}</pre>
+                  {preview === null ? null : (
+                    <CopyButton value={JSON.stringify(preview, null, 2)} label="Copy request" />
+                  )}
+                </>
               ) : (
                 <p className="agent-error">
                   Could not read the outbound request: {previewError}

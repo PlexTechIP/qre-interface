@@ -117,6 +117,44 @@ async function openConversation(title: string): Promise<void> {
   await userEvent.click(await within(table).findByRole("button", { name: title }));
 }
 
+/**
+ * Two stored conversations, one of them carrying a proposal.
+ *
+ * Module scope rather than inside one `describe`: the conversation tests and
+ * the audit regressions below both need exactly this fixture, and a second copy
+ * is a second thing to keep in step.
+ */
+async function seedTwo(): Promise<ChatStore> {
+  const store = new InMemoryChatStore();
+  await store.create({ id: "c1", title: "Grover baseline", createdAt: "2026-08-10T09:00:00.000Z" });
+  await store.append("c1", {
+    id: "m1",
+    role: "user",
+    text: "Estimate Grover search",
+    draft: null,
+    model: null,
+    createdAt: "2026-08-10T09:01:00.000Z",
+  });
+  await store.append("c1", {
+    id: "m1b",
+    role: "assistant",
+    text: "Here is a starting point.",
+    draft: FAKE_GENERATED_DRAFT,
+    model: "Anthropic/claude-sonnet-5",
+    createdAt: "2026-08-10T09:02:00.000Z",
+  });
+  await store.create({ id: "c2", title: "Shor factoring", createdAt: "2026-08-10T10:00:00.000Z" });
+  await store.append("c2", {
+    id: "m2",
+    role: "user",
+    text: "Estimate Shor for 2048 bits",
+    draft: null,
+    model: null,
+    createdAt: "2026-08-10T10:01:00.000Z",
+  });
+  return store;
+}
+
 async function sendMessage(text: string): Promise<void> {
   await userEvent.type(composer(), text);
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -508,37 +546,6 @@ describe("ChatPage — the outbound request", () => {
 });
 
 describe("ChatPage — conversations", () => {
-  async function seedTwo(): Promise<ChatStore> {
-    const store = new InMemoryChatStore();
-    await store.create({ id: "c1", title: "Grover baseline", createdAt: "2026-08-10T09:00:00.000Z" });
-    await store.append("c1", {
-      id: "m1",
-      role: "user",
-      text: "Estimate Grover search",
-      draft: null,
-      model: null,
-      createdAt: "2026-08-10T09:01:00.000Z",
-    });
-    await store.append("c1", {
-      id: "m1b",
-      role: "assistant",
-      text: "Here is a starting point.",
-      draft: FAKE_GENERATED_DRAFT,
-      model: "Anthropic/claude-sonnet-5",
-      createdAt: "2026-08-10T09:02:00.000Z",
-    });
-    await store.create({ id: "c2", title: "Shor factoring", createdAt: "2026-08-10T10:00:00.000Z" });
-    await store.append("c2", {
-      id: "m2",
-      role: "user",
-      text: "Estimate Shor for 2048 bits",
-      draft: null,
-      model: null,
-      createdAt: "2026-08-10T10:01:00.000Z",
-    });
-    return store;
-  }
-
   /** An `<ol>` may contain only `<li>`; a sentinel div also drew a 28px gap. */
   it("builds the transcript from list items only", async () => {
     renderChat({ store: await seedTwo() });
@@ -574,10 +581,14 @@ describe("ChatPage — conversations", () => {
     const table = await showList();
 
     const grover = within(table).getByRole("row", { name: /Grover baseline/ });
-    expect(within(grover).getByText("Here is a starting point.")).toBeVisible();
+    expect(within(grover).getByRole("button", { name: "Grover baseline" })).toBeVisible();
     // 2 messages, 1 of which carried a proposal.
     expect(within(grover).getByRole("cell", { name: "2" })).toBeVisible();
     expect(within(grover).getByRole("cell", { name: "1" })).toBeVisible();
+    // No Last message column: 30 characters of the most recent turn told the
+    // analyst less than the name does, and it was the column that squeezed the
+    // row controls off the end of a narrow window.
+    expect(within(grover).queryByText("Here is a starting point.")).toBeNull();
   });
 
   /** The title IS the opener; there is no second button doing the same job. */
@@ -652,41 +663,6 @@ describe("ChatPage — conversations", () => {
     expect(screen.queryByRole("button", { name: /All conversations · 1$/ })).toBeNull();
   });
 
-  /**
-   * `??` kept an empty snippet, and FTS5 returns "" when the best-ranked hit is
-   * a zero-length body — a blank cell in the column that exists to tell
-   * conversations apart.
-   */
-  it("falls back to the last message when a search snippet is empty", async () => {
-    const store = await seedTwo();
-    vi.spyOn(store, "search").mockImplementation(async () => [
-      {
-        id: "c1",
-        title: "Grover baseline",
-        createdAt: "2026-08-10T09:00:00.000Z",
-        updatedAt: "2026-08-10T09:02:00.000Z",
-        messageCount: 2,
-        lastMessage: "Here is a starting point.",
-        proposalCount: 1,
-        snippet: "   ",
-      },
-    ]);
-    renderChat({ store });
-    const table = await showList();
-
-    await userEvent.type(
-      screen.getByRole("searchbox", { name: "Search conversations" }),
-      "grover",
-    );
-
-    // Wait for the MOCKED result set to land — asserting before the debounced
-    // search fires would measure the unfiltered list, whose snippet is absent
-    // and which therefore passes whatever the fallback does.
-    await waitFor(() => expect(within(table).queryByText("Shor factoring")).toBeNull());
-    const row = within(table).getByRole("row", { name: /Grover baseline/ });
-    expect(within(row).getByText("Here is a starting point.")).toBeVisible();
-  });
-
   it("titles a new conversation from its opening message", async () => {
     renderChat();
 
@@ -736,7 +712,7 @@ describe("ChatPage — conversations", () => {
     expect(search).toHaveBeenCalledWith("factoring");
   });
 
-  /** A live destructive control beside the words "no conversation matches". */
+  /** A live destructive control beside the words "no conversations match". */
   it("does not offer Delete all history over a search that matches nothing", async () => {
     renderChat({ store: await seedTwo() });
     const table = await showList();
@@ -747,7 +723,7 @@ describe("ChatPage — conversations", () => {
       "zzzz",
     );
 
-    expect(await within(table).findByText(/No conversation matches/)).toBeVisible();
+    expect(await within(table).findByText(/No conversations match/)).toBeVisible();
     expect(within(table).getByRole("button", { name: "Delete all history" })).toBeDisabled();
   });
 
@@ -943,5 +919,180 @@ describe("ChatPage — conversations", () => {
 
     expect(screen.getByRole("textbox", { name: "Your message" })).toBeVisible();
     expect(screen.queryByRole("region", { name: "Conversations" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The defects a UI audit of this surface turned up, each pinned so it stays
+ * fixed. Layout findings are absent on purpose: jsdom computes no geometry, so
+ * an assertion about where the composer sits relative to the transcript would
+ * pass whatever the stylesheet said. Those were verified in the running app.
+ */
+describe("ChatPage — audit regressions", () => {
+  /** A thread where the analyst turned the first proposal down. */
+  async function seedTwoProposals(): Promise<ChatStore> {
+    const store = new InMemoryChatStore();
+    await store.create({
+      id: "c1",
+      title: "Two proposals",
+      createdAt: "2026-08-10T09:00:00.000Z",
+    });
+    const turns = [
+      { id: "u1", role: "user" as const, text: "Estimate something", model: null, draft: null },
+      {
+        id: "a1",
+        role: "assistant" as const,
+        text: "Here is a starting point.",
+        model: "anthropic/claude-sonnet-5",
+        draft: FAKE_GENERATED_DRAFT,
+      },
+      { id: "u2", role: "user" as const, text: "Not that one", model: null, draft: null },
+      {
+        id: "a2",
+        role: "assistant" as const,
+        text: "Swapped.",
+        model: "anthropic/claude-sonnet-5",
+        draft: FAKE_GENERATED_DRAFT,
+      },
+    ];
+    for (const [index, turn] of turns.entries()) {
+      await store.append("c1", {
+        ...turn,
+        createdAt: `2026-08-10T09:0${index + 1}:00.000Z`,
+      });
+    }
+    return store;
+  }
+
+  /*
+   * The one that could cost real work: both cards carried a live "Use this
+   * configuration", so the proposal the analyst had explicitly rejected sat
+   * there one click from the form, indistinguishable from the one they asked
+   * for.
+   */
+  it("offers exactly one proposal as the conversation's live answer", async () => {
+    renderChat({ store: await seedTwoProposals() });
+    await openConversation("Two proposals");
+    const turns = within(transcript());
+
+    expect(await turns.findByRole("button", { name: "Use this earlier proposal" })).toBeVisible();
+    expect(turns.getAllByRole("button", { name: "Use this configuration" })).toHaveLength(1);
+    expect(turns.getByText(/Replaced by a later proposal/)).toBeVisible();
+  });
+
+  /** Superseded is not disabled — going back for the one you refused is real. */
+  it("still hands off an earlier proposal when it is asked for", async () => {
+    const onReviewDraft = vi.fn();
+    renderChat({ store: await seedTwoProposals(), onReviewDraft });
+    await openConversation("Two proposals");
+
+    await userEvent.click(
+      await within(transcript()).findByRole("button", { name: "Use this earlier proposal" }),
+    );
+
+    expect(onReviewDraft).toHaveBeenCalledTimes(1);
+  });
+
+  /** Worth reading once. Under every card it is furniture. */
+  it("explains the handoff once, not under every proposal", async () => {
+    renderChat({ store: await seedTwoProposals() });
+    await openConversation("Two proposals");
+    await within(transcript()).findByRole("button", { name: "Use this configuration" });
+
+    expect(within(transcript()).getAllByText(/Nothing runs until you say so/)).toHaveLength(1);
+  });
+
+  it("copies a proposal's JSON rather than making it a drag-select", async () => {
+    // Typed with its argument, so the assertion below can read it back.
+    const writeText = vi.fn((_text: string) => Promise.resolve());
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    try {
+      renderChat({ store: await seedTwoProposals() });
+      await openConversation("Two proposals");
+      const turns = within(transcript());
+      await userEvent.click((await turns.findAllByText("Show the proposal as JSON"))[0]!);
+
+      await userEvent.click(turns.getAllByRole("button", { name: "Copy JSON" })[0]!);
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(writeText.mock.calls[0]?.[0]))).toEqual(FAKE_GENERATED_DRAFT);
+    } finally {
+      if (original === undefined) Reflect.deleteProperty(navigator, "clipboard");
+      else Object.defineProperty(navigator, "clipboard", original);
+    }
+  });
+
+  /*
+   * It did nothing at all here, sitting under a heading reading the same three
+   * words — the loudest control on the page wired to a no-op.
+   */
+  it("drops New conversation on a conversation that is already new", async () => {
+    renderChat();
+
+    expect(screen.getByRole("heading", { name: "New conversation" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "New conversation" })).toBeNull();
+  });
+
+  /*
+   * The header sticks and opening a conversation scrolls the switcher off the
+   * top, so without this the only way back to the list was scrolling up through
+   * the whole transcript.
+   */
+  it("gets back to the list from the conversation header", async () => {
+    renderChat({ store: await seedTwo() });
+    await openConversation("Grover baseline");
+
+    await userEvent.click(screen.getByRole("button", { name: "← All conversations" }));
+
+    expect(screen.getByRole("region", { name: "Conversations" })).toBeVisible();
+  });
+
+  it("drops a starter into the composer and leaves the caret there", async () => {
+    renderChat();
+
+    await userEvent.click(screen.getByRole("button", { name: /Estimate Shor's factoring/ }));
+
+    expect(composer()).toHaveValue(
+      "Estimate Shor's factoring for RSA-2048 on a superconducting architecture",
+    );
+    expect(composer()).toHaveFocus();
+  });
+
+  /** Escape is the universal cancel for an inline editor. */
+  it("cancels a rename on Escape and leaves the stored name alone", async () => {
+    const store = await seedTwo();
+    renderChat({ store });
+    await openConversation("Grover baseline");
+
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const field = screen.getByRole("textbox", { name: "Conversation name" });
+    await userEvent.clear(field);
+    await userEvent.type(field, "Something else");
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("textbox", { name: "Conversation name" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Grover baseline" })).toBeVisible();
+    expect((await store.get("c1"))?.title).toBe("Grover baseline");
+  });
+
+  /*
+   * "All" is read against whatever the list is showing, and this button sits
+   * beside the search box that narrowed it.
+   */
+  it("says the delete-all reaches conversations the search is hiding", async () => {
+    renderChat({ store: await seedTwo() });
+    const table = await showList();
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search conversations" }),
+      "Grover",
+    );
+    await waitFor(() => expect(within(table).queryByText("Shor factoring")).toBeNull());
+
+    await userEvent.click(within(table).getByRole("button", { name: "Delete all history" }));
+
+    expect(
+      within(table).getByText(/including the ones your search is currently hiding/),
+    ).toBeVisible();
   });
 });

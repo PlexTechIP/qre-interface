@@ -1575,6 +1575,13 @@ select {
   overflow: hidden;
   border: 1px solid var(--color-input-border);
   border-radius: 9px;
+  /*
+   * A track, so the ACTIVE half is the one that stands out. With no background
+   * here the inactive tab showed the page's own white, and a raised white
+   * segment beside a tinted one reads — on this platform especially — as the
+   * white one being selected. The control was fighting itself.
+   */
+  background: var(--color-well-bg);
 }
 
 .chat-views__tab {
@@ -1639,9 +1646,18 @@ select {
 
 .conversation-list__empty {
   margin: 0;
-  padding: 24px 0;
+  /*
+   * The card the table would have occupied. Dropping to bare text on the page
+   * background made a search miss look like the panel had failed to render.
+   */
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  padding: 30px 18px;
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px var(--color-shadow);
   color: var(--color-muted);
   font-size: 13px;
+  text-align: center;
 }
 
 .conversation-list__confirm {
@@ -1719,7 +1735,8 @@ select {
 
 .conversation-table__title {
   display: block;
-  max-width: 240px;
+  /* The cell caps the width now, so the title uses whatever the row has. */
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1744,14 +1761,14 @@ select {
  * table cell that absorbs all remaining space AND still ellipsises: without
  * the zero max-width the cell sizes to its content and pushes every other
  * column — including the buttons — off the end of the table.
+ *
+ * This was the Last message column and is now the name, which is the better
+ * home for it: a title given room to run to ~500px says more about which
+ * conversation this is than 30 characters of its most recent turn did.
  */
-.conversation-table__preview {
+.conversation-table__name {
   width: 100%;
   max-width: 0;
-  overflow: hidden;
-  color: var(--color-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .conversation-table__number {
@@ -1762,18 +1779,6 @@ select {
 .conversation-table__when {
   color: var(--color-muted);
   white-space: nowrap;
-}
-
-.conversation-table__actions {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.chat-thread__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
 }
 
 /*
@@ -1787,6 +1792,7 @@ select {
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .conversation-table__actions .conversation-actions {
@@ -1870,7 +1876,14 @@ select {
   top: 0;
   z-index: 2;
   margin: 0 -18px;
-  border-bottom: 1px solid var(--color-border-soft);
+  /*
+   * Stuck, this header has a live conversation sliding underneath it. A
+   * hairline in the softest token let text arrive at the boundary and simply
+   * stop, which reads as clipped rendering; the shadow says "this is passing
+   * behind" instead.
+   */
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: 0 6px 12px -10px var(--color-shadow);
   padding: 14px 18px;
   background: var(--color-surface);
   border-radius: 12px 12px 0 0;
@@ -1897,8 +1910,26 @@ select {
   font-size: 12px;
 }
 
-.chat-thread__spacer {
-  flex: 1 1 auto;
+/* A breadcrumb, not another button competing with the controls opposite it. */
+.chat-thread__back {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-thread__back:hover {
+  text-decoration: underline;
+}
+
+.chat-thread__back:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 /*
@@ -1924,11 +1955,20 @@ select {
   display: grid;
   flex: 1 1 auto;
   align-content: center;
-  margin: 0;
+  /* `margin-block`, for the reason `.chat-transcript` carries at length: the
+     shorthand resets the shared `margin-inline: auto` and pins this text to
+     the card's left padding while the composer under it stays centred. */
+  margin-block: 0;
   padding: 32px 0;
   color: var(--color-muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+/* The empty state carries starters under its sentence now, so it is a block
+   rather than the single paragraph it used to be. */
+.chat-thread__empty p {
+  margin: 0;
 }
 
 /*
@@ -1946,10 +1986,17 @@ select {
   flex-direction: column;
   /* Turns breathe. 14px made a six-turn conversation read as one grey block. */
   gap: 28px;
-  /* `margin: 0` is load-bearing: an `<ol>` carries a 1em UA block margin, so
-     without it the 26px below silently rendered as 42px and the next person
-     tuning this number would not get what they typed. */
-  margin: 0;
+  /*
+   * `margin-block`, NOT the `margin` shorthand.
+   *
+   * An `<ol>` carries a 1em UA block margin which has to go — but the
+   * shorthand also reset the `margin-inline: auto` this element inherits from
+   * the reading-column rule above. So the transcript sat flush against the
+   * card's left padding while the composer, which kept its auto margins,
+   * stayed centred: the same 820px measure, 163px apart, on every window with
+   * slack to distribute. `margin-block` drops the UA margin and nothing else.
+   */
+  margin-block: 0;
   padding: 26px 0;
   list-style: none;
 }
@@ -1964,20 +2011,45 @@ select {
  * and ChatGPT set model output — a bordered box at 82% width made every reply
  * look like a quoted aside rather than the substance of the page.
  *
+ * There is no `.chat-turn--assistant` rule because there is nothing to say: a
+ * flex item already fills the cross axis. The `justify-self: stretch` that
+ * used to live here was inert, for the reason spelled out below.
+ *
  * Side and treatment together, never colour alone: each turn also carries its
  * role as an accessible name, so nothing here is the only thing saying who
  * spoke.
  */
-.chat-turn--assistant {
-  justify-self: stretch;
-}
-
 .chat-turn--user {
-  justify-self: end;
+  /*
+   * `align-self`, not `justify-self`.
+   *
+   * `.chat-transcript` is a COLUMN flex container, so the cross axis is the
+   * horizontal one and `justify-self` is ignored outright — it is a grid
+   * property. The bubble that was meant to sit right, like every chat app this
+   * was modelled on, therefore stretched to its 88% cap and sat LEFT. That is
+   * also why the two speakers never shared a left margin: the user's words
+   * were left-aligned prose indented by the bubble's own padding, against the
+   * assistant's sitting flush on the column edge.
+   */
+  align-self: flex-end;
+  /* Hug the message instead of always drawing an 88%-wide slab. */
+  width: fit-content;
   max-width: 88%;
   border-radius: 14px;
   padding: 12px 16px;
   background: var(--color-accent-bg);
+}
+
+/*
+ * An exchange reads as one thing.
+ *
+ * A uniform 28px between every turn made the transcript an undifferentiated
+ * stack — a reply sat exactly as far from the question that prompted it as
+ * from the next, unrelated question. Halving the gap inside a pair is what
+ * makes the pairing visible without adding a rule, a box or a colour.
+ */
+.chat-turn--user + .chat-turn--assistant {
+  margin-top: -14px;
 }
 
 .chat-turn--user .chat-turn__who {
@@ -1992,10 +2064,14 @@ select {
 .chat-turn__who {
   margin: 0;
   color: var(--color-label);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  /*
+   * Not uppercased. On the assistant's side this line is the model id, so the
+   * rule rendered "ANTHROPIC/CLAUDE-SONNET-5" over every single reply — louder
+   * than the prose it labels, and set in a case the id does not actually have
+   * anywhere else in the app.
+   */
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .chat-turn__text {
@@ -2135,6 +2211,178 @@ select {
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+/*
+ * Every header control, as ONE group.
+ *
+ * Rename/Export/Delete and "New conversation" were siblings under the header's
+ * own `flex-wrap`, so a title long enough to need the room pushed only the
+ * LAST of them onto a second row — "New conversation" landing at the far left,
+ * under the title, opposite the three buttons it belongs with. Wrapping the
+ * group instead of the buttons keeps them together and keeps them right.
+ */
+.chat-thread__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/*
+ * Renaming replaces the buttons, so it inherits their room. At the shared
+ * `1 1 160px` the field came out ~150px wide and scrolled the beginning of the
+ * name out of sight while you were editing it.
+ */
+.chat-thread__controls .conversation-actions--renaming {
+  flex: 1 1 340px;
+}
+
+.chat-thread__controls .conversation-actions__input {
+  flex: 1 1 260px;
+}
+
+/*
+ * One name on screen at a time. The static title stayed beside the field it
+ * was being edited in, so the header showed the conversation's name twice and
+ * the wrong one looked authoritative.
+ */
+.chat-thread__header:has(.conversation-actions--renaming) .chat-thread__title {
+  display: none;
+}
+
+/*
+ * A toolbar button is sized by its label.
+ *
+ * `.agent-primary` carries `min-width: 170px` for the run form, where one
+ * decisive control anchors the page. Inherited into a row of siblings it made
+ * "New conversation" 2.4x the width of "Delete" next to it — the size reading
+ * as importance for the one action in the row that changes nothing.
+ */
+.chat-thread__controls .agent-primary,
+.chat-draft .agent-primary {
+  min-width: 0;
+}
+
+/*
+ * The two toolbar controls are PEERS, so they are sized alike.
+ *
+ * These are the only two things you can do to the collection as a whole. Left
+ * to the run form's `min-width: 170px` on one and its own label on the other,
+ * the primary came out visibly larger than the destructive control beside it —
+ * size reading as importance, between two buttons that are neither of them
+ * more important than the table underneath. One width for the pair, taken from
+ * the longer label so neither truncates.
+ */
+.conversation-list__toolbar .agent-primary,
+.conversation-list__toolbar .agent-secondary {
+  min-width: 168px;
+}
+
+/*
+ * The proposal's apply button is the primary action of its card, not a slab
+ * across it. `.chat-draft` is a GRID, where the `align-self` that
+ * `.agent-primary` sets governs the block axis and leaves the button stretched
+ * across the inline one — 720px of button under two lines of detail.
+ */
+.chat-draft .run-button,
+.chat-draft .agent-secondary {
+  justify-self: start;
+}
+
+/*
+ * A proposal that a later one replaced.
+ *
+ * Every card in a thread rendered identically, each with its own live "Use
+ * this configuration" — so in a conversation where the analyst had said "not
+ * that one", the rejected proposal sat there still, one click from the form
+ * and indistinguishable from the one they actually asked for.
+ */
+.chat-draft--superseded {
+  border-style: dashed;
+  background: var(--color-well-bg);
+}
+
+.chat-draft--superseded .chat-draft__heading,
+.chat-draft--superseded .chat-draft__fields dd {
+  color: var(--color-muted);
+}
+
+.chat-draft__superseded {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.chat-copy {
+  justify-self: start;
+  margin-top: 8px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-copy:focus-visible,
+.chat-thread__starter:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/*
+ * Somewhere to start. An empty conversation offered one placeholder inside the
+ * box and nothing else — fine if you already know what this page accepts, and
+ * a blank wall if you do not.
+ */
+.chat-thread__starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.chat-thread__starter {
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-thread__starter:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+/*
+ * What gives way as the window narrows.
+ *
+ * The table scrolls horizontally rather than squashing and the controls are
+ * the LAST column, so a row that outgrows the card puts Rename, Export and
+ * Delete off the right edge behind a scrollbar nobody has reason to go looking
+ * for. The counts are the cheapest thing on the row to lose, so they go first.
+ *
+ * 940px, from the budget rather than a guess: the fixed columns are the counts
+ * (~180px), Updated (~110px) and the controls (~215px), plus ~130px of cell
+ * padding — 635px that cannot shrink, against a card holding roughly
+ * `viewport - 300`. Dropping the preview column bought back the headroom that
+ * used to force this at 1360px.
+ */
+@media (max-width: 940px) {
+  .conversation-table__number {
+    display: none;
+  }
 }
 
 /* --- Section cards --------------------------------------------------*/
