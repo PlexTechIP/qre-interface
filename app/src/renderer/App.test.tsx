@@ -1,9 +1,15 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentService } from "../shared/agentTypes";
+import {
+  PROVIDER_IDS,
+  type AgentProviderStatus,
+  type AgentService,
+  type ProviderId,
+} from "../shared/agentTypes";
 import { InMemoryChatStore } from "../shared/chatStore";
+import { PROVIDER_MODELS } from "../shared/providerModels";
 import { InMemoryRunStore } from "../shared/runStore";
 import {
   SAMPLE_RUN_RECORDS,

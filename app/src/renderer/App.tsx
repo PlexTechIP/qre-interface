@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/agentTypes";
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
@@ -12,12 +12,20 @@ import type { RerunRequest } from "./history/rerun";
 import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
 import { RunConfiguration } from "./RunConfiguration";
-import { ThemeToggle, type Theme } from "./ThemeToggle";
+import { SettingsPage } from "./settings/SettingsPage";
+import {
+  DARK_QUERY,
+  readStoredPreference,
+  resolveTheme,
+  systemPrefersDark,
+  type ThemePreference,
+} from "./theme";
+import { ThemeToggle } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
 const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
 
-type Page = "config" | "agent" | "results" | "history" | "comparison";
+type Page = "config" | "agent" | "results" | "history" | "comparison" | "settings";
 
 const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
   available: false,
@@ -81,6 +89,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { page: "history", label: "Run History", icon: <ClockIcon /> },
   { page: "comparison", label: "Comparison", icon: <BarsIcon /> },
   { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
+  { page: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 
 /**
@@ -180,6 +189,60 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
       current = false;
     };
   }, [resolvedAgentService, agentStatusToken]);
+
+  /**
+   * Providers whose key was stored during THIS session.
+   *
+   * `agentStatus` refreshes over IPC, so between storing a key and the new
+   * status arriving it still reports that provider as unconfigured. Deciding
+   * the switch below from that snapshot alone meant saving two keys in
+   * succession read the second decision against a status that predated the
+   * first — so the second save switched away from the provider the first had
+   * just made active, which is precisely what the rule below forbids.
+   *
+   * A ref rather than state: nothing renders from it, and it must be readable
+   * by the callback that just wrote to it.
+   */
+  const configuredSinceMount = useRef<Set<ProviderId>>(new Set());
+
+  /**
+   * A key was stored for `provider`.
+   *
+   * Beyond re-reading status, this decides whether the app should start USING
+   * that provider. It should exactly when the active one cannot be used: the
+   * default selection is Anthropic, so an analyst whose only key is OpenAI
+   * would otherwise add it, return to Describe a Run, and be told again that
+   * no key is configured — with the fix sitting in a dropdown they have no
+   * reason to suspect.
+   */
+  const handleCredentialConfigured = useCallback(
+    (provider: ProviderId): void => {
+      configuredSinceMount.current.add(provider);
+      refreshAgentStatus();
+      const active = agentSelection.provider;
+      // The session's own record first, because `agentStatus` may still
+      // predate a key stored moments ago.
+      const activeIsConfigured =
+        configuredSinceMount.current.has(active) ||
+        agentStatus.providers.some(
+          (candidate) => candidate.provider === active && candidate.configured,
+        );
+      // Adding a second key is not a request to switch away from a working one.
+      if (!activeIsConfigured && active !== provider) {
+        setAgentSelection({ provider, model: PROVIDER_MODELS[provider].defaultModel });
+      }
+    },
+    [agentStatus, agentSelection.provider, refreshAgentStatus],
+  );
+
+  /** A key was deleted, so this session's record of it has to go too. */
+  const handleCredentialCleared = useCallback(
+    (provider: ProviderId): void => {
+      configuredSinceMount.current.delete(provider);
+      refreshAgentStatus();
+    },
+    [refreshAgentStatus],
+  );
 
   const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
     setDraftHandoff(null);
@@ -302,7 +365,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               view={chatView}
               onViewChange={setChatView}
               onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
-              onCredentialChange={refreshAgentStatus}
+              onOpenSettings={() => setActivePage("settings")}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);
                 setDraftHandoff(handoff);
@@ -412,6 +475,15 @@ function BarsIcon(): React.JSX.Element {
   return (
     <Icon>
       <path d="M6 20v-6M12 20V6M18 20v-9" />
+    </Icon>
+  );
+}
+
+function GearIcon(): React.JSX.Element {
+  return (
+    <Icon>
+      <circle cx="12" cy="12" r="3.1" />
+      <path d="M12 2.8v2.4M12 18.8v2.4M4.5 4.5l1.7 1.7M17.8 17.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.5 19.5l1.7-1.7M17.8 6.2l1.7-1.7" />
     </Icon>
   );
 }

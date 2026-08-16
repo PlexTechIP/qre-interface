@@ -43,6 +43,8 @@ interface HarnessOptions {
   onReviewDraft?: (handoff: DraftHandoff) => void;
   /** Which view to land on. The shell owns this, so the harness does too. */
   view?: ChatView;
+  onOpenSettings?: () => void;
+  onSelectionChange?: (provider: ProviderId, model: string) => void;
 }
 
 /**
@@ -54,6 +56,9 @@ function renderChat(options: HarnessOptions = {}) {
   const store = options.store ?? new InMemoryChatStore();
   const service = options.service ?? fakeAgentService();
   const onReviewDraft = options.onReviewDraft ?? vi.fn();
+  const onOpenSettings = options.onOpenSettings ?? vi.fn();
+  const onSelectionChange = options.onSelectionChange ?? vi.fn();
+  const provider = options.provider ?? "anthropic";
 
   function Harness(): React.JSX.Element {
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -66,21 +71,21 @@ function renderChat(options: HarnessOptions = {}) {
         service={service}
         store={store}
         status={options.status ?? statusWith(["anthropic", "openai"])}
-        provider={options.provider ?? "anthropic"}
-        model={PROVIDER_MODELS.anthropic.defaultModel}
+        provider={provider}
+        model={PROVIDER_MODELS[provider].defaultModel}
         activeConversationId={activeConversationId}
         onActiveConversationChange={setActiveConversationId}
         composer={composer}
         onComposerChange={setComposer}
-        onSelectionChange={vi.fn()}
-        onCredentialChange={vi.fn()}
+        onSelectionChange={onSelectionChange}
+        onOpenSettings={onOpenSettings}
         onReviewDraft={onReviewDraft}
       />
     );
   }
 
   render(<Harness />);
-  return { store, service, onReviewDraft };
+  return { store, service, onReviewDraft, onOpenSettings, onSelectionChange };
 }
 
 /*
@@ -551,6 +556,53 @@ describe("ChatPage — the outbound request", () => {
 
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(screen.getByText(/No key is configured for Anthropic/)).toBeVisible();
+  });
+
+  /**
+   * Key entry moved to Settings, so the sentence that used to say "add one
+   * under Model provider above" now points at a page this one cannot show.
+   * A dead-end instruction is worse than none: the control it names is gone.
+   */
+  it("offers a way to reach Settings when the selected provider holds no key", async () => {
+    const { onOpenSettings } = renderChat({
+      status: statusWith(["openai"]),
+      provider: "anthropic",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("offers the same route when no provider is configured at all", async () => {
+    const { onOpenSettings } = renderChat({ status: statusWith([]) });
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  /** Nothing on this page may accept a key any more — Settings owns that. */
+  it("no longer carries a credential panel", () => {
+    renderChat({ status: statusWith([]) });
+
+    expect(screen.queryByText("Model provider")).toBeNull();
+    expect(screen.queryByLabelText(/API key/i)).toBeNull();
+  });
+
+  /**
+   * The switcher stays, because which model answers is a per-conversation
+   * decision and the network badge beside it names the pair being used.
+   */
+  it("switches provider and model without leaving the page", async () => {
+    const { onSelectionChange } = renderChat();
+
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "openai");
+
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      "openai",
+      PROVIDER_MODELS.openai.defaultModel,
+    );
   });
 });
 

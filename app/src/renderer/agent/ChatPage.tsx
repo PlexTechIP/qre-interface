@@ -24,7 +24,7 @@ import { ConversationActions } from "./ConversationActions";
 import { ConversationList } from "./ConversationList";
 import { ConversationExportDialog } from "./ConversationExportDialog";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
-import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
+import { ProviderModelSelect } from "../components/ProviderModelSelect";
 
 interface ChatPageProps {
   service: AgentService;
@@ -32,8 +32,15 @@ interface ChatPageProps {
   store: ChatStore;
   status: AgentProviderStatus;
   onReviewDraft: (handoff: DraftHandoff) => void;
-  /** Re-read provider status once a key is stored or removed. */
-  onCredentialChange: () => void;
+  /**
+   * Take the analyst to Settings, where provider keys now live.
+   *
+   * This page used to carry the credential panel itself, so "you have no key"
+   * and "here is where you fix that" were the same piece of UI. Now that key
+   * entry has moved, an explanation without a route to the fix would be a
+   * dead end on the only page that surfaces the problem.
+   */
+  onOpenSettings: () => void;
   provider: ProviderId;
   model: string;
   onSelectionChange: (provider: ProviderId, model: string) => void;
@@ -151,7 +158,7 @@ export function ChatPage({
   store,
   status,
   onReviewDraft,
-  onCredentialChange,
+  onOpenSettings,
   provider,
   model,
   onSelectionChange,
@@ -565,14 +572,21 @@ export function ChatPage({
         </p>
       </header>
 
-      <ProviderCredentialPanel
-        service={service}
-        status={status}
-        provider={provider}
-        model={model}
-        onSelectionChange={onSelectionChange}
-        onCredentialChange={onCredentialChange}
-      />
+      {/*
+        Which model answers is a per-conversation decision — an analyst
+        comparing two providers' readings of the same prompt switches here
+        mid-thread — so the switcher stays even though key entry left. It is
+        the same component Settings renders, so "provider resets the model"
+        cannot be true on one surface and not the other.
+      */}
+      <div className="chat-model-bar">
+        <ProviderModelSelect
+          providers={status.providers}
+          provider={provider}
+          model={model}
+          onChange={onSelectionChange}
+        />
+      </div>
 
       {/*
         Two views of one store behind a segmented control — the same shape
@@ -851,14 +865,27 @@ export function ChatPage({
               </span>
             </div>
 
-            {!selectedIsConfigured && status.available ? (
-              <p className="agent-note">
-                No key is configured for {selected?.displayName ?? provider}, so there is
-                nothing to send this to. Add one under <strong>Model provider</strong> above, or
-                switch to a provider that has one.
-              </p>
+            {/*
+              One block, two readings of the same problem: this provider has no
+              key, or nothing does. Both end at Settings, so both carry the way
+              there rather than naming a control that is no longer on this page.
+            */}
+            {!selectedIsConfigured ? (
+              <div className="chat-needs-key">
+                {status.available ? (
+                  <p className="agent-note">
+                    No key is configured for {selected?.displayName ?? provider}, so there
+                    is nothing to send this to. Add one in Settings, or switch to a
+                    provider that has one.
+                  </p>
+                ) : (
+                  <p className="agent-error">{status.message}</p>
+                )}
+                <button type="button" className="agent-secondary" onClick={onOpenSettings}>
+                  Open Settings
+                </button>
+              </div>
             ) : null}
-            {!status.available ? <p className="agent-error">{status.message}</p> : null}
 
             {/*
               The exact outbound request, on demand rather than as a gate.
