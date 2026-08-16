@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatTurn } from "../shared/agentTypes.js";
 import { FAKE_GENERATED_DRAFT } from "../shared/testing/fakeAgentService.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
-import { OpenAiDraftGenerator } from "./openAiDraftGenerator.js";
+import { openAiDraftGenerator } from "./openAiDraftGenerator.js";
 
 const TURNS: readonly ChatTurn[] = [{ role: "user", content: "Grover search over 20 qubits" }];
 const API_KEY = "sk-openai-secret";
@@ -19,12 +19,12 @@ function completion(envelope: unknown): Response {
 
 const reply = (draft: unknown, text = "Here is a starting point."): unknown => ({ reply: text, draft });
 
-const generator = (fetchImpl: unknown): OpenAiDraftGenerator =>
-  new OpenAiDraftGenerator("gpt-5.6-terra", fetchImpl as typeof fetch);
+const generator = (fetchImpl: unknown) =>
+  openAiDraftGenerator("gpt-5.6-terra", fetchImpl as typeof fetch);
 
-describe("OpenAiDraftGenerator", () => {
+describe("openAiDraftGenerator", () => {
   it("builds strict JSON schema output without a credential", () => {
-    const body = new OpenAiDraftGenerator().buildRequestBody(TURNS);
+    const body = openAiDraftGenerator().buildRequestBody(TURNS);
     expect(body).toMatchObject({ model: "gpt-5.6-terra", response_format: { type: "json_schema", json_schema: { strict: true, name: "runconfig_chat" } } });
     expect(body.response_format.json_schema.schema).toMatchObject({ required: ["reply", "draft"] });
     expect(JSON.stringify(body)).not.toContain(API_KEY);
@@ -37,7 +37,7 @@ describe("OpenAiDraftGenerator", () => {
       { role: "assistant", content: '{"reply":"Here it is.","draft":null}' },
       { role: "user", content: "make the gate time 80" },
     ];
-    const { messages } = new OpenAiDraftGenerator().buildRequestBody(transcript);
+    const { messages } = openAiDraftGenerator().buildRequestBody(transcript);
 
     expect(messages[0]).toMatchObject({ role: "system" });
     expect(messages.slice(1)).toEqual(transcript);
@@ -80,7 +80,7 @@ describe("OpenAiDraftGenerator", () => {
    * a difference in output would no longer be a difference between models.
    */
   it("sends the same system prompt as the Anthropic adapter", () => {
-    const openAi = new OpenAiDraftGenerator().buildRequestBody(TURNS);
+    const openAi = openAiDraftGenerator().buildRequestBody(TURNS);
     const anthropic = new AnthropicDraftGenerator().buildRequestBody(TURNS);
     const system = openAi.messages.find((message) => message.role === "system");
 
@@ -94,7 +94,7 @@ describe("OpenAiDraftGenerator", () => {
    * incomparable in a way no test of the prompt alone would catch.
    */
   it("asks for the same envelope as the Anthropic adapter", () => {
-    const openAi = new OpenAiDraftGenerator().buildRequestBody(TURNS);
+    const openAi = openAiDraftGenerator().buildRequestBody(TURNS);
     const anthropic = new AnthropicDraftGenerator().buildRequestBody(TURNS);
 
     expect(openAi.response_format.json_schema.schema).toEqual(
