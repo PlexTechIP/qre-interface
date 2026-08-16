@@ -25,6 +25,13 @@
   --color-table-head-bg: #f8fafc;
   --color-well-bg: #f8fafc;
   --color-input-border: #cbd5e1;
+  /* The fill every text control in the app already uses via `.field__input`.
+     Defined as the surface token rather than a second copy of its hex, so the
+     agent composer, key field and selects cannot drift from the form controls
+     on Run Configuration. It was referenced by those three rules and defined by
+     neither theme, which made the declaration invalid at computed-value time
+     and left them transparent. */
+  --color-input-bg: var(--color-surface);
   --color-focus-ring: #67e8f9;
   --color-accent: #0891b2;
   --color-accent-bg: #e0f7fb;
@@ -32,6 +39,11 @@
   --color-danger-bg: #fef2f2;
   --color-danger-border: #fecaca;
   --color-danger-text: #dc2626;
+  /* Success prose, not the status dot. --color-status-online is 3.33:1 on the
+     card here — clears 1.4.11 for a non-text indicator and fails 1.4.3 for
+     text, so light gets its own darker green. Measured 5.02:1 on
+     --color-surface, 4.79:1 on --color-well-bg. */
+  --color-success-text: #15803d;
   --color-skeleton-a: #e2e8f0;
   --color-skeleton-b: #f1f5f9;
   --color-raw-number: #b06a00;
@@ -89,6 +101,7 @@
   --color-table-head-bg: #141d2e;
   --color-well-bg: #212e44;
   --color-input-border: #3a4a64;
+  --color-input-bg: var(--color-surface);
   --color-focus-ring: #22d3ee;
   --color-accent: #22d3ee;
   --color-accent-bg: #0d3a45;
@@ -96,6 +109,9 @@
   --color-danger-bg: #3a1b1b;
   --color-danger-border: #7f2626;
   --color-danger-text: #f87171;
+  /* Dark reuses the indicator green: on this surface it is already 8.09:1 as
+     text, so a second hex would be a duplicate with nothing to justify it. */
+  --color-success-text: var(--color-status-online);
   --color-skeleton-a: #212e44;
   --color-skeleton-b: #263349;
   --color-raw-number: #f2b84b;
@@ -1602,9 +1618,7 @@ select {
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
   padding: 8px 11px;
-  /* See `--color-input-bg` note on the composer: the token is referenced by
-     the agent inputs and defined by neither theme. */
-  background: var(--color-input-bg, var(--color-surface));
+  background: var(--color-input-bg);
   color: var(--color-text);
   font: inherit;
   font-size: 13px;
@@ -1798,7 +1812,7 @@ select {
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
   padding: 7px 10px;
-  background: var(--color-input-bg, var(--color-surface));
+  background: var(--color-input-bg);
   color: var(--color-text);
   font: inherit;
   font-size: 13px;

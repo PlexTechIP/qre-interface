@@ -37,18 +37,17 @@ const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
   message: "No model provider is configured. The rest of the app remains available offline.",
 };
 
-function getInitialTheme(): Theme {
-  const domTheme = document.documentElement.dataset.theme;
-  if (domTheme === "light" || domTheme === "dark") {
-    return domTheme;
-  }
-
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") {
-    return stored;
-  }
-
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+/**
+ * What was chosen, not what is painted.
+ *
+ * This deliberately does NOT read `document.documentElement.dataset.theme`
+ * the way it used to. That attribute is written by the boot script in
+ * index.html and is already RESOLVED, so reading it back could only tell us
+ * light or dark — "system" would round-trip to whichever it happened to
+ * resolve to at launch, and the option would silently un-set itself.
+ */
+function getInitialThemePreference(): ThemePreference {
+  return readStoredPreference(window.localStorage.getItem(THEME_STORAGE_KEY));
 }
 
 function getInitialAgentSelection(): { provider: ProviderId; model: string } {
@@ -117,7 +116,11 @@ export function resolveAgentService(injected?: AgentService): AgentService {
 
 export function App({ agentService }: { agentService?: AgentService } = {}) {
   const resolvedAgentService = resolveAgentService(agentService);
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    getInitialThemePreference,
+  );
+  const [systemDark, setSystemDark] = useState<boolean>(systemPrefersDark);
+  const theme = resolveTheme(themePreference, systemDark);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState<Page>("config");
   const [agentSelection, setAgentSelection] = useState(getInitialAgentSelection);
@@ -155,10 +158,34 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [chatComposer, setChatComposer] = useState("");
   const [chatView, setChatView] = useState<ChatView>("conversation");
 
+  /**
+   * Following the system is a subscription, not a reading.
+   *
+   * Consulting `prefers-color-scheme` once at mount would satisfy every
+   * first-paint check and still leave the app light at sunset until the
+   * analyst relaunched it — a "follow the system" option that follows it
+   * exactly once.
+   *
+   * Subscribed unconditionally rather than only while the preference is
+   * "system": if the OS changed while a theme was pinned, a subscription
+   * gated on the preference would hold a stale value and switching back to
+   * System would paint the wrong theme until the OS changed again.
+   */
   useEffect(() => {
+    const query = window.matchMedia?.(DARK_QUERY);
+    if (query === undefined) return;
+    const onChange = (event: MediaQueryListEvent): void => setSystemDark(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    // The document is painted with the RESOLVED theme; what is stored is the
+    // PREFERENCE. Storing `theme` here would turn "system" into whichever it
+    // happened to resolve to on the first launch that wrote it.
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+    window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+  }, [theme, themePreference]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -313,7 +340,18 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             provider={agentSelection.provider}
             model={agentSelection.model}
           />
-          <ThemeToggle theme={theme} onToggle={() => setTheme((current) => (current === "dark" ? "light" : "dark"))} />
+          {/*
+            A quick binary override. It pins the opposite of what is CURRENTLY
+            PAINTED, which is the only thing it can offer while following the
+            system — "system" is not a theme you can toggle to. Getting back to
+            following it is a deliberate trip to Settings, and the button's
+            tooltip says as much before it is pressed.
+          */}
+          <ThemeToggle
+            theme={theme}
+            preference={themePreference}
+            onToggle={() => setThemePreference(theme === "dark" ? "light" : "dark")}
+          />
         </div>
       </header>
 
@@ -387,6 +425,28 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               }}
               store={window.store}
               onRerunRequest={handleRerunRequest}
+            />
+          ) : null}
+          {activePage === "settings" ? (
+            <SettingsPage
+              service={resolvedAgentService}
+              status={agentStatus}
+              chats={window.chats}
+              appInfo={window.appInfo}
+              provider={agentSelection.provider}
+              model={agentSelection.model}
+              onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
+              onCredentialConfigured={handleCredentialConfigured}
+              onCredentialCleared={handleCredentialCleared}
+              /*
+                The open conversation was just deleted. Without this the id
+                survives and ChatPage's `send` appends to a row the store no
+                longer has, which it rejects — so the next message, and every
+                one after it, fails to save.
+              */
+              onConversationsCleared={() => setActiveConversationId(null)}
+              themePreference={themePreference}
+              onThemePreferenceChange={setThemePreference}
             />
           ) : null}
           {showHistorySurface ? (

@@ -17,9 +17,11 @@ import {
   buildRunRecord,
   buildSuccessResult,
   fakeAgentService,
+  fakeAppInfoService,
   fakeEstimator,
 } from "../shared/testing";
 import { App, resolveAgentService } from "./App";
+import { setSystemPrefersDark, systemThemeListenerCount } from "./test/matchMedia";
 
 /**
  * The preload seams the shell reads. `window.agent` and `window.chats` are
@@ -322,5 +324,351 @@ describe("agent service resolution", () => {
     delete (window as { agent?: AgentService }).agent;
 
     expect(() => resolveAgentService()).toThrow(/window\.agent/);
+  });
+});
+
+/**
+ * Settings — the page that key entry moved to.
+ *
+ * These assert the shell's half of that move: the route exists, the chat page
+ * can reach it, and configuring a provider there has the one shell-level
+ * consequence it should.
+ */
+describe("App shell — Settings", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    // `getInitialAgentSelection` reads localStorage, so a selection left behind
+    // by another test would decide which provider these start on.
+    window.localStorage.clear();
+  });
+
+  /** A service whose stored keys can change, so a refresh has something to see. */
+  function agentServiceWithKeys(configured: Set<ProviderId>): AgentService {
+    return {
+      ...fakeAgentService(),
+      async getStatus(): Promise<AgentProviderStatus> {
+        const providers = PROVIDER_IDS.map((provider) => ({
+          provider,
+          ...PROVIDER_MODELS[provider],
+          configured: configured.has(provider),
+        }));
+        return configured.size === 0
+          ? {
+              available: false,
+              networkEnabled: false,
+              providers,
+              mode: "unavailable",
+              message: "No model provider is configured.",
+            }
+          : { available: true, networkEnabled: true, providers, mode: "provider" };
+      },
+      async configureCredential(provider: ProviderId) {
+        configured.add(provider);
+        return { ok: true as const };
+      },
+    };
+  }
+
+  const badge = (): HTMLElement => screen.getByLabelText(/LLM provider status/);
+
+  it("puts Settings last in the sidebar", () => {
+    window.agent = fakeAgentService();
+    render(<App />);
+
+    const labels = screen.getAllByRole("button").map((button) => button.textContent);
+    expect(labels.indexOf("Settings")).toBeGreaterThan(labels.indexOf("Describe a Run"));
+  });
+
+  it("opens the Settings page from the sidebar", async () => {
+    window.agent = fakeAgentService();
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  });
+
+  it("reaches Settings from the chat page when nothing is configured", async () => {
+    window.agent = agentServiceWithKeys(new Set());
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Open Settings" }));
+
+    expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  });
+
+  /**
+   * Without this the first key an analyst adds appears to do nothing: the chat
+   * page keeps reporting "no key configured" because the ACTIVE provider is
+   * still the unconfigured default, and the only clue is a dropdown they have
+   * no reason to touch.
+   */
+  it("makes a newly configured provider active when the current one has no key", async () => {
+    window.agent = agentServiceWithKeys(new Set());
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const openai = screen.getByRole("region", { name: "OpenAI" });
+    await userEvent.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai-value");
+    await userEvent.click(within(openai).getByRole("button", { name: /validate and save/i }));
+
+    await waitFor(() =>
+      expect(badge()).toHaveAccessibleName(
+        `LLM provider status: Network on · OpenAI/${PROVIDER_MODELS.openai.defaultModel}`,
+      ),
+    );
+  });
+
+  it("leaves a working provider selected when a second key is added", async () => {
+    window.agent = agentServiceWithKeys(new Set<ProviderId>(["anthropic"]));
+    render(<App />);
+    await waitFor(() => expect(badge()).toHaveAccessibleName(/Anthropic/));
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const openai = screen.getByRole("region", { name: "OpenAI" });
+    await userEvent.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai-value");
+    await userEvent.click(within(openai).getByRole("button", { name: /validate and save/i }));
+
+    // Adding a key is not a request to switch away from the one already working.
+    await waitFor(() =>
+      expect(within(openai).getByText("Configured")).toBeVisible(),
+    );
+    expect(badge()).toHaveAccessibleName(/Anthropic/);
+  });
+
+  it("re-reads provider status after a key is removed", async () => {
+    const configured = new Set<ProviderId>(["anthropic"]);
+    window.agent = {
+      ...agentServiceWithKeys(configured),
+      async clearCredential(provider: ProviderId) {
+        configured.delete(provider);
+        return { ok: true as const };
+      },
+    };
+    render(<App />);
+    await waitFor(() => expect(badge()).toHaveAccessibleName(/Network on/));
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const anthropic = screen.getByRole("region", { name: "Anthropic" });
+    await userEvent.click(within(anthropic).getByRole("button", { name: "Remove key" }));
+    await userEvent.click(within(anthropic).getByRole("button", { name: "Remove Anthropic key" }));
+
+    // The header badge would otherwise keep claiming a key that is gone.
+    await waitFor(() => expect(badge()).toHaveAccessibleName(/Network off/));
+  });
+
+  it("shows where the databases live, via the preload bridge", async () => {
+    window.agent = fakeAgentService();
+    window.appInfo = fakeAppInfoService();
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(
+      await screen.findByText("/fixture/userData/run-history.sqlite"),
+    ).toBeVisible();
+  });
+
+  /**
+   * The end-to-end shape of the bug: the shell holds the open conversation,
+   * Settings deletes every conversation, and `send` then appends to an id the
+   * store no longer has — which it rejects, so the next message and every one
+   * after it fails to save.
+   */
+  it("can still send after deleting every conversation from Settings", async () => {
+    window.agent = fakeAgentService();
+    window.appInfo = fakeAppInfoService();
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Your message" }),
+      "Estimate Grover search",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("button", { name: "Use this configuration" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete all conversations" }));
+    await userEvent.click(screen.getByRole("button", { name: "Yes, delete everything" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Your message" }),
+      "Estimate Shor factoring",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Use this configuration" }),
+    ).toBeVisible();
+    expect(screen.queryByText(/could not be saved/i)).toBeNull();
+  });
+
+  /**
+   * The switch-on-first-key rule reads provider status, which refreshes
+   * asynchronously. Saving a second key before that refresh lands used to see
+   * a snapshot in which nothing was configured, and switch away from the
+   * provider the first key had just made active.
+   */
+  it("does not switch away from a provider whose key is still settling", async () => {
+    const configured = new Set<ProviderId>();
+    // Held on an object: a bare `let` assigned only inside the promise
+    // executor narrows to `never` at the call site below.
+    const pending: { settle: (() => void) | null } = { settle: null };
+    window.appInfo = fakeAppInfoService();
+    window.agent = {
+      ...fakeAgentService(),
+      // Never resolves until a test releases it, so the shell keeps the
+      // all-unconfigured status it starts with.
+      getStatus(): Promise<AgentProviderStatus> {
+        return new Promise((resolve) => {
+          pending.settle = () =>
+            resolve({
+              available: true,
+              networkEnabled: true,
+              mode: "provider",
+              providers: PROVIDER_IDS.map((provider) => ({
+                provider,
+                ...PROVIDER_MODELS[provider],
+                configured: configured.has(provider),
+              })),
+            });
+        });
+      },
+      async configureCredential(provider: ProviderId) {
+        configured.add(provider);
+        return { ok: true as const };
+      },
+    };
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const openai = screen.getByRole("region", { name: "OpenAI" });
+    await userEvent.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai");
+    await userEvent.click(within(openai).getByRole("button", { name: /validate and save/i }));
+    // Status has NOT refreshed yet — that is the whole point.
+    const anthropic = screen.getByRole("region", { name: "Anthropic" });
+    await userEvent.type(within(anthropic).getByLabelText("Anthropic API key"), "sk-ant");
+    await userEvent.click(within(anthropic).getByRole("button", { name: /validate and save/i }));
+
+    pending.settle?.();
+    await waitFor(() => expect(badge()).toHaveAccessibleName(/OpenAI/));
+  });
+
+  it("changes the theme from Settings", async () => {
+    window.agent = fakeAgentService();
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+});
+
+/**
+ * Following the system theme.
+ *
+ * The preference ("system") and the applied theme ("light"/"dark") are
+ * different values; these pin down the places that difference shows.
+ */
+describe("App shell — system theme", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.agent = fakeAgentService();
+    window.localStorage.clear();
+    delete document.documentElement.dataset["theme"];
+  });
+
+  it("follows the system on a first launch with nothing stored", () => {
+    setSystemPrefersDark(true);
+
+    render(<App />);
+
+    expect(document.documentElement.dataset["theme"]).toBe("dark");
+  });
+
+  /**
+   * The whole point of the option. Reading `prefers-color-scheme` once at
+   * mount would pass every other test here and still leave the app light at
+   * sunset until the analyst relaunched it.
+   */
+  it("repaints when the system flips while following it", async () => {
+    render(<App />);
+    expect(document.documentElement.dataset["theme"]).toBe("light");
+
+    await act(async () => {
+      setSystemPrefersDark(true);
+    });
+
+    expect(document.documentElement.dataset["theme"]).toBe("dark");
+  });
+
+  it("stores the preference rather than the theme it resolved to", async () => {
+    setSystemPrefersDark(true);
+    render(<App />);
+
+    await waitFor(() =>
+      expect(window.localStorage.getItem("qre-theme")).toBe("system"),
+    );
+  });
+
+  it("stops following once the header toggle pins a theme", async () => {
+    render(<App />);
+
+    // Prefix-matched: while following the system the button's accessible name
+    // continues into the warning that pressing it stops doing so.
+    await userEvent.click(screen.getByRole("button", { name: /^Switch to dark mode/ }));
+    await act(async () => {
+      setSystemPrefersDark(true);
+    });
+
+    // Pinned dark already; the interesting half is that going back to system
+    // light does not drag the app back to light.
+    expect(document.documentElement.dataset["theme"]).toBe("dark");
+    await act(async () => {
+      setSystemPrefersDark(false);
+    });
+    expect(document.documentElement.dataset["theme"]).toBe("dark");
+    expect(window.localStorage.getItem("qre-theme")).toBe("dark");
+  });
+
+  it("restores a pinned theme on the next launch", () => {
+    window.localStorage.setItem("qre-theme", "dark");
+    setSystemPrefersDark(false);
+
+    render(<App />);
+
+    expect(document.documentElement.dataset["theme"]).toBe("dark");
+  });
+
+  /** A subscription that outlives the window is a leak, and jsdom will not say so. */
+  it("unsubscribes from the system theme when it goes away", () => {
+    const { unmount } = render(<App />);
+    expect(systemThemeListenerCount()).toBeGreaterThan(0);
+
+    unmount();
+
+    expect(systemThemeListenerCount()).toBe(0);
+  });
+
+  it("offers System alongside Light and Dark in Settings", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset["theme"]).toBe("dark");
+
+    setSystemPrefersDark(false);
+    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+
+    expect(document.documentElement.dataset["theme"]).toBe("light");
+    expect(window.localStorage.getItem("qre-theme")).toBe("system");
   });
 });
