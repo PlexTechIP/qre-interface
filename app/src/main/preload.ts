@@ -6,6 +6,8 @@ import type {
   AgentService,
   CredentialClearResult,
   CredentialConfigureResult,
+  ProviderCatalogResult,
+  ProviderId,
 } from "../shared/agentTypes.js";
 import type {
   AppInfoService,
@@ -32,6 +34,7 @@ import type {
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
   AGENT_CANCEL_CHANNEL,
+  AGENT_CATALOG_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
   AGENT_REPLY_CHANNEL,
   AGENT_STATUS_CHANNEL,
@@ -115,6 +118,12 @@ const agent: AgentService = {
   },
   cancelReply(): Promise<void> {
     return ipcRenderer.invoke(AGENT_CANCEL_CHANNEL) as Promise<void>;
+  },
+  // Takes a provider id and returns models and a dollar balance. It reads the
+  // stored key in main to make the request, and — like every other method here
+  // — has no way to give it back.
+  refreshCatalog(provider: ProviderId): Promise<ProviderCatalogResult> {
+    return ipcRenderer.invoke(AGENT_CATALOG_CHANNEL, provider) as Promise<ProviderCatalogResult>;
   },
   configureCredential(
     provider: Parameters<AgentService["configureCredential"]>[0],

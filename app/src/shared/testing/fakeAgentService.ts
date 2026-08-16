@@ -25,6 +25,7 @@ import {
   type CredentialClearResult,
   type CredentialConfigureResult,
   type GeneratedRunDraft,
+  type ProviderCatalogResult,
 } from "../agentTypes";
 import { PROVIDER_MODELS } from "../providerModels";
 
@@ -115,6 +116,23 @@ export function fakeAgentService(
      */
     async clearCredential(): Promise<CredentialClearResult> {
       return { ok: true };
+    },
+
+    /**
+     * A fixture makes no network request, so it has no catalogue to go and get.
+     *
+     * It resolves as a typed failure rather than an empty success for the same
+     * reason `configureCredential` does: reporting an empty catalogue would be
+     * indistinguishable from a provider that routes nothing, and would quietly
+     * empty the model picker in every test that happens to call this.
+     */
+    async refreshCatalog(): Promise<ProviderCatalogResult> {
+      return {
+        ok: false,
+        code: "NETWORK",
+        message:
+          "The test fixture makes no requests, so there is no model catalogue to refresh.",
+      };
     },
   };
 }

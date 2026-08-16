@@ -47,8 +47,9 @@ The preload exposes exactly seven renderer surfaces:
 - `window.files`: file path lookup for uploaded programs.
 - `window.uploads`: pre-flight validation of an uploaded program file.
 - `window.agent`: provider status, the outbound-request preview, one turn of a
-  conversation, cancelling one, and one-way credential entry. **There is no
-  credential getter and no channel on the other side that could be one.**
+  conversation, cancelling one, refreshing an aggregator's model catalogue, and
+  one-way credential entry. **There is no credential getter and no channel on
+  the other side that could be one.**
 - `window.chats`: conversation persistence, backed by its own SQLite file.
 - `window.appInfo`: where this install keeps its data — the resolved database
   paths, whether an env override moved them, and a call to show one in the OS
@@ -70,6 +71,47 @@ renderer names *which* file, never *where*.
 never a database. That is what makes chat history readable with the network off,
 and what keeps "delete all my transcripts" a database operation with no
 credential anywhere near it.
+
+`agent:catalog` is on this surface for the same reason `agent:reply` is: it
+needs the stored key. The renderer names a provider and receives a model list
+and a dollar balance; the key is read in main and, as everywhere else here, has
+no way back out.
+
+### Two kinds of provider
+
+Anthropic and OpenAI publish a handful of models each and the app pins them, so
+`isModelForProvider` enforces a compile-time list and an unknown model means the
+renderer and main bundles disagree — which rejects.
+
+OpenRouter aggregates hundreds of models that change weekly, so a pinned list
+would make this app's release date the ceiling on what an analyst can select.
+Its gate reads from data instead:
+
+- the shared check is the `vendor/model` slug shape, which is all a constant can
+  know;
+- main holds the catalogue actually fetched from `GET /api/v1/models`, filtered
+  to models advertising structured-output support, and checks membership against
+  it;
+- a cold cache degrades to the slug rule rather than blocking, so a failed or
+  never-attempted fetch leaves the feature working on the shipped shortlist.
+
+A well-formed slug the fetched catalogue does not list resolves as a typed
+`UNSUPPORTED_MODEL` failure rather than rejecting. It is not a bundle mismatch —
+it is the aggregator's inventory moving under a selection the analyst made
+earlier, which is an ordinary event and has to arrive as something the UI can
+render.
+
+Outbound OpenRouter requests carry `provider: { require_parameters: true }`.
+OpenRouter fans one slug across several upstream hosts and they do not all
+honour `response_format`; without it a request can land on a host that ignores
+the strict schema and answers with prose, which would surface as a generation
+contract error and read as the model's fault rather than the routing's. The
+catalogue filter decides which models are offered; that option decides which
+hosts may serve them.
+
+The optional OpenRouter app-attribution headers (`HTTP-Referer`, `X-Title`) are
+deliberately absent: they list the app on a public leaderboard, which is the
+opposite of this product's no-telemetry posture.
 
 The BrowserWindow security posture is deliberate:
 

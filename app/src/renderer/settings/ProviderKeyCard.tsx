@@ -16,6 +16,16 @@ interface ProviderKeyCardProps {
   onConfigured: (provider: ProviderId) => void;
   /** A key was deleted. The shell re-reads status; the selection is untouched. */
   onCleared: (provider: ProviderId) => void;
+  /**
+   * Anything else this provider needs, rendered below the key form.
+   *
+   * A slot rather than a set of optional props, because what goes in it is
+   * provider-specific and only one provider has any: OpenRouter's model
+   * catalogue and balance. Growing `catalog`/`credits`/`refreshing` props here
+   * would put an aggregator's vocabulary on the card that manages Anthropic's
+   * key, where it would be permanently undefined.
+   */
+  children?: React.ReactNode;
 }
 
 /**
@@ -37,6 +47,7 @@ export function ProviderKeyCard({
   service,
   onConfigured,
   onCleared,
+  children,
 }: ProviderKeyCardProps): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
@@ -226,6 +237,8 @@ export function ProviderKeyCard({
           Key removed from this machine. Networked features are off.
         </p>
       ) : null}
+
+      {children}
     </section>
   );
 }

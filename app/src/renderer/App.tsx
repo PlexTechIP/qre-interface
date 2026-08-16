@@ -76,6 +76,24 @@ function getInitialAgentSelection(): { provider: ProviderId; model: string } {
   return fallback;
 }
 
+/**
+ * The model to start a provider on, taken from status rather than the constant.
+ *
+ * They agree for Anthropic and OpenAI, whose model lists are pinned. They can
+ * disagree for OpenRouter: main derives `defaultModel` from the catalogue it
+ * fetched, so a shipped default the aggregator has stopped routing is already
+ * corrected there. Reading `PROVIDER_MODELS` directly here would reintroduce
+ * the stale slug at the one moment the app picks a model for the analyst —
+ * their first send would fail on a choice they never made.
+ *
+ * Falls back to the constant when status has nothing to say, which is the state
+ * before the first `getStatus` resolves.
+ */
+function defaultModelFor(status: AgentProviderStatus, provider: ProviderId): string {
+  const known = status.providers.find((candidate) => candidate.provider === provider);
+  return known?.defaultModel ?? PROVIDER_MODELS[provider].defaultModel;
+}
+
 interface NavItem {
   page: Page;
   label: string;
@@ -256,7 +274,12 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
         );
       // Adding a second key is not a request to switch away from a working one.
       if (!activeIsConfigured && active !== provider) {
-        setAgentSelection({ provider, model: PROVIDER_MODELS[provider].defaultModel });
+        // Marked as the app's own choice, so the catalogue effect above may
+        // correct it later. At this moment an aggregator's catalogue is very
+        // likely still cold, which is exactly when `defaultModelFor` can only
+        // hand back the shipped constant.
+        selectionIsAppChosen.current = true;
+        setAgentSelection({ provider, model: defaultModelFor(agentStatus, provider) });
       }
     },
     [agentStatus, agentSelection.provider, refreshAgentStatus],
@@ -270,6 +293,87 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     },
     [refreshAgentStatus],
   );
+
+  /**
+   * A provider's model catalogue was re-fetched.
+   *
+   * Re-reading status is the whole job: `models` and `defaultModel` for that
+   * provider are derived from the catalogue in main, so every picker in the app
+   * updates from the one status read rather than from a list this component
+   * would otherwise have to hold and pass down.
+   */
+  const handleCatalogRefreshed = useCallback((): void => {
+    refreshAgentStatus();
+  }, [refreshAgentStatus]);
+
+  /**
+   * Providers whose catalogue this session has already asked for.
+   *
+   * The shell owns this, not the Settings panel, for two reasons. The panel
+   * unmounts on every navigation, so a guard held there retried a failing
+   * catalogue on each visit — a ten-second timeout per trip to Settings for
+   * anyone offline. And an analyst who never opens Settings would never have
+   * got a catalogue at all, leaving the chat page's picker on the shipped
+   * shortlist while a perfectly good key sat in the vault.
+   */
+  const catalogRequested = useRef<Set<ProviderId>>(new Set());
+
+  useEffect(() => {
+    for (const candidate of agentStatus.providers) {
+      // `null` means "has a catalogue, hasn't fetched one". Absent means the
+      // provider has no catalogue to fetch, and a list means it already did.
+      if (candidate.catalog !== null || !candidate.configured) continue;
+      if (catalogRequested.current.has(candidate.provider)) continue;
+      catalogRequested.current.add(candidate.provider);
+      void resolvedAgentService.refreshCatalog(candidate.provider).then(
+        (result) => {
+          if (result.ok) refreshAgentStatus();
+        },
+        () => {
+          // A refresh that cannot even resolve leaves the shipped shortlist in
+          // place, which is a working picker. Settings shows the failure when
+          // the analyst asks for one there; the app does not need to shout
+          // about a background attempt it made on their behalf.
+        },
+      );
+    }
+  }, [agentStatus, refreshAgentStatus, resolvedAgentService]);
+
+  /**
+   * Whether the model in `agentSelection` was chosen by the app or by a person.
+   *
+   * Only an app-chosen model may be corrected when a catalogue arrives and
+   * contradicts it. The distinction matters because both cases look identical
+   * in state: the shell auto-activates a provider on its shipped default when
+   * the first key is stored, and at that moment OpenRouter's catalogue is still
+   * cold, so the default it picks can be a slug the aggregator does not route.
+   * Correcting that is finishing a decision the app made badly. Silently
+   * repointing a model the analyst picked is overriding them, so that case
+   * stays visible instead — the picker marks it "no longer listed" and a send
+   * returns a typed failure naming the fix.
+   */
+  const selectionIsAppChosen = useRef(false);
+
+  const chooseSelection = useCallback(
+    (provider: ProviderId, model: string): void => {
+      selectionIsAppChosen.current = false;
+      setAgentSelection({ provider, model });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!selectionIsAppChosen.current) return;
+    const active = agentStatus.providers.find(
+      (candidate) => candidate.provider === agentSelection.provider,
+    );
+    // Only for a fetched catalogue: a pinned provider's `models` is this
+    // build's own constant, so disagreeing with it would mean the two halves of
+    // one bundle disagree — which is a reject, not something to paper over.
+    if (active?.catalog == null) return;
+    if (active.models.includes(agentSelection.model)) return;
+    setAgentSelection({ provider: active.provider, model: active.defaultModel });
+  }, [agentStatus, agentSelection]);
 
   const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
     setDraftHandoff(null);
@@ -402,7 +506,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               onComposerChange={setChatComposer}
               view={chatView}
               onViewChange={setChatView}
-              onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
+              onSelectionChange={chooseSelection}
               onOpenSettings={() => setActivePage("settings")}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);
@@ -435,9 +539,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               appInfo={window.appInfo}
               provider={agentSelection.provider}
               model={agentSelection.model}
-              onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
+              onSelectionChange={chooseSelection}
               onCredentialConfigured={handleCredentialConfigured}
               onCredentialCleared={handleCredentialCleared}
+              onCatalogRefreshed={handleCatalogRefreshed}
               /*
                 The open conversation was just deleted. Without this the id
                 survives and ChatPage's `send` appends to a row the store no

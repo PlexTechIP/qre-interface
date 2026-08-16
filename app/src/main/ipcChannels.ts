@@ -36,6 +36,13 @@ export const AGENT_CANCEL_CHANNEL = "agent:cancel";
 // what will leave the machine before it does (brief constraint 8). Returning a
 // summary here instead would make the UI's "exact outbound request" a lie.
 export const AGENT_PREVIEW_CHANNEL = "agent:preview";
+// Re-read an aggregating provider's model list, and its credit balance if it
+// publishes one. Only OpenRouter has either: the first-party providers offer
+// three pinned models apiece and no balance endpoint, so there is nothing to
+// go and ask. It is on the agent surface rather than a new one because it needs
+// the stored key, and the key is only ever readable where `agent:reply` reads
+// it — the renderer names the provider and never learns the secret.
+export const AGENT_CATALOG_CHANNEL = "agent:catalog";
 
 // ChatStore over IPC — the same one-channel-per-operation shape as the run
 // store, backed by the main-process SqliteChatStore and its OWN database file.

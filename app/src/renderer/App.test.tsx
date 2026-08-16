@@ -6,6 +6,7 @@ import {
   PROVIDER_IDS,
   type AgentProviderStatus,
   type AgentService,
+  type ModelCatalogEntry,
   type ProviderId,
 } from "../shared/agentTypes";
 import { InMemoryChatStore } from "../shared/chatStore";
@@ -670,5 +671,266 @@ describe("App shell — system theme", () => {
 
     expect(document.documentElement.dataset["theme"]).toBe("light");
     expect(window.localStorage.getItem("qre-theme")).toBe("system");
+  });
+});
+
+/**
+ * OpenRouter's model list is fetched, so the app's own compile-time default for
+ * it is a guess that the provider can contradict. Anywhere the SHELL picks a
+ * model on the analyst's behalf, it has to pick from what the provider actually
+ * routes — a default nobody chose, that fails on first send, is the worst kind
+ * of first impression.
+ */
+describe("App shell — OpenRouter", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.localStorage.clear();
+  });
+
+  const CATALOGUE: readonly ModelCatalogEntry[] = [
+    {
+      id: "deepseek/deepseek-chat",
+      displayName: "DeepSeek Chat",
+      contextLength: 128_000,
+      promptPricePerMillion: 0.14,
+      completionPricePerMillion: 0.28,
+      promoted: true,
+    },
+  ];
+
+  /** Reports a catalogue that does NOT contain the shipped default slug. */
+  function agentServiceWithCatalogue(configured: Set<ProviderId>): AgentService {
+    return {
+      ...fakeAgentService(),
+      async getStatus(): Promise<AgentProviderStatus> {
+        const providers = PROVIDER_IDS.map((provider) =>
+          provider === "openrouter"
+            ? {
+                provider,
+                displayName: PROVIDER_MODELS.openrouter.displayName,
+                configured: configured.has(provider),
+                models: CATALOGUE.map((entry) => entry.id),
+                defaultModel: "deepseek/deepseek-chat",
+                catalog: CATALOGUE,
+              }
+            : {
+                provider,
+                ...PROVIDER_MODELS[provider],
+                configured: configured.has(provider),
+              },
+        );
+        return configured.size === 0
+          ? {
+              available: false,
+              networkEnabled: false,
+              providers,
+              mode: "unavailable",
+              message: "No model provider is configured.",
+            }
+          : { available: true, networkEnabled: true, providers, mode: "provider" };
+      },
+      async configureCredential(provider: ProviderId) {
+        configured.add(provider);
+        return { ok: true as const };
+      },
+      async refreshCatalog() {
+        return { ok: true as const, models: CATALOGUE, credits: null };
+      },
+    };
+  }
+
+  it("offers OpenRouter as a third provider to configure", async () => {
+    window.agent = fakeAgentService();
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(screen.getByRole("region", { name: "OpenRouter" })).toBeVisible();
+  });
+
+  /**
+   * `PROVIDER_MODELS.openrouter.defaultModel` is `anthropic/claude-sonnet-5`,
+   * which this catalogue does not route. Auto-activating the provider with the
+   * shipped constant would select a model the main-process gate refuses.
+   */
+  it("activates a new key on a model the provider actually routes", async () => {
+    window.agent = agentServiceWithCatalogue(new Set());
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const card = screen.getByRole("region", { name: "OpenRouter" });
+    await userEvent.type(within(card).getByLabelText("OpenRouter API key"), "sk-or-value");
+    await userEvent.click(within(card).getByRole("button", { name: /validate and save/i }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/LLM provider status/)).toHaveAccessibleName(
+        "LLM provider status: Network on · OpenRouter/deepseek/deepseek-chat",
+      ),
+    );
+  });
+
+  it("shows the fetched catalogue in the model picker, grouped", async () => {
+    window.agent = agentServiceWithCatalogue(new Set(["openrouter"]));
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await userEvent.selectOptions(
+      (await screen.findAllByLabelText("Provider"))[0] as HTMLElement,
+      "openrouter",
+    );
+
+    expect(await screen.findByRole("option", { name: /DeepSeek Chat/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Fetching the catalogue is the SHELL's job, not the Settings panel's. The
+ * panel unmounts on every navigation, so a first-fetch guard living there
+ * retried a failing catalogue on each visit — and left the chat page's picker
+ * on the shipped shortlist for anyone who never opened Settings at all.
+ */
+describe("App shell — who fetches the OpenRouter catalogue", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.localStorage.clear();
+  });
+
+  const ROUTED: readonly ModelCatalogEntry[] = [
+    {
+      id: "deepseek/deepseek-chat",
+      displayName: "DeepSeek Chat",
+      contextLength: 128_000,
+      promptPricePerMillion: 0.14,
+      completionPricePerMillion: 0.28,
+      promoted: true,
+    },
+  ];
+
+  /**
+   * Mirrors main: `catalog` is absent for pinned providers, null until a fetch
+   * lands, and a list afterwards. `refreshCatalog` flips it, so the shell's
+   * effect is exercised against the same state machine the handler implements.
+   */
+  function serviceWithColdCatalogue(configured: Set<ProviderId>) {
+    let catalog: readonly ModelCatalogEntry[] | null = null;
+    const refreshCatalog = vi.fn(async () => {
+      catalog = ROUTED;
+      return { ok: true as const, models: ROUTED, credits: null };
+    });
+    const service: AgentService = {
+      ...fakeAgentService(),
+      async getStatus(): Promise<AgentProviderStatus> {
+        const providers = PROVIDER_IDS.map((provider) =>
+          provider === "openrouter"
+            ? {
+                provider,
+                displayName: PROVIDER_MODELS.openrouter.displayName,
+                configured: configured.has(provider),
+                models: catalog?.map((entry) => entry.id) ?? [
+                  ...PROVIDER_MODELS.openrouter.models,
+                ],
+                defaultModel: catalog?.[0]?.id ?? PROVIDER_MODELS.openrouter.defaultModel,
+                catalog,
+              }
+            : { provider, ...PROVIDER_MODELS[provider], configured: configured.has(provider) },
+        );
+        return configured.size === 0
+          ? {
+              available: false,
+              networkEnabled: false,
+              providers,
+              mode: "unavailable",
+              message: "No model provider is configured.",
+            }
+          : { available: true, networkEnabled: true, providers, mode: "provider" };
+      },
+      async configureCredential(provider: ProviderId) {
+        configured.add(provider);
+        return { ok: true as const };
+      },
+      refreshCatalog,
+    };
+    return { service, refreshCatalog };
+  }
+
+  it("fetches on its own, without the analyst opening Settings", async () => {
+    const { service, refreshCatalog } = serviceWithColdCatalogue(new Set(["openrouter"]));
+    window.agent = service;
+
+    render(<App />);
+
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalledWith("openrouter"));
+  });
+
+  it("asks once, not once per status read", async () => {
+    const { service, refreshCatalog } = serviceWithColdCatalogue(new Set(["openrouter"]));
+    window.agent = service;
+    render(<App />);
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalledOnce());
+
+    // Navigating remounts Settings; the shell's record must outlive that.
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(refreshCatalog).toHaveBeenCalledOnce();
+  });
+
+  it("does not go looking for a catalogue with no key to fetch it", async () => {
+    const { service, refreshCatalog } = serviceWithColdCatalogue(new Set());
+    window.agent = service;
+
+    render(<App />);
+    await screen.findByRole("button", { name: "Settings" });
+
+    expect(refreshCatalog).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The real first-key sequence, which the earlier test could not reach: the
+   * catalogue is COLD when the key lands, so the shell activates OpenRouter on
+   * the shipped default. Once the fetch lands and contradicts it, a selection
+   * the app chose — never one the analyst did — has to move to something that
+   * actually routes, or their first send fails on a choice they never made.
+   */
+  it("re-points a selection it chose itself once the catalogue contradicts it", async () => {
+    const { service } = serviceWithColdCatalogue(new Set());
+    window.agent = service;
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    const card = screen.getByRole("region", { name: "OpenRouter" });
+    await userEvent.type(within(card).getByLabelText("OpenRouter API key"), "sk-or-value");
+    await userEvent.click(within(card).getByRole("button", { name: /validate and save/i }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/LLM provider status/)).toHaveAccessibleName(
+        "LLM provider status: Network on · OpenRouter/deepseek/deepseek-chat",
+      ),
+    );
+  });
+
+  /** A model the analyst picked stays picked, even once it stops being routed. */
+  it("leaves a selection the analyst made alone", async () => {
+    const { service } = serviceWithColdCatalogue(new Set(["openrouter"]));
+    window.agent = service;
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openrouter");
+    await userEvent.selectOptions(
+      screen.getByLabelText("Model"),
+      "deepseek/deepseek-chat",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/LLM provider status/)).toHaveAccessibleName(
+        /OpenRouter\/deepseek\/deepseek-chat/,
+      ),
+    );
   });
 });

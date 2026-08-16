@@ -16,10 +16,11 @@ import { ProviderModelSelect } from "../components/ProviderModelSelect";
 import { CopyButton } from "../CopyButton";
 import { QRE_VERSION } from "../constants/staticOptions";
 import type { ThemePreference } from "../theme";
+import { ModelCatalogPanel } from "./ModelCatalogPanel";
 import { ProviderKeyCard } from "./ProviderKeyCard";
 
 interface SettingsPageProps {
-  service: Pick<AgentService, "configureCredential" | "clearCredential">;
+  service: Pick<AgentService, "configureCredential" | "clearCredential" | "refreshCatalog">;
   status: AgentProviderStatus;
   /** Reaches the chat database and never a provider. */
   chats: ChatStore;
@@ -35,6 +36,15 @@ interface SettingsPageProps {
   onSelectionChange: (provider: ProviderId, model: string) => void;
   onCredentialConfigured: (provider: ProviderId) => void;
   onCredentialCleared: (provider: ProviderId) => void;
+  /**
+   * A provider's model catalogue was re-fetched.
+   *
+   * Separate from the credential callbacks even though the shell answers all
+   * three by re-reading status: a refresh changes which models exist, not
+   * whether a provider is usable, so a shell that later wants to react
+   * differently to the two is not forced to unpick one callback.
+   */
+  onCatalogRefreshed: () => void;
   /**
    * Every conversation was deleted.
    *
@@ -99,6 +109,7 @@ export function SettingsPage({
   onSelectionChange,
   onCredentialConfigured,
   onCredentialCleared,
+  onCatalogRefreshed,
   onConversationsCleared,
   themePreference,
   onThemePreferenceChange,
@@ -224,7 +235,26 @@ export function SettingsPage({
               service={service}
               onConfigured={onCredentialConfigured}
               onCleared={onCredentialCleared}
-            />
+            >
+              {/*
+                Only providers that actually keep a catalogue get the controls
+                for one. The test is `catalog !== undefined`, not the provider's
+                name: main omits the field entirely for providers whose models
+                are pinned, and sends null for one that has a catalogue it has
+                not fetched yet. Checking the name here would put the list of
+                aggregators in two places and let them disagree.
+              */}
+              {candidate.catalog === undefined ? null : (
+                <ModelCatalogPanel
+                  provider={candidate.provider}
+                  displayName={candidate.displayName}
+                  configured={candidate.configured}
+                  catalog={candidate.catalog}
+                  service={service}
+                  onCatalogRefreshed={onCatalogRefreshed}
+                />
+              )}
+            </ProviderKeyCard>
           ))}
         </div>
       </section>

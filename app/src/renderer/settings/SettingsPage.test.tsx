@@ -3,7 +3,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProviderStatus, AgentService } from "../../shared/agentTypes";
+import type {
+  AgentProviderStatus,
+  AgentService,
+  ModelCatalogEntry,
+  ProviderId,
+} from "../../shared/agentTypes";
 import type { AppInfoService } from "../../shared/appInfoTypes";
 import { InMemoryChatStore } from "../../shared/chatStore";
 import { fakeAgentService, fakeAppInfoService } from "../../shared/testing";
@@ -47,6 +52,10 @@ function setup(
     service?: Partial<AgentService>;
     chats?: InMemoryChatStore;
     themePreference?: ThemePreference;
+    /** The active selection. The page is controlled, so this decides what the
+     *  model picker renders — changing the select in a test does not. */
+    provider?: ProviderId;
+    model?: string;
     /** `null` stands for "no preload bridge", which is a real shipped case. */
     appInfo?: AppInfoService | null;
   } = {},
@@ -58,6 +67,7 @@ function setup(
   const onSelectionChange = vi.fn();
   const onCredentialConfigured = vi.fn();
   const onCredentialCleared = vi.fn();
+  const onCatalogRefreshed = vi.fn();
   const onConversationsCleared = vi.fn();
   const onThemePreferenceChange = vi.fn();
 
@@ -67,11 +77,12 @@ function setup(
       status={overrides.status ?? CONFIGURED}
       chats={chats}
       appInfo={appInfo ?? undefined}
-      provider="anthropic"
-      model="claude-sonnet-5"
+      provider={overrides.provider ?? "anthropic"}
+      model={overrides.model ?? "claude-sonnet-5"}
       onSelectionChange={onSelectionChange}
       onCredentialConfigured={onCredentialConfigured}
       onCredentialCleared={onCredentialCleared}
+      onCatalogRefreshed={onCatalogRefreshed}
       onConversationsCleared={onConversationsCleared}
       themePreference={overrides.themePreference ?? "light"}
       onThemePreferenceChange={onThemePreferenceChange}
@@ -80,9 +91,11 @@ function setup(
 
   return {
     chats,
+    service,
     onSelectionChange,
     onCredentialConfigured,
     onCredentialCleared,
+    onCatalogRefreshed,
     onConversationsCleared,
     onThemePreferenceChange,
   };
@@ -398,5 +411,104 @@ describe("SettingsPage", () => {
         /could not be read|no handler registered/i,
       );
     });
+  });
+});
+
+/**
+ * Catalogue controls belong to providers that have a catalogue, and the page
+ * works that out from the data rather than from a provider's name — main omits
+ * the field entirely for providers whose models are pinned.
+ */
+describe("SettingsPage — providers with a fetched catalogue", () => {
+  const withOpenRouter = (
+    catalog: readonly ModelCatalogEntry[] | null,
+    configured = true,
+  ): AgentProviderStatus => ({
+    ...CONFIGURED,
+    providers: [
+      ...CONFIGURED.providers,
+      {
+        provider: "openrouter",
+        displayName: "OpenRouter",
+        configured,
+        models: catalog?.map((entry) => entry.id) ?? ["anthropic/claude-sonnet-5"],
+        defaultModel: catalog?.[0]?.id ?? "anthropic/claude-sonnet-5",
+        catalog,
+      },
+    ],
+  });
+
+  const CATALOGUE: readonly ModelCatalogEntry[] = [
+    {
+      id: "deepseek/deepseek-chat",
+      displayName: "DeepSeek Chat",
+      contextLength: 128_000,
+      promptPricePerMillion: 0.14,
+      completionPricePerMillion: 0.28,
+      promoted: true,
+    },
+  ];
+
+  it("offers a refresh only on the card that has something to refresh", () => {
+    setup({ status: withOpenRouter(CATALOGUE) });
+
+    const openrouter = screen.getByRole("region", { name: "OpenRouter" });
+    expect(
+      within(openrouter).getByRole("button", { name: /refresh model list/i }),
+    ).toBeVisible();
+
+    for (const name of ["Anthropic", "OpenAI"]) {
+      const card = screen.getByRole("region", { name });
+      expect(
+        within(card).queryByRole("button", { name: /refresh model list/i }),
+      ).toBeNull();
+    }
+  });
+
+  it("reports how many models the provider is routing", () => {
+    setup({ status: withOpenRouter(CATALOGUE) });
+
+    const openrouter = screen.getByRole("region", { name: "OpenRouter" });
+    expect(within(openrouter).getByText(/1 model available/i)).toBeVisible();
+  });
+
+  it("tells the shell when a refresh lands, so every picker updates", async () => {
+    const user = userEvent.setup();
+    const { onCatalogRefreshed } = setup({
+      status: withOpenRouter(CATALOGUE),
+      service: {
+        async refreshCatalog() {
+          return { ok: true as const, models: CATALOGUE, credits: null };
+        },
+      },
+    });
+
+    const openrouter = screen.getByRole("region", { name: "OpenRouter" });
+    await user.click(within(openrouter).getByRole("button", { name: /refresh model list/i }));
+
+    await waitFor(() => expect(onCatalogRefreshed).toHaveBeenCalledOnce());
+  });
+
+  /**
+   * The picker is fed from `status.providers`, so a provider whose catalogue
+   * arrived should be selectable with the models that came with it — the whole
+   * point of the refresh reaching the shell.
+   */
+  it("offers the fetched models in the active-model picker", () => {
+    setup({
+      status: withOpenRouter(CATALOGUE),
+      provider: "openrouter",
+      model: "deepseek/deepseek-chat",
+    });
+
+    expect(screen.getByLabelText("Model")).toHaveValue("deepseek/deepseek-chat");
+    expect(screen.getByRole("option", { name: /DeepSeek Chat/ })).toBeInTheDocument();
+  });
+
+  it("explains what to do first when the provider holds no key", () => {
+    setup({ status: withOpenRouter(null, false) });
+
+    const openrouter = screen.getByRole("region", { name: "OpenRouter" });
+    expect(within(openrouter).getByText(/add an openrouter key/i)).toBeVisible();
   });
 });

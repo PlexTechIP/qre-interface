@@ -9,7 +9,7 @@
 
 import type { Application, Architecture, RunConfig } from "./types";
 
-export const PROVIDER_IDS = ["anthropic", "openai"] as const;
+export const PROVIDER_IDS = ["anthropic", "openai", "openrouter"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 type RequiredNullable<T, K extends keyof T> = Omit<T, K> & {
@@ -140,6 +140,43 @@ export interface AgentChatRequest {
   model: string;
 }
 
+/**
+ * One model an aggregating provider actually routes to, as it reported itself.
+ *
+ * The first-party providers need nothing like this: their model lists are three
+ * pinned strings apiece and everything worth saying about them fits in the id.
+ * OpenRouter routes hundreds, so the picker has to say more than a slug — a
+ * context window and a price are what separate two plausible-looking options.
+ */
+export interface ModelCatalogEntry {
+  /** The `vendor/model` slug, which is also what travels in a request. */
+  readonly id: string;
+  readonly displayName: string;
+  /** Tokens, as the provider reports it. Null when it reports nothing usable. */
+  readonly contextLength: number | null;
+  /** USD per million tokens. Null rather than 0, which is a real free-tier price. */
+  readonly promptPricePerMillion: number | null;
+  readonly completionPricePerMillion: number | null;
+  /** On the shortlist this build promotes — pinned above the long tail. */
+  readonly promoted: boolean;
+}
+
+/**
+ * What a metered key has left, for providers that publish it.
+ *
+ * OpenRouter does, through the same endpoint that validates the key, so it
+ * costs nothing extra to show. Neither first-party provider exposes an
+ * equivalent, which is why this is per-provider data and not a field on status.
+ */
+export interface ProviderCredits {
+  /** USD still spendable. Null when the key is uncapped rather than exhausted. */
+  readonly remaining: number | null;
+  /** USD spent on this key so far. */
+  readonly used: number;
+  /** The cap `remaining` counts down from, or null for an uncapped key. */
+  readonly limit: number | null;
+}
+
 export interface ProviderAvailability {
   readonly provider: ProviderId;
   readonly displayName: string;
@@ -147,7 +184,38 @@ export interface ProviderAvailability {
   readonly configured: boolean;
   readonly models: readonly string[];
   readonly defaultModel: string;
+  /**
+   * The provider's own model list. Three states, all of them meaningful:
+   *
+   * - **absent** — this provider has no catalogue to fetch. Its models are a
+   *   compile-time constant and there is nothing to refresh, which is why
+   *   Settings shows no catalogue controls for Anthropic or OpenAI.
+   * - **null** — it has one, and nothing has been fetched yet. `models` is the
+   *   shortlist this build ships, and a refresh would replace it.
+   * - **a list** — fetched this session. `models` is derived from it, and the
+   *   entries carry the context window and pricing a slug alone cannot.
+   *
+   * Collapsing the first two into "absent" would leave the Settings page
+   * guessing which providers own a catalogue by name.
+   */
+  readonly catalog?: readonly ModelCatalogEntry[] | null;
 }
+
+/**
+ * Refreshing an aggregating provider's model catalogue, and reading whatever
+ * account detail comes back with it.
+ *
+ * A failure resolves as data like every other provider outcome: a catalogue
+ * that could not be fetched leaves the app on its shipped shortlist, which is
+ * a degraded picker rather than a broken feature.
+ */
+export type ProviderCatalogResult =
+  | {
+      ok: true;
+      models: readonly ModelCatalogEntry[];
+      credits: ProviderCredits | null;
+    }
+  | { ok: false; code: AgentFailureCode; message: string };
 
 export type AgentProviderStatus =
   | {
@@ -190,7 +258,17 @@ export type AgentFailureCode =
    * successfully. The analyst's fix differs: re-enter the key (which overwrites
    * the unreadable blob) rather than check it for typos.
    */
-  | "CREDENTIAL_UNREADABLE";
+  | "CREDENTIAL_UNREADABLE"
+  /**
+   * The selected model is not one this provider will route to.
+   *
+   * Only reachable for a provider whose catalogue is fetched rather than
+   * pinned. For the first-party providers an unknown model means the renderer
+   * and main bundles disagree, which rejects; here it means OpenRouter's
+   * inventory moved under a selection the analyst made earlier, which is an
+   * ordinary Tuesday and has to arrive as something the UI can render.
+   */
+  | "UNSUPPORTED_MODEL";
 
 /**
  * Provider failures are expected outcomes and therefore resolve as data.
@@ -267,4 +345,19 @@ export interface AgentService {
   ): Promise<CredentialConfigureResult>;
   /** Delete a provider's stored key. The one-way street's exit, not a getter. */
   clearCredential(provider: ProviderId): Promise<CredentialClearResult>;
+  /**
+   * Re-fetch an aggregating provider's model catalogue, and its credit balance
+   * if it publishes one.
+   *
+   * Always a network call, never a cached read — the button that triggers it
+   * says "Refresh", and a refresh that quietly returned last hour's list would
+   * be the only control on this page that lies. The result is cached in main
+   * for the session so `getStatus` can report it without going out again.
+   *
+   * It needs the stored key, which is why it lives on this surface and takes no
+   * credential: the renderer names the provider, main supplies the secret. That
+   * is the same asymmetry `requestReply` runs on, and the reason there is still
+   * nothing here that hands a key back.
+   */
+  refreshCatalog(provider: ProviderId): Promise<ProviderCatalogResult>;
 }
