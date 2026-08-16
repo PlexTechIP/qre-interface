@@ -4,6 +4,7 @@ import type {
   UploadedProgramFormat,
 } from "../shared/types";
 import type { AgentService } from "../shared/agentTypes";
+import type { AppInfoService } from "../shared/appInfoTypes";
 import type { ChatStore } from "../shared/chatTypes";
 
 /** Mirrors main/engine/uploadValidation.ts's result, which the renderer cannot import. */
@@ -41,6 +42,19 @@ declare global {
      * is why chat history stays readable with the network off.
      */
     chats: ChatStore;
+    /**
+     * The seventh preload surface: where this install keeps its data.
+     *
+     * Separate from `store` and `chats` because those each expose ONE
+     * database's contents, while this describes the data directory as a whole
+     * — and because it is the only surface that can reveal a file to the OS,
+     * which is a capability worth being able to point at.
+     *
+     * Optional for the same reason `agent` is: a renderer running outside
+     * Electron has no preload bridge. Settings degrades to hiding the section
+     * rather than failing, since a path is informational.
+     */
+    appInfo?: AppInfoService;
   }
 }
 

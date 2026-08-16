@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAgentHandlers } from "./agentHandler.js";
+import { registerAppInfoHandlers } from "./appInfoHandler.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 import { registerChatHandlers } from "./chatHandler.js";
 import { SqliteChatStore } from "./sqliteChatStore.js";
@@ -80,12 +81,32 @@ app.whenReady().then(() => {
   // and `chat:clear` has to be able to remove all of it without going anywhere
   // near the store that holds their results.
   const chatDbOverride = process.env["QRE_CHAT_DB_PATH"];
-  chatStore = new SqliteChatStore(
+  const chatDbPath =
     chatDbOverride && chatDbOverride.length > 0
       ? chatDbOverride
-      : path.join(app.getPath("userData"), "chat-history.sqlite"),
-  );
+      : path.join(app.getPath("userData"), "chat-history.sqlite");
+  chatStore = new SqliteChatStore(chatDbPath);
   registerChatHandlers(ipcMain, chatStore);
+
+  // Settings shows where these live. Resolved here rather than re-derived on
+  // demand, because this is the only place that knows whether an env override
+  // won — which is otherwise invisible everywhere in the app.
+  registerAppInfoHandlers(
+    ipcMain,
+    [
+      {
+        id: "runDatabase",
+        path: dbPath,
+        overridden: Boolean(dbOverride && dbOverride.length > 0),
+      },
+      {
+        id: "chatDatabase",
+        path: chatDbPath,
+        overridden: Boolean(chatDbOverride && chatDbOverride.length > 0),
+      },
+    ],
+    (target) => shell.showItemInFolder(target),
+  );
 
   // A separate, non-SQLite file for the encrypted provider key — never in
   // the same store as run history, never JSON.

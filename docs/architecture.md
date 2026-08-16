@@ -40,7 +40,7 @@ from QDK, a test double, or a future estimator implementation.
 
 ## IPC boundary
 
-The preload exposes exactly six renderer surfaces:
+The preload exposes exactly seven renderer surfaces:
 
 - `window.estimator`: estimation runs, backed by QRE.
 - `window.store`: run history persistence, backed by SQLite.
@@ -50,6 +50,20 @@ The preload exposes exactly six renderer surfaces:
   conversation, cancelling one, and one-way credential entry. **There is no
   credential getter and no channel on the other side that could be one.**
 - `window.chats`: conversation persistence, backed by its own SQLite file.
+- `window.appInfo`: where this install keeps its data — the resolved database
+  paths, whether an env override moved them, and a call to show one in the OS
+  file manager. Read-only: there is no "move the database" counterpart.
+
+`appInfo` is separate from `store` and `chats` rather than folded into either,
+because those each expose ONE database's contents while this describes the data
+directory as a whole — and because it is the only surface that can ask the OS to
+open a window, which is a capability worth being able to point at in one place.
+
+**Its reveal call takes a location id, never a path.** Main maps
+`"runDatabase"`/`"chatDatabase"` onto a path it resolved itself at startup, so no
+string from the renderer reaches `shell.showItemInFolder`. That is the same
+asymmetry `agent` uses for credentials, applied to a different resource: the
+renderer names *which* file, never *where*.
 
 `agent` and `chats` are deliberately separate, and the split is load-bearing:
 `chats` reaches a database and never a provider, `agent` reaches a provider and

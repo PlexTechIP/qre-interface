@@ -8,6 +8,12 @@ import type {
   CredentialConfigureResult,
 } from "../shared/agentTypes.js";
 import type {
+  AppInfoService,
+  RevealResult,
+  StorageInfo,
+  StorageLocationId,
+} from "../shared/appInfoTypes.js";
+import type {
   ChatMessage,
   ChatStore,
   Conversation,
@@ -29,6 +35,8 @@ import {
   AGENT_PREVIEW_CHANNEL,
   AGENT_REPLY_CHANNEL,
   AGENT_STATUS_CHANNEL,
+  APP_INFO_REVEAL_CHANNEL,
+  APP_INFO_STORAGE_CHANNEL,
   CHAT_APPEND_CHANNEL,
   CHAT_CLEAR_CHANNEL,
   CHAT_CREATE_CHANNEL,
@@ -160,7 +168,23 @@ const chats: ChatStore = {
   },
 };
 
+/**
+ * Where this install keeps its data — read-only, and the reveal call names a
+ * location rather than a path (see appInfoTypes.ts). Kept off `store` and
+ * `chats` deliberately: those are each ONE database's contents, and this
+ * describes the app's data directory as a whole.
+ */
+const appInfo: AppInfoService = {
+  getStorage(): Promise<StorageInfo> {
+    return ipcRenderer.invoke(APP_INFO_STORAGE_CHANNEL) as Promise<StorageInfo>;
+  },
+  reveal(id: StorageLocationId): Promise<RevealResult> {
+    return ipcRenderer.invoke(APP_INFO_REVEAL_CHANNEL, id) as Promise<RevealResult>;
+  },
+};
+
 contextBridge.exposeInMainWorld("estimator", estimator);
+contextBridge.exposeInMainWorld("appInfo", appInfo);
 contextBridge.exposeInMainWorld("uploads", uploads);
 contextBridge.exposeInMainWorld("store", store);
 contextBridge.exposeInMainWorld("agent", agent);

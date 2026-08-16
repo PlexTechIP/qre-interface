@@ -50,3 +50,14 @@ export const CHAT_RENAME_CHANNEL = "chat:rename";
 export const CHAT_DELETE_CHANNEL = "chat:delete";
 export const CHAT_CLEAR_CHANNEL = "chat:clear";
 export const CHAT_SEARCH_CHANNEL = "chat:search";
+
+// Where this install keeps its data. Read-only: the analyst can find their own
+// files and open the folder, and that is the whole surface. There is no
+// "move the database" counterpart — relocating a live SQLite file is a
+// different feature, and a channel that could only half-do it would be worse
+// than none.
+export const APP_INFO_STORAGE_CHANNEL = "appInfo:storage";
+// Show one stored file in the OS file manager. Takes a location ID, never a
+// path: main maps the id onto a path it resolved itself, so no string from the
+// renderer can steer the file manager.
+export const APP_INFO_REVEAL_CHANNEL = "appInfo:reveal";
