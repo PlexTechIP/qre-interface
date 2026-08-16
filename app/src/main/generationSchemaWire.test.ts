@@ -64,4 +64,39 @@ describe("generation schema wire split", () => {
     expect(GENERATION_FIELD_GUIDE).toContain("architecture(neutralAtom).");
     expect(GENERATION_FIELD_GUIDE).toContain("application(manualCounts).");
   });
+
+  /**
+   * The `parameters` union is the one that actually needed this, and the one
+   * that silently did not get it: its branches carry no `type` field, so every
+   * one of the six was addressed as `parameters(variant)`.
+   *
+   * `generator` is the proof. It belongs to two branches with two different
+   * companions — Shor's `bitSize` and Ekera-Hastad's `rsaInstance` — so under
+   * one shared label the guide stated the same path twice and left the model to
+   * infer which factoring routine a bound belonged to from prose alone.
+   */
+  it("qualifies the parameters branches, which carry no type discriminator", () => {
+    expect(GENERATION_FIELD_GUIDE).not.toContain("parameters(variant)");
+
+    expect(GENERATION_FIELD_GUIDE).toContain(
+      "- parameters(Grover's search).searchQubits:",
+    );
+    expect(GENERATION_FIELD_GUIDE).toContain("- parameters(Shor's factoring).generator:");
+    expect(GENERATION_FIELD_GUIDE).toContain(
+      "- parameters(Ekera-Hastad factoring).generator:",
+    );
+  });
+
+  /**
+   * Every described field is reachable by a path that names exactly one field.
+   * The `parameters(variant)` collapse made six branches share one prefix,
+   * which this catches whatever union it happens to next.
+   */
+  it("gives every guide line a distinct field path", () => {
+    const paths = GENERATION_FIELD_GUIDE.split("\n")
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.slice(2, line.indexOf(":")));
+
+    expect(new Set(paths).size).toBe(paths.length);
+  });
 });

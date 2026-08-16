@@ -150,11 +150,33 @@ function collectDescriptions(schema: JsonRecord): string {
   return lines.join("\n");
 }
 
-/** The `type: {enum: ["gateBased"]}` discriminator these branches all carry. */
+/**
+ * How a union branch is named inside a field path.
+ *
+ * The `type: {enum: ["gateBased"]}` discriminator first, because that is the
+ * value the model actually has to emit for the branch it picks.
+ *
+ * Falling back to the branch DESCRIPTION is what makes this function do its job
+ * on `parameters`. That union has no `type` field — its six branches are told
+ * apart by which properties are present — so every one of them fell through to
+ * the literal "variant", producing exactly the ambiguity the walker's docstring
+ * says this exists to remove. `parameters(variant).generator` appeared twice
+ * with two different meanings (Shor's and Ekera-Hastad's), and the bound on
+ * `searchQubits` read as though it constrained all six benchmarks rather than
+ * Grover alone. The descriptions are already short noun phrases written for
+ * exactly this ("Grover's search."), so the trailing period is all that needs
+ * removing.
+ */
 function discriminatorOf(branch: unknown): string | null {
   if (typeof branch !== "object" || branch === null) return null;
-  const properties = (branch as JsonRecord)["properties"] as JsonRecord | undefined;
+  const record = branch as JsonRecord;
+  const properties = record["properties"] as JsonRecord | undefined;
   const discriminator = properties?.["type"] as JsonRecord | undefined;
   const values = discriminator?.["enum"];
-  return Array.isArray(values) && typeof values[0] === "string" ? values[0] : null;
+  if (Array.isArray(values) && typeof values[0] === "string") return values[0];
+
+  const description = record["description"];
+  return typeof description === "string" && description.length > 0
+    ? description.replace(/\.$/, "")
+    : null;
 }
