@@ -197,23 +197,32 @@ read ones, which is backwards from where you are:
 > This section is last because it happens last. Week 5's branch for this track
 > did not typecheck and failed one of its own tests. Nothing below takes long.
 
-- [ ] `npm run typecheck` — clean. **If it is red, run both projects separately**
+- [x] `npm run typecheck` — clean on the current feature branch on 2026-08-18. **If it is red, run both projects separately**
       until Team 1's fix lands:
       `npx tsc --noEmit -p tsconfig.json ; npx tsc --noEmit -p tsconfig.node.json`
-- [ ] `npm test` — green, **on the commit you are merging**, not an earlier one
+- [ ] `npm test` — green, **on the commit you are merging**, not an earlier one.
+      Interim result on 2026-08-18: 646/654 pass; the same eight real-engine tests
+      hit the documented macOS 13 / PyQIR 0.12.5 libc++ incompatibility. No new
+      failure appeared; CI or a supported host and the final merge commit remain.
 - [ ] **Every tool has a test** that calls its handler and asserts it returns real
-      data — one that fails if the handler is pointed at a fixture
+      data — one that fails if the handler is pointed at a fixture. Pending:
+      Melody's §C/§D MCP implementation is not integrated into this branch yet.
 - [ ] **A test that the entry point imports no Electron**, if you can express one
-      cheaply. If not, the grep result goes in the PR instead
-- [ ] The spike scripts run and produce their output on a clean checkout
-- [ ] No test was skipped, `.only`'d, or deleted to make the suite pass
+      cheaply. If not, the grep result goes in the PR instead. Pending: there is
+      no MCP entry point on this branch until §C is integrated.
+- [x] The spike scripts run and produce their output on a clean checkout
+- [x] No test was skipped, `.only`'d, or deleted to make the suite pass. The
+      feature diff only renames one existing store test and adds its WAL assertion.
 - [ ] **Confirm no write path exists.** Grep your own diff for `.save(`,
       `.delete(`, and `QreEngine` — a read-only server that can write is the one
-      way this deliverable fails badly
-- [ ] Walk through `week-6-team-2-definition-of-done.md` line by line — every box
+      way this deliverable fails badly. Pending: the MCP server/tools are not on
+      this branch. The spike's intentional writes and the product store's WAL
+      setup are not MCP handler paths and cannot prove §D read-only by themselves.
+- [x] Walk through `week-6-team-2-definition-of-done.md` line by line — every box
       either ticked or annotated with one line saying why not
 - [ ] **Merged to `main` by Tue Aug 18 EOD** — acceptance from `main`, not a
-      branch. Teammate reviews first
+      branch. Teammate reviews first. Pending: this is still the shared feature PR;
+      rerun every integration-sensitive check after Melody's §C/§D/§H work lands.
 
 ## Blockers & escalation
 

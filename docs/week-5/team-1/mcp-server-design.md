@@ -591,6 +591,15 @@ tool shapes are a proposed design; the **backing types and functions they reuse 
 (`app/src/shared/types.ts` @ `5cdf2b1`): `RunConfig` (`:419`), `RunResult`
 (`:589`), `RunRecord` (`:678`), `RunFilter` (`:763`), `RunProvenance` (`:413`).
 
+**[SCOPE NOTE · Week 6 Part F]** The safer projections and limits below are the
+design target produced by the audit. The Week 6 read-half definition of done
+explicitly defers the general rate limiter and output-sanitization framework. Do
+not sacrifice the four mandatory read tools to build those deferred mechanisms:
+implement a small projection only if it fits Part D cleanly, otherwise ship the
+mandatory handler with the F-1–F-4 risk recorded for the next security pass. The
+F-5 draft adapter is different—it is type/correctness plumbing required for
+`qre_draft_from_run` to satisfy OPEN-3 without a cast or silent data loss.
+
 Conventions across every tool:
 
 - **Every tool declares an `outputSchema`** and returns `structuredContent`
@@ -1409,7 +1418,7 @@ fixtures are only 1.2–1.5 KiB each; that is test-corpus size, not a maximum.
 
 Omitting only `BENCHMARK_REGISTRY.sourcePath` was insufficient.
 
-**[INFERENCE · v1 handler rule]** The corrected contracts above return MCP-owned
+**[INFERENCE · follow-up design]** The corrected contracts above return MCP-owned
 projections. `qre_get_run` excludes `raw`, returns one representative frontier row
 plus a count, redacts upload paths, and normalizes stored error messages.
 `qre_list_runs` uses a safe application discriminated union rather than the
@@ -1434,7 +1443,7 @@ that forwards either verbatim can place a home directory, database path, uploade
 file path, config fragment, provider diagnostic, or engine stderr into the model's
 context. Structured output does not make those values safe; it only labels them.
 
-**[INFERENCE · v1 handler rule]** MCP errors use an allowlisted code and
+**[INFERENCE · follow-up design]** MCP errors use an allowlisted code and
 handler-authored generic message. Expected validation errors may be returned after
 field-name/value redaction and length capping. Unexpected exceptions are recorded
 only in local diagnostics and become generic tool errors; `String(error)`,
@@ -1451,7 +1460,7 @@ JSON parse, allocation, upgrade, and sort. Repeated calls can consume CPU and
 memory and compete with the dashboard even though WAL prevents reader/writer
 blocking in the controlled spike.
 
-**[INFERENCE · v1 handler rule]** Keep the 25 default / 100 maximum response page.
+**[INFERENCE · follow-up design]** Keep the 25 default / 100 maximum response page.
 Use a validated opaque cursor over the existing `(createdAt, savedAt, id)` total
 order, reject malformed cursors without passing their contents to SQLite, allow
 at most one in-flight store read per stdio session, and apply a token bucket with
