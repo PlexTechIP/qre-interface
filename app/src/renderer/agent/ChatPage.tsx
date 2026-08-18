@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentProviderStatus,
   AgentService,
+  FormContextEntry,
   ProviderId,
 } from "../../shared/agentTypes";
 import type {
@@ -24,7 +25,8 @@ import { ConversationActions } from "./ConversationActions";
 import { ConversationList } from "./ConversationList";
 import { ConversationExportDialog } from "./ConversationExportDialog";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
-import { ProviderCredentialPanel } from "./ProviderCredentialPanel";
+import { ProviderModelSelect } from "../components/ProviderModelSelect";
+import { charsToReveal, minCommitIntervalMs } from "./streamReveal";
 
 interface ChatPageProps {
   service: AgentService;
@@ -32,11 +34,33 @@ interface ChatPageProps {
   store: ChatStore;
   status: AgentProviderStatus;
   onReviewDraft: (handoff: DraftHandoff) => void;
-  /** Re-read provider status once a key is stored or removed. */
-  onCredentialChange: () => void;
+  /**
+   * Take the analyst to Settings, where provider keys now live.
+   *
+   * This page used to carry the credential panel itself, so "you have no key"
+   * and "here is where you fix that" were the same piece of UI. Now that key
+   * entry has moved, an explanation without a route to the fix would be a
+   * dead end on the only page that surfaces the problem.
+   */
+  onOpenSettings: () => void;
   provider: ProviderId;
   model: string;
   onSelectionChange: (provider: ProviderId, model: string) => void;
+  /**
+   * What the analyst has already set on the run form.
+   *
+   * Sent with every turn so a proposal starts from their work instead of from
+   * defaults. Without it the model authors against an empty form and the draft
+   * silently resets fields they had already chosen — the week-6 backlog's "a
+   * model draft still discards a half-filled form".
+   */
+  /**
+   * Read as a function rather than taken as a value, so the shell does not have
+   * to re-render on every keystroke in the run form just to keep this current.
+   * Called when a turn is sent and when the request preview is rebuilt, which
+   * are the only two moments it is read.
+   */
+  getFormContext: () => readonly FormContextEntry[];
   /**
    * Which conversation is open, owned by the shell.
    *
@@ -106,7 +130,6 @@ const NO_MESSAGES: readonly ChatMessage[] = [];
 const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** Long enough to coalesce typing, short enough to feel immediate. */
 const SETTLE_MS = 200;
 
 /**
@@ -151,10 +174,11 @@ export function ChatPage({
   store,
   status,
   onReviewDraft,
-  onCredentialChange,
+  onOpenSettings,
   provider,
   model,
   onSelectionChange,
+  getFormContext,
   activeConversationId,
   onActiveConversationChange,
   composer,
@@ -288,10 +312,32 @@ export function ChatPage({
    * describes what would go out now, not what would have gone out when they
    * opened it.
    */
+  /*
+   * Derived once, on arrival.
+   *
+   * That is not a staleness bug, it is the lifetime: the run form lives on a
+   * different page, every page here is a conditional render, and this component
+   * therefore mounts fresh each time the analyst comes back from editing the
+   * form. The value is current as of the moment they arrived, and the form
+   * cannot change while they are looking at this page.
+   *
+   * Reading it as a function rather than taking it as a prop is what keeps the
+   * shell from re-rendering on every keystroke typed on that other page.
+   */
+  const formContext = useMemo(getFormContext, [getFormContext]);
+
   const settledComposer = useSettled(composer, SETTLE_MS);
   const nextRequest = useMemo(
-    () => buildChatRequest(messages, provider, model, settledComposer),
-    [messages, provider, model, settledComposer],
+    /*
+     * The form context is part of this, because it is part of what gets sent.
+     *
+     * Leaving it out made the "exact outbound request" panel show a system
+     * prompt WITHOUT the analyst's own field values while the real request
+     * carried them — so the one surface that exists to report what leaves the
+     * machine was the one hiding what this milestone added to it.
+     */
+    () => buildChatRequest(messages, provider, model, settledComposer, { formContext }),
+    [messages, provider, model, settledComposer, formContext],
   );
 
   useEffect(() => {
@@ -338,13 +384,130 @@ export function ChatPage({
    */
   const busy = useRef(false);
 
+  /**
+   * The prose of the turn currently arriving, and the id it belongs to.
+   *
+   * Held together so a fragment can be matched to the request that asked for
+   * it: a window that cancelled and re-sent would otherwise paint the abandoned
+   * request's fragments into the new turn, and once they are just strings the
+   * two streams are indistinguishable.
+   */
+  const [streaming, setStreaming] = useState<{ requestId: string; text: string }>({
+    requestId: "",
+    text: "",
+  });
+
+  /**
+   * The turn currently being streamed, readable from the delta listener.
+   *
+   * The listener is registered once for the life of the page, so it cannot
+   * close over the live id — it reads it here instead.
+   */
+  const liveRequestId = useRef("");
+  /** Everything received for the live turn, whether painted yet or not. */
+  const received = useRef("");
+  /** How much of `received` is on screen. The rest is still being revealed. */
+  const shown = useRef(0);
+  const frame = useRef<number | null>(null);
+  const lastFrameAt = useRef(0);
+  const lastCommitAt = useRef(0);
+
+  /** Stop the reveal loop. Safe to call when it is not running. */
+  const stopReveal = useCallback((): void => {
+    if (frame.current !== null) {
+      cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
+  }, []);
+
+  /*
+   * One subscription for the life of the page, not one per turn.
+   *
+   * Registering inside `runTurn` would add and remove a listener on every send,
+   * and a fragment arriving between the provider's first byte and the effect
+   * committing would be dropped. The id filter is what makes a single
+   * long-lived listener safe.
+   *
+   * What arrives is buffered, not painted. A provider delivers prose in clumps
+   * shaped by tokenisation and network buffering, so painting each burst as it
+   * lands moves the text in steps as uneven as the network — legible, but it
+   * lurches. `charsToReveal` drains the buffer toward the screen at a rate that
+   * holds the unshown remainder at a roughly constant duration, which is what
+   * reads as smooth; see `streamReveal.ts` for the pacing itself.
+   *
+   * This also bounds the markdown cost, which is why the batch it replaces
+   * existed: every paint re-parses the whole accumulated reply, and a frame
+   * loop paints at the display's rate no matter how many fragments arrived.
+   *
+   * A hidden window stops delivering frames, so the reveal pauses while the app
+   * is minimised or occluded. That is the behaviour worth having: nothing is
+   * lost — arrival keeps filling the buffer — and the first frame after the
+   * window comes back is charged the whole elapsed gap, so it catches up at
+   * once instead of replaying the wait.
+   */
+  useEffect(() => {
+    const step = (now: number): void => {
+      const elapsed = Math.max(0, now - lastFrameAt.current);
+      lastFrameAt.current = now;
+      shown.current += charsToReveal(received.current.length - shown.current, elapsed);
+      const drained = shown.current >= received.current.length;
+      /*
+       * The cursor advances every frame; the screen does not have to. Painting
+       * re-parses the whole reply, so a long one is throttled to keep that cost
+       * inside its budget — see `minCommitIntervalMs`. A skipped paint shows
+       * more characters next time rather than showing them later, so the pacing
+       * above is unaffected. The last one is never skipped, or the tail of a
+       * reply would sit revealed-but-unpainted until the turn landed.
+       */
+      if (drained || now - lastCommitAt.current >= minCommitIntervalMs(shown.current)) {
+        lastCommitAt.current = now;
+        const text = received.current.slice(0, shown.current);
+        setStreaming((current) =>
+          current.requestId === liveRequestId.current
+            ? { requestId: current.requestId, text }
+            : current,
+        );
+      }
+      frame.current = drained ? null : requestAnimationFrame(step);
+    };
+
+    return service.onReplyDelta(({ requestId, fragment }) => {
+      if (requestId !== liveRequestId.current) return;
+      received.current += fragment;
+      if (frame.current !== null) return;
+      // Timed from now rather than from the last frame: the gap since the
+      // previous burst is not reading time the analyst spent, and charging it
+      // as elapsed would dump the whole buffer in the first frame.
+      lastFrameAt.current = performance.now();
+      // Not reset alongside it: a burst arriving right after a paint should
+      // still wait out the interval rather than paint twice in a frame.
+      frame.current = requestAnimationFrame(step);
+    });
+  }, [service]);
+
+  // A page that unmounts mid-stream must not leave a frame loop holding a
+  // setState for a component React has already dropped.
+  useEffect(() => stopReveal, [stopReveal]);
+
   /** One turn against the provider. Callers hold the send slot. */
   const runTurn = useCallback(
     async (conversationId: string, transcript: readonly ChatMessage[]): Promise<void> => {
+      // Minted here so the listener can be armed BEFORE the request goes out:
+      // a provider that answers quickly would otherwise stream its first
+      // fragments at an id nothing is listening for.
+      const requestId = crypto.randomUUID();
+      liveRequestId.current = requestId;
+      received.current = "";
+      shown.current = 0;
+      lastCommitAt.current = 0;
+      stopReveal();
+      setStreaming({ requestId, text: "" });
       setSending(true);
       setNote(null);
       try {
-        const result = await service.requestReply(buildChatRequest(transcript, provider, model));
+        const result = await service.requestReply(
+          buildChatRequest(transcript, provider, model, "", { requestId, formContext }),
+        );
         if (!result.ok) {
           // Cancelling is not a failure — it is the analyst getting what they
           // asked for. Showing it in the same red as a revoked key would teach
@@ -367,9 +530,22 @@ export function ChatPage({
         setNote({ tone: "error", text: describeError(error) });
       } finally {
         setSending(false);
+        // Cleared once the turn has landed in the transcript, so the streamed
+        // copy and the stored one are never both on screen. The buffer goes
+        // too, or a fragment that raced the reply would paint onto the next turn.
+        liveRequestId.current = "";
+        received.current = "";
+        shown.current = 0;
+        stopReveal();
+        // Any remainder still waiting is not lost: the stored turn rendering
+        // below carries the identical prose, so this hands off rather than
+        // truncating. Snapping the last fraction of a second is the right
+        // trade — holding the finished reply back to finish typing it would
+        // stall a turn the analyst can already see is done.
+        setStreaming({ requestId: "", text: "" });
       }
     },
-    [service, store, provider, model, refreshList],
+    [service, store, provider, model, refreshList, formContext, stopReveal],
   );
 
   const send = async (): Promise<void> => {
@@ -438,6 +614,23 @@ export function ChatPage({
 
   const useDraft = (message: ChatMessage): void => {
     if (message.draft === null) return;
+    /*
+     * A proposal can only be opened from the conversation showing it, so this
+     * is not expected — but the handoff has to name a real conversation for the
+     * analyst to get back to after the run.
+     *
+     * Reported rather than returned silently, like the attribution guard below
+     * it. A bare return leaves "Use this configuration" doing nothing at all:
+     * no navigation, no message, nothing to distinguish it from a dead button.
+     */
+    if (activeConversationId === null) {
+      setDraftError({
+        messageId: message.id,
+        message:
+          "This proposal is not attached to an open conversation, so there would be no thread to return to after the run. Reopen the conversation and try again.",
+      });
+      return;
+    }
     /**
      * No attribution, no handoff. This read `message.model ?? "model"`, and
      * that fallback went straight into `RunProvenance.model` — which the
@@ -454,7 +647,7 @@ export function ChatPage({
       });
       return;
     }
-    const mapped = draftToFormState(message.draft, message.model);
+    const mapped = draftToFormState(message.draft, message.model, activeConversationId);
     if (!mapped.ok) {
       // On the card it belongs to, not in the page-level note: the analyst is
       // being told this proposal cannot be opened, and which one matters.
@@ -565,14 +758,21 @@ export function ChatPage({
         </p>
       </header>
 
-      <ProviderCredentialPanel
-        service={service}
-        status={status}
-        provider={provider}
-        model={model}
-        onSelectionChange={onSelectionChange}
-        onCredentialChange={onCredentialChange}
-      />
+      {/*
+        Which model answers is a per-conversation decision — an analyst
+        comparing two providers' readings of the same prompt switches here
+        mid-thread — so the switcher stays even though key entry left. It is
+        the same component Settings renders, so "provider resets the model"
+        cannot be true on one surface and not the other.
+      */}
+      <div className="chat-model-bar">
+        <ProviderModelSelect
+          providers={status.providers}
+          provider={provider}
+          model={model}
+          onChange={onSelectionChange}
+        />
+      </div>
 
       {/*
         Two views of one store behind a segmented control — the same shape
@@ -759,6 +959,7 @@ export function ChatPage({
             <ChatTranscript
               messages={messages}
               sending={sending}
+              streamed={streaming.text}
               onUseDraft={useDraft}
               draftError={draftError}
             />
@@ -851,14 +1052,27 @@ export function ChatPage({
               </span>
             </div>
 
-            {!selectedIsConfigured && status.available ? (
-              <p className="agent-note">
-                No key is configured for {selected?.displayName ?? provider}, so there is
-                nothing to send this to. Add one under <strong>Model provider</strong> above, or
-                switch to a provider that has one.
-              </p>
+            {/*
+              One block, two readings of the same problem: this provider has no
+              key, or nothing does. Both end at Settings, so both carry the way
+              there rather than naming a control that is no longer on this page.
+            */}
+            {!selectedIsConfigured ? (
+              <div className="chat-needs-key">
+                {status.available ? (
+                  <p className="agent-note">
+                    No key is configured for {selected?.displayName ?? provider}, so there
+                    is nothing to send this to. Add one in Settings, or switch to a
+                    provider that has one.
+                  </p>
+                ) : (
+                  <p className="agent-error">{status.message}</p>
+                )}
+                <button type="button" className="agent-secondary" onClick={onOpenSettings}>
+                  Open Settings
+                </button>
+              </div>
             ) : null}
-            {!status.available ? <p className="agent-error">{status.message}</p> : null}
 
             {/*
               The exact outbound request, on demand rather than as a gate.

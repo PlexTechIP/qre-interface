@@ -6,6 +6,38 @@ import {
   jumpToField,
 } from "./fieldAnchors";
 
+/**
+ * The field name, emphasised once.
+ *
+ * Messages are authored to stand alone, because the same string is rendered
+ * under the input where nothing else identifies the field. Prefixing the label
+ * on top of that read as "Trotter Step: Trotter Step must be at most Total
+ * Time." — named twice inside eight words.
+ *
+ * Stripping the subject was the first attempt and it left verb fragments
+ * ("Gate time: is required — enter a value in nanoseconds."). So the sentence
+ * is never edited: where it already opens with the field name, that opening is
+ * simply the bold part, and the colon-prefix is used only for the messages
+ * that do not name their field at all. Either way the list keeps one bold
+ * field name per row to scan down.
+ */
+function labelled(message: string, label: string): React.JSX.Element {
+  if (message.toLowerCase().startsWith(label.toLowerCase())) {
+    return (
+      <>
+        {/* Sliced from the message, not the table, so the message's own casing wins. */}
+        <span className="validation-box__field">{message.slice(0, label.length)}</span>
+        {message.slice(label.length)}
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="validation-box__field">{label}:</span> {message}
+    </>
+  );
+}
+
 interface ValidationSummaryProps {
   errors: FieldErrors;
   pending?: boolean;
@@ -79,8 +111,7 @@ export function ValidationSummary({
               onClick={() => jumpToField(entry.anchors)}
               title={`Jump to ${entry.label}`}
             >
-              <span className="validation-box__field">{entry.label}:</span>{" "}
-              {entry.message}
+              {labelled(entry.message, entry.label)}
             </button>
           </li>
         ))}

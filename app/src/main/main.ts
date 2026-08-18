@@ -1,14 +1,23 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAgentHandlers } from "./agentHandler.js";
+import { registerAppInfoHandlers } from "./appInfoHandler.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 import { registerChatHandlers } from "./chatHandler.js";
 import { SqliteChatStore } from "./sqliteChatStore.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
 import { CredentialStore, migrateLegacyAnthropicCredential } from "./credentialStore.js";
-import { OpenAiDraftGenerator } from "./openAiDraftGenerator.js";
-import { AnthropicCredentialValidator, OpenAiCredentialValidator } from "./credentialValidator.js";
+import { openAiDraftGenerator } from "./openAiDraftGenerator.js";
+import { openRouterDraftGenerator } from "./openRouterDraftGenerator.js";
+import { ModelCatalog } from "./modelCatalog.js";
+import { OpenRouterCatalogClient } from "./openRouterCatalog.js";
+import { OPENROUTER_SHORTLIST } from "../shared/providerModels.js";
+import {
+  AnthropicCredentialValidator,
+  OpenAiCredentialValidator,
+  OpenRouterCredentialValidator,
+} from "./credentialValidator.js";
 import { killLiveEngineProcesses } from "./engine/execute.js";
 import { resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
@@ -80,12 +89,32 @@ app.whenReady().then(() => {
   // and `chat:clear` has to be able to remove all of it without going anywhere
   // near the store that holds their results.
   const chatDbOverride = process.env["QRE_CHAT_DB_PATH"];
-  chatStore = new SqliteChatStore(
+  const chatDbPath =
     chatDbOverride && chatDbOverride.length > 0
       ? chatDbOverride
-      : path.join(app.getPath("userData"), "chat-history.sqlite"),
-  );
+      : path.join(app.getPath("userData"), "chat-history.sqlite");
+  chatStore = new SqliteChatStore(chatDbPath);
   registerChatHandlers(ipcMain, chatStore);
+
+  // Settings shows where these live. Resolved here rather than re-derived on
+  // demand, because this is the only place that knows whether an env override
+  // won — which is otherwise invisible everywhere in the app.
+  registerAppInfoHandlers(
+    ipcMain,
+    [
+      {
+        id: "runDatabase",
+        path: dbPath,
+        overridden: Boolean(dbOverride && dbOverride.length > 0),
+      },
+      {
+        id: "chatDatabase",
+        path: chatDbPath,
+        overridden: Boolean(chatDbOverride && chatDbOverride.length > 0),
+      },
+    ],
+    (target) => shell.showItemInFolder(target),
+  );
 
   // A separate, non-SQLite file for the encrypted provider key — never in
   // the same store as run history, never JSON.
@@ -101,19 +130,46 @@ app.whenReady().then(() => {
       path.join(app.getPath("userData"), "provider-credential-openai.enc"),
       safeStorage,
     ),
+    // One file per provider, so removing one key cannot disturb another and a
+    // corrupt blob costs exactly one provider.
+    openrouter: new CredentialStore(
+      path.join(app.getPath("userData"), "provider-credential-openrouter.enc"),
+      safeStorage,
+    ),
   };
   registerCredentialHandlers(ipcMain, vault, {
     anthropic: new AnthropicCredentialValidator(),
     openai: new OpenAiCredentialValidator(),
+    openrouter: new OpenRouterCredentialValidator(),
   });
+
+  /*
+   * OpenRouter's model list, held for this launch only.
+   *
+   * Constructed here rather than inside the handler because it is state with a
+   * lifetime — everything else `registerAgentHandlers` receives is a factory or
+   * a store — and because a cache owned by the handler would be rebuilt by any
+   * future caller that registers handlers twice, silently discarding a
+   * catalogue the analyst had just refreshed.
+   */
+  const openRouterCatalog = {
+    cache: new ModelCatalog("openrouter", OPENROUTER_SHORTLIST),
+    client: new OpenRouterCatalogClient(),
+  };
 
   // The agent surface reads the key only here, in main, to attach it to an
   // outbound request. The store is passed whole; the renderer's window.agent
   // can reach neither `readForRequest` nor the value it returns.
-  registerAgentHandlers(ipcMain, vault, {
-    anthropic: { create: (model) => new AnthropicDraftGenerator(model) },
-    openai: { create: (model) => new OpenAiDraftGenerator(model) },
-  });
+  registerAgentHandlers(
+    ipcMain,
+    vault,
+    {
+      anthropic: { create: (model) => new AnthropicDraftGenerator(model) },
+      openai: { create: (model) => openAiDraftGenerator(model) },
+      openrouter: { create: (model) => openRouterDraftGenerator(model) },
+    },
+    { openrouter: openRouterCatalog },
+  );
 
   createWindow();
   app.on("activate", () => {

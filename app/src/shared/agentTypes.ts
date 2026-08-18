@@ -9,7 +9,7 @@
 
 import type { Application, Architecture, RunConfig } from "./types";
 
-export const PROVIDER_IDS = ["anthropic", "openai"] as const;
+export const PROVIDER_IDS = ["anthropic", "openai", "openrouter"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 type RequiredNullable<T, K extends keyof T> = Omit<T, K> & {
@@ -117,6 +117,36 @@ export type ChatRole = "user" | "assistant";
 export interface ChatTurn {
   readonly role: ChatRole;
   readonly content: string;
+  /**
+   * The proposal this assistant turn attached, replayed so follow-ups edit it
+   * rather than restart from defaults.
+   *
+   * It travels beside the prose rather than serialised into it because the two
+   * providers represent a past tool call differently — Anthropic wants a
+   * `tool_use` block answered by a `tool_result`, OpenAI wants `tool_calls` on
+   * the assistant message answered by a `role: "tool"` message. Handing the
+   * adapters a JSON string would force each to parse prose looking for a draft
+   * it had itself just stringified.
+   *
+   * Absent on user turns, and null on an assistant turn that only talked.
+   */
+  readonly draft?: GeneratedRunDraft | null;
+}
+
+/**
+ * One field the analyst has already set in the run form.
+ *
+ * Addressed by the schema path the model already knows the field by — the same
+ * `architecture.errorRate` vocabulary `GENERATION_FIELD_GUIDE` teaches it — so
+ * "carry this through" needs no translation table on either side.
+ *
+ * A rendered `value` rather than the typed one: this exists to be read in a
+ * prompt, and a snapshot that mirrored `FormState`'s real types would drag a
+ * renderer-owned UI type across the IPC boundary and into the main process.
+ */
+export interface FormContextEntry {
+  readonly field: string;
+  readonly value: string;
 }
 
 /**
@@ -138,6 +168,70 @@ export interface AgentChatRequest {
   /** Provider and model travel with every request, never as main-process state. */
   provider: ProviderId;
   model: string;
+  /**
+   * What the analyst has already filled in on the run form, if anything.
+   *
+   * Without it a proposal is authored against defaults and silently discards
+   * work already done — the analyst sets an error budget, asks for "Grover over
+   * 20 qubits", and gets a draft that resets the budget they just chose. With
+   * it the model is told what is already settled and asked to carry it through.
+   *
+   * Optional because the form can be untouched, and because the request has to
+   * remain sendable from a page that has no form open.
+   */
+  formContext?: readonly FormContextEntry[];
+  /**
+   * Tags the fragments this request will stream back.
+   *
+   * Streaming is a push channel, so a window that cancelled and re-sent would
+   * otherwise paint the abandoned request's fragments into the new turn — once
+   * they are just strings the two streams are indistinguishable. Optional
+   * because `previewRequest` streams nothing and has no id to give.
+   */
+  requestId?: string;
+}
+
+/** One fragment of prose, on its way to the window that asked for it. */
+export interface AgentReplyDelta {
+  readonly requestId: string;
+  readonly fragment: string;
+}
+
+/**
+ * One model an aggregating provider actually routes to, as it reported itself.
+ *
+ * The first-party providers need nothing like this: their model lists are three
+ * pinned strings apiece and everything worth saying about them fits in the id.
+ * OpenRouter routes hundreds, so the picker has to say more than a slug — a
+ * context window and a price are what separate two plausible-looking options.
+ */
+export interface ModelCatalogEntry {
+  /** The `vendor/model` slug, which is also what travels in a request. */
+  readonly id: string;
+  readonly displayName: string;
+  /** Tokens, as the provider reports it. Null when it reports nothing usable. */
+  readonly contextLength: number | null;
+  /** USD per million tokens. Null rather than 0, which is a real free-tier price. */
+  readonly promptPricePerMillion: number | null;
+  readonly completionPricePerMillion: number | null;
+  /** On the shortlist this build promotes — pinned above the long tail. */
+  readonly promoted: boolean;
+}
+
+/**
+ * What a metered key has left, for providers that publish it.
+ *
+ * OpenRouter does, through the same endpoint that validates the key, so it
+ * costs nothing extra to show. Neither first-party provider exposes an
+ * equivalent, which is why this is per-provider data and not a field on status.
+ */
+export interface ProviderCredits {
+  /** USD still spendable. Null when the key is uncapped rather than exhausted. */
+  readonly remaining: number | null;
+  /** USD spent on this key so far. */
+  readonly used: number;
+  /** The cap `remaining` counts down from, or null for an uncapped key. */
+  readonly limit: number | null;
 }
 
 export interface ProviderAvailability {
@@ -147,7 +241,38 @@ export interface ProviderAvailability {
   readonly configured: boolean;
   readonly models: readonly string[];
   readonly defaultModel: string;
+  /**
+   * The provider's own model list. Three states, all of them meaningful:
+   *
+   * - **absent** — this provider has no catalogue to fetch. Its models are a
+   *   compile-time constant and there is nothing to refresh, which is why
+   *   Settings shows no catalogue controls for Anthropic or OpenAI.
+   * - **null** — it has one, and nothing has been fetched yet. `models` is the
+   *   shortlist this build ships, and a refresh would replace it.
+   * - **a list** — fetched this session. `models` is derived from it, and the
+   *   entries carry the context window and pricing a slug alone cannot.
+   *
+   * Collapsing the first two into "absent" would leave the Settings page
+   * guessing which providers own a catalogue by name.
+   */
+  readonly catalog?: readonly ModelCatalogEntry[] | null;
 }
+
+/**
+ * Refreshing an aggregating provider's model catalogue, and reading whatever
+ * account detail comes back with it.
+ *
+ * A failure resolves as data like every other provider outcome: a catalogue
+ * that could not be fetched leaves the app on its shipped shortlist, which is
+ * a degraded picker rather than a broken feature.
+ */
+export type ProviderCatalogResult =
+  | {
+      ok: true;
+      models: readonly ModelCatalogEntry[];
+      credits: ProviderCredits | null;
+    }
+  | { ok: false; code: AgentFailureCode; message: string };
 
 export type AgentProviderStatus =
   | {
@@ -190,7 +315,17 @@ export type AgentFailureCode =
    * successfully. The analyst's fix differs: re-enter the key (which overwrites
    * the unreadable blob) rather than check it for typos.
    */
-  | "CREDENTIAL_UNREADABLE";
+  | "CREDENTIAL_UNREADABLE"
+  /**
+   * The selected model is not one this provider will route to.
+   *
+   * Only reachable for a provider whose catalogue is fetched rather than
+   * pinned. For the first-party providers an unknown model means the renderer
+   * and main bundles disagree, which rejects; here it means OpenRouter's
+   * inventory moved under a selection the analyst made earlier, which is an
+   * ordinary Tuesday and has to arrive as something the UI can render.
+   */
+  | "UNSUPPORTED_MODEL";
 
 /**
  * Provider failures are expected outcomes and therefore resolve as data.
@@ -267,4 +402,33 @@ export interface AgentService {
   ): Promise<CredentialConfigureResult>;
   /** Delete a provider's stored key. The one-way street's exit, not a getter. */
   clearCredential(provider: ProviderId): Promise<CredentialClearResult>;
+  /**
+   * Re-fetch an aggregating provider's model catalogue, and its credit balance
+   * if it publishes one.
+   *
+   * Always a network call, never a cached read — the button that triggers it
+   * says "Refresh", and a refresh that quietly returned last hour's list would
+   * be the only control on this page that lies. The result is cached in main
+   * for the session so `getStatus` can report it without going out again.
+   *
+   * It needs the stored key, which is why it lives on this surface and takes no
+   * credential: the renderer names the provider, main supplies the secret. That
+   * is the same asymmetry `requestReply` runs on, and the reason there is still
+   * nothing here that hands a key back.
+   */
+  refreshCatalog(provider: ProviderId): Promise<ProviderCatalogResult>;
+  /**
+   * Listen for prose arriving mid-request.
+   *
+   * The one push on this surface. `requestReply` keeps its shape and still
+   * resolves with the whole validated turn, so persistence and error handling
+   * are untouched — this exists purely so the wait is legible instead of two
+   * minutes of "Thinking…".
+   *
+   * Returns its own unsubscribe rather than expecting a matching `off`: a
+   * listener registered in an effect has to be removed by that effect's
+   * cleanup, and handing back the exact remover is the shape that cannot be
+   * called with the wrong argument.
+   */
+  onReplyDelta(listener: (delta: AgentReplyDelta) => void): () => void;
 }

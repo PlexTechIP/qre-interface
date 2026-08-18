@@ -1,9 +1,10 @@
 import type { IpcMain } from "electron";
 
-import type {
-  CredentialClearResult,
-  CredentialConfigureResult,
-  ProviderId,
+import {
+  PROVIDER_IDS,
+  type CredentialClearResult,
+  type CredentialConfigureResult,
+  type ProviderId,
 } from "../shared/agentTypes.js";
 import { isProviderId } from "../shared/providerModels.js";
 import type { CredentialBackendCheck, CredentialStore } from "./credentialStore.js";
@@ -38,10 +39,24 @@ export function registerCredentialHandlers(
   vault: CredentialVault,
   validators: CredentialValidators,
 ): void {
-  ipcMain.handle(CREDENTIAL_STATUS_CHANNEL, (): Record<ProviderId, boolean> => ({
-    anthropic: vault.anthropic.hasCredential(),
-    openai: vault.openai.hasCredential(),
-  }));
+  /*
+   * Iterated rather than written out, because the literal version was a
+   * provider-shaped hole: adding OpenRouter to `PROVIDER_IDS` left this
+   * reporting on two of three, and nothing in the type system noticed — the
+   * object still satisfied `Record<ProviderId, boolean>` only because it was
+   * being checked against a two-member union at the time.
+   *
+   * `Object.fromEntries` cannot express that `PROVIDER_IDS` covers `ProviderId`,
+   * so the assertion is the price of iteration. It is provable rather than
+   * hopeful: the union is derived from that array.
+   */
+  ipcMain.handle(
+    CREDENTIAL_STATUS_CHANNEL,
+    (): Record<ProviderId, boolean> =>
+      Object.fromEntries(
+        PROVIDER_IDS.map((provider) => [provider, vault[provider].hasCredential()]),
+      ) as Record<ProviderId, boolean>,
+  );
 
   /**
    * Delete a provider's stored key.

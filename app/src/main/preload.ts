@@ -2,11 +2,20 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   AgentChatRequest,
   AgentChatResult,
+  AgentReplyDelta,
   AgentProviderStatus,
   AgentService,
   CredentialClearResult,
   CredentialConfigureResult,
+  ProviderCatalogResult,
+  ProviderId,
 } from "../shared/agentTypes.js";
+import type {
+  AppInfoService,
+  RevealResult,
+  StorageInfo,
+  StorageLocationId,
+} from "../shared/appInfoTypes.js";
 import type {
   ChatMessage,
   ChatStore,
@@ -26,9 +35,13 @@ import type {
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
   AGENT_CANCEL_CHANNEL,
+  AGENT_CATALOG_CHANNEL,
+  AGENT_REPLY_DELTA_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
   AGENT_REPLY_CHANNEL,
   AGENT_STATUS_CHANNEL,
+  APP_INFO_REVEAL_CHANNEL,
+  APP_INFO_STORAGE_CHANNEL,
   CHAT_APPEND_CHANNEL,
   CHAT_CLEAR_CHANNEL,
   CHAT_CREATE_CHANNEL,
@@ -108,6 +121,28 @@ const agent: AgentService = {
   cancelReply(): Promise<void> {
     return ipcRenderer.invoke(AGENT_CANCEL_CHANNEL) as Promise<void>;
   },
+  // Takes a provider id and returns models and a dollar balance. It reads the
+  // stored key in main to make the request, and — like every other method here
+  // — has no way to give it back.
+  refreshCatalog(provider: ProviderId): Promise<ProviderCatalogResult> {
+    return ipcRenderer.invoke(AGENT_CATALOG_CHANNEL, provider) as Promise<ProviderCatalogResult>;
+  },
+  /*
+   * The one listener on this surface, and the only place `ipcRenderer.on`
+   * appears in the preload at all.
+   *
+   * The IpcRendererEvent is deliberately not forwarded: it carries `sender` and
+   * `ports`, which are handles into the main process, and handing those to the
+   * renderer would put a capability behind a callback that exists to deliver
+   * strings. Only the payload crosses.
+   */
+  onReplyDelta(listener: (delta: AgentReplyDelta) => void): () => void {
+    const forward = (_event: unknown, delta: AgentReplyDelta): void => listener(delta);
+    ipcRenderer.on(AGENT_REPLY_DELTA_CHANNEL, forward);
+    return () => {
+      ipcRenderer.removeListener(AGENT_REPLY_DELTA_CHANNEL, forward);
+    };
+  },
   configureCredential(
     provider: Parameters<AgentService["configureCredential"]>[0],
     apiKey: string,
@@ -160,7 +195,23 @@ const chats: ChatStore = {
   },
 };
 
+/**
+ * Where this install keeps its data — read-only, and the reveal call names a
+ * location rather than a path (see appInfoTypes.ts). Kept off `store` and
+ * `chats` deliberately: those are each ONE database's contents, and this
+ * describes the app's data directory as a whole.
+ */
+const appInfo: AppInfoService = {
+  getStorage(): Promise<StorageInfo> {
+    return ipcRenderer.invoke(APP_INFO_STORAGE_CHANNEL) as Promise<StorageInfo>;
+  },
+  reveal(id: StorageLocationId): Promise<RevealResult> {
+    return ipcRenderer.invoke(APP_INFO_REVEAL_CHANNEL, id) as Promise<RevealResult>;
+  },
+};
+
 contextBridge.exposeInMainWorld("estimator", estimator);
+contextBridge.exposeInMainWorld("appInfo", appInfo);
 contextBridge.exposeInMainWorld("uploads", uploads);
 contextBridge.exposeInMainWorld("store", store);
 contextBridge.exposeInMainWorld("agent", agent);

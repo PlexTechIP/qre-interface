@@ -2,10 +2,11 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  CredentialClearResult,
-  CredentialConfigureResult,
-  ProviderId,
+import {
+  PROVIDER_IDS,
+  type CredentialClearResult,
+  type CredentialConfigureResult,
+  type ProviderId,
 } from "../shared/agentTypes.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
 import type { CredentialBackendCheck } from "./credentialStore.js";
@@ -43,8 +44,12 @@ function setup() {
       handlers.set(channel, listener as Listener);
     },
   };
-  const vault = { anthropic: makeStore(), openai: makeStore() };
-  const validators = { anthropic: makeValidator(), openai: makeValidator() };
+  const vault = { anthropic: makeStore(), openai: makeStore(), openrouter: makeStore() };
+  const validators = {
+    anthropic: makeValidator(),
+    openai: makeValidator(),
+    openrouter: makeValidator(),
+  };
 
   registerCredentialHandlers(ipcMain, vault, validators);
 
@@ -162,7 +167,23 @@ describe("registerCredentialHandlers", () => {
     const { invokeStatus, vault } = setup();
     vault.anthropic.hasCredential.mockReturnValue(true);
 
-    await expect(invokeStatus()).resolves.toEqual({ anthropic: true, openai: false });
+    await expect(invokeStatus()).resolves.toEqual({
+      anthropic: true,
+      openai: false,
+      openrouter: false,
+    });
+  });
+
+  /**
+   * Asserted against `PROVIDER_IDS` rather than a literal, because the literal
+   * version of this handler silently reported on two of three when OpenRouter
+   * was added — a provider could go missing from status while every existing
+   * assertion still passed.
+   */
+  it("reports on every provider the app supports", async () => {
+    const status = await setup().invokeStatus();
+
+    expect(Object.keys(status).sort()).toEqual([...PROVIDER_IDS].sort());
   });
 
   it("refuses the plaintext-fallback backend as data, without validating or writing", async () => {

@@ -60,13 +60,13 @@ describe("Run-button validation gating", () => {
 
   it("shows an inline reason for each missing required time", () => {
     render(<RunConfiguration />);
-    // Each reason surfaces twice — at the field and in the validation summary.
+    // Queried as buttons, because that is what each summary entry is: the
+    // reason and the jump to the field it names are one control. The field
+    // name inside it is its own element, so a text query would miss the row.
+    expect(screen.getByRole("button", { name: /gate time is required/i })).toBeInTheDocument();
     expect(
-      screen.getAllByText(/gate time is required/i).length,
-    ).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText(/measurement time is required/i).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("button", { name: /measurement time is required/i }),
+    ).toBeInTheDocument();
   });
 
   it("enables Run once the required times are filled", async () => {
@@ -88,8 +88,8 @@ describe("Run-button validation gating", () => {
 
     expect(runButton()).toBeDisabled();
     expect(
-      screen.getAllByText(/error rate must be between 0 and 0\.01/i).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("button", { name: /error rate must be between 0 and 0\.01/i }),
+    ).toBeInTheDocument();
   });
 
   it("rejects non-numeric input with an inline message", async () => {

@@ -1,23 +1,38 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/agentTypes";
+import type {
+  AgentProviderStatus,
+  AgentService,
+  FormContextEntry,
+  ProviderId,
+} from "../shared/agentTypes";
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { ChatPage, type ChatView } from "./agent/ChatPage";
 import type { DraftHandoff } from "./agent/draftToFormState";
-import { NetworkStatus } from "./agent/NetworkStatus";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import type { RerunRequest } from "./history/rerun";
 import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
-import { RunConfiguration } from "./RunConfiguration";
-import { ThemeToggle, type Theme } from "./ThemeToggle";
+import { describeRunForAgent } from "./agent/agentRunReport";
+import { formContextFromState } from "./agent/formContext";
+import { RunConfiguration, type FormSnapshot } from "./RunConfiguration";
+import { SettingsButton } from "./settings/SettingsButton";
+import { SettingsPage } from "./settings/SettingsPage";
+import {
+  DARK_QUERY,
+  readStoredPreference,
+  resolveTheme,
+  systemPrefersDark,
+  type ThemePreference,
+} from "./theme";
+import { ThemeToggle } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
 const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
 
-type Page = "config" | "agent" | "results" | "history" | "comparison";
+type Page = "config" | "agent" | "results" | "history" | "comparison" | "settings";
 
 const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
   available: false,
@@ -29,18 +44,17 @@ const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
   message: "No model provider is configured. The rest of the app remains available offline.",
 };
 
-function getInitialTheme(): Theme {
-  const domTheme = document.documentElement.dataset.theme;
-  if (domTheme === "light" || domTheme === "dark") {
-    return domTheme;
-  }
-
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") {
-    return stored;
-  }
-
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+/**
+ * What was chosen, not what is painted.
+ *
+ * This deliberately does NOT read `document.documentElement.dataset.theme`
+ * the way it used to. That attribute is written by the boot script in
+ * index.html and is already RESOLVED, so reading it back could only tell us
+ * light or dark — "system" would round-trip to whichever it happened to
+ * resolve to at launch, and the option would silently un-set itself.
+ */
+function getInitialThemePreference(): ThemePreference {
+  return readStoredPreference(window.localStorage.getItem(THEME_STORAGE_KEY));
 }
 
 function getInitialAgentSelection(): { provider: ProviderId; model: string } {
@@ -67,6 +81,24 @@ function getInitialAgentSelection(): { provider: ProviderId; model: string } {
     // A malformed non-secret preference must not block the page.
   }
   return fallback;
+}
+
+/**
+ * The model to start a provider on, taken from status rather than the constant.
+ *
+ * They agree for Anthropic and OpenAI, whose model lists are pinned. They can
+ * disagree for OpenRouter: main derives `defaultModel` from the catalogue it
+ * fetched, so a shipped default the aggregator has stopped routing is already
+ * corrected there. Reading `PROVIDER_MODELS` directly here would reintroduce
+ * the stale slug at the one moment the app picks a model for the analyst —
+ * their first send would fail on a choice they never made.
+ *
+ * Falls back to the constant when status has nothing to say, which is the state
+ * before the first `getStatus` resolves.
+ */
+function defaultModelFor(status: AgentProviderStatus, provider: ProviderId): string {
+  const known = status.providers.find((candidate) => candidate.provider === provider);
+  return known?.defaultModel ?? PROVIDER_MODELS[provider].defaultModel;
 }
 
 interface NavItem {
@@ -108,7 +140,11 @@ export function resolveAgentService(injected?: AgentService): AgentService {
 
 export function App({ agentService }: { agentService?: AgentService } = {}) {
   const resolvedAgentService = resolveAgentService(agentService);
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    getInitialThemePreference,
+  );
+  const [systemDark, setSystemDark] = useState<boolean>(systemPrefersDark);
+  const theme = resolveTheme(themePreference, systemDark);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [activePage, setActivePage] = useState<Page>("config");
   const [agentSelection, setAgentSelection] = useState(getInitialAgentSelection);
@@ -122,6 +158,53 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [selectedRowByRunId, setSelectedRowByRunId] = useState<SelectedRowByRunId>({});
   // A reconstructed config queued by a Rerun, pre-filled into the form.
   const [rerunConfig, setRerunConfig] = useState<RunConfig | null>(null);
+  /**
+   * The run form as it last stood, mirrored up out of `RunConfiguration`.
+   *
+   * Two jobs, and neither is possible while the form's state lives only inside
+   * a page that unmounts on every sidebar click. It survives navigation, so a
+   * half-filled form is still there when the analyst comes back from asking the
+   * model about it. And it is what tells the model what they have already
+   * decided, so a proposal starts from their work instead of resetting it.
+   *
+   * A REF, not state. The form reports every keystroke, and holding this in
+   * state re-rendered the whole shell — and re-derived the model's form context
+   * — on each one. Nothing renders from it directly: it is read at mount to
+   * seed the form back, and on demand to describe the form to the model.
+   *
+   * The page stays authoritative while mounted; this is a mirror, not a lift of
+   * the state machinery. Normalisation, provenance and the run flow all stay
+   * where they were.
+   */
+  const formSnapshotRef = useRef<FormSnapshot | null>(null);
+  /**
+   * Mirror the form up, and retire a handoff once it has been taken up.
+   *
+   * The retirement is what stops a remount re-seeding the original proposal
+   * over the analyst's edits to it: while `draftHandoff` is set, it outranks
+   * the restored snapshot, so a round trip to the chat and back used to reset
+   * the form. The snapshot carries the draft's provenance forward, so retiring
+   * the handoff costs nothing.
+   */
+  const rememberFormState = useCallback((snapshot: FormSnapshot): void => {
+    formSnapshotRef.current = snapshot;
+    setDraftHandoff((current) => (current === null ? current : null));
+  }, []);
+
+  /**
+   * What the analyst has already decided, computed when somebody asks.
+   *
+   * Handed to the chat page as a function so that page can read it on arrival
+   * rather than the shell pushing it down on every keystroke. Stable, so it
+   * never invalidates anything downstream.
+   */
+  const getFormContext = useCallback(
+    (): readonly FormContextEntry[] =>
+      formSnapshotRef.current === null
+        ? []
+        : formContextFromState(formSnapshotRef.current.state),
+    [],
+  );
   const [agentStatus, setAgentStatus] = useState<AgentProviderStatus>(
     UNAVAILABLE_AGENT_STATUS,
   );
@@ -145,11 +228,37 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatComposer, setChatComposer] = useState("");
   const [chatView, setChatView] = useState<ChatView>("conversation");
+  /** Which Settings section is open. Outlives that page's unmounting. */
+  const [settingsTab, setSettingsTab] = useState(0);
+
+  /**
+   * Following the system is a subscription, not a reading.
+   *
+   * Consulting `prefers-color-scheme` once at mount would satisfy every
+   * first-paint check and still leave the app light at sunset until the
+   * analyst relaunched it — a "follow the system" option that follows it
+   * exactly once.
+   *
+   * Subscribed unconditionally rather than only while the preference is
+   * "system": if the OS changed while a theme was pinned, a subscription
+   * gated on the preference would hold a stale value and switching back to
+   * System would paint the wrong theme until the OS changed again.
+   */
+  useEffect(() => {
+    const query = window.matchMedia?.(DARK_QUERY);
+    if (query === undefined) return;
+    const onChange = (event: MediaQueryListEvent): void => setSystemDark(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
+    // The document is painted with the RESOLVED theme; what is stored is the
+    // PREFERENCE. Storing `theme` here would turn "system" into whichever it
+    // happened to resolve to on the first launch that wrote it.
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+    window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+  }, [theme, themePreference]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -181,12 +290,223 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     };
   }, [resolvedAgentService, agentStatusToken]);
 
-  const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
-    setDraftHandoff(null);
-    setLatestRun({ config, result });
-    // Surface the finished run on the Results page (and move the sidebar there).
-    setActivePage("results");
-  }, []);
+  /**
+   * Providers whose key was stored during THIS session.
+   *
+   * `agentStatus` refreshes over IPC, so between storing a key and the new
+   * status arriving it still reports that provider as unconfigured. Deciding
+   * the switch below from that snapshot alone meant saving two keys in
+   * succession read the second decision against a status that predated the
+   * first — so the second save switched away from the provider the first had
+   * just made active, which is precisely what the rule below forbids.
+   *
+   * A ref rather than state: nothing renders from it, and it must be readable
+   * by the callback that just wrote to it.
+   */
+  const configuredSinceMount = useRef<Set<ProviderId>>(new Set());
+
+  /**
+   * A key was stored for `provider`.
+   *
+   * Beyond re-reading status, this decides whether the app should start USING
+   * that provider. It should exactly when the active one cannot be used: the
+   * default selection is Anthropic, so an analyst whose only key is OpenAI
+   * would otherwise add it, return to Describe a Run, and be told again that
+   * no key is configured — with the fix sitting in a dropdown they have no
+   * reason to suspect.
+   */
+  const handleCredentialConfigured = useCallback(
+    (provider: ProviderId): void => {
+      configuredSinceMount.current.add(provider);
+      refreshAgentStatus();
+      const active = agentSelection.provider;
+      // The session's own record first, because `agentStatus` may still
+      // predate a key stored moments ago.
+      const activeIsConfigured =
+        configuredSinceMount.current.has(active) ||
+        agentStatus.providers.some(
+          (candidate) => candidate.provider === active && candidate.configured,
+        );
+      // Adding a second key is not a request to switch away from a working one.
+      if (!activeIsConfigured && active !== provider) {
+        // Marked as the app's own choice, so the catalogue effect above may
+        // correct it later. At this moment an aggregator's catalogue is very
+        // likely still cold, which is exactly when `defaultModelFor` can only
+        // hand back the shipped constant.
+        selectionIsAppChosen.current = true;
+        setAgentSelection({ provider, model: defaultModelFor(agentStatus, provider) });
+      }
+    },
+    [agentStatus, agentSelection.provider, refreshAgentStatus],
+  );
+
+  /** A key was deleted, so this session's record of it has to go too. */
+  const handleCredentialCleared = useCallback(
+    (provider: ProviderId): void => {
+      configuredSinceMount.current.delete(provider);
+      refreshAgentStatus();
+    },
+    [refreshAgentStatus],
+  );
+
+  /**
+   * A provider's model catalogue was re-fetched.
+   *
+   * Re-reading status is the whole job: `models` and `defaultModel` for that
+   * provider are derived from the catalogue in main, so every picker in the app
+   * updates from the one status read rather than from a list this component
+   * would otherwise have to hold and pass down.
+   */
+  const handleCatalogRefreshed = useCallback((): void => {
+    refreshAgentStatus();
+  }, [refreshAgentStatus]);
+
+  /**
+   * Providers whose catalogue this session has already asked for.
+   *
+   * The shell owns this, not the Settings panel, for two reasons. The panel
+   * unmounts on every navigation, so a guard held there retried a failing
+   * catalogue on each visit — a ten-second timeout per trip to Settings for
+   * anyone offline. And an analyst who never opens Settings would never have
+   * got a catalogue at all, leaving the chat page's picker on the shipped
+   * shortlist while a perfectly good key sat in the vault.
+   */
+  const catalogRequested = useRef<Set<ProviderId>>(new Set());
+
+  useEffect(() => {
+    for (const candidate of agentStatus.providers) {
+      // `null` means "has a catalogue, hasn't fetched one". Absent means the
+      // provider has no catalogue to fetch, and a list means it already did.
+      if (candidate.catalog !== null || !candidate.configured) continue;
+      if (catalogRequested.current.has(candidate.provider)) continue;
+      catalogRequested.current.add(candidate.provider);
+      void resolvedAgentService.refreshCatalog(candidate.provider).then(
+        (result) => {
+          if (result.ok) refreshAgentStatus();
+        },
+        () => {
+          // A refresh that cannot even resolve leaves the shipped shortlist in
+          // place, which is a working picker. Settings shows the failure when
+          // the analyst asks for one there; the app does not need to shout
+          // about a background attempt it made on their behalf.
+        },
+      );
+    }
+  }, [agentStatus, refreshAgentStatus, resolvedAgentService]);
+
+  /**
+   * Whether the model in `agentSelection` was chosen by the app or by a person.
+   *
+   * Only an app-chosen model may be corrected when a catalogue arrives and
+   * contradicts it. The distinction matters because both cases look identical
+   * in state: the shell auto-activates a provider on its shipped default when
+   * the first key is stored, and at that moment OpenRouter's catalogue is still
+   * cold, so the default it picks can be a slug the aggregator does not route.
+   * Correcting that is finishing a decision the app made badly. Silently
+   * repointing a model the analyst picked is overriding them, so that case
+   * stays visible instead — the picker marks it "no longer listed" and a send
+   * returns a typed failure naming the fix.
+   */
+  const selectionIsAppChosen = useRef(false);
+
+  const chooseSelection = useCallback(
+    (provider: ProviderId, model: string): void => {
+      selectionIsAppChosen.current = false;
+      setAgentSelection({ provider, model });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!selectionIsAppChosen.current) return;
+    const active = agentStatus.providers.find(
+      (candidate) => candidate.provider === agentSelection.provider,
+    );
+    // Only for a fetched catalogue: a pinned provider's `models` is this
+    // build's own constant, so disagreeing with it would mean the two halves of
+    // one bundle disagree — which is a reject, not something to paper over.
+    if (active?.catalog == null) return;
+    if (active.models.includes(agentSelection.model)) return;
+    setAgentSelection({ provider: active.provider, model: active.defaultModel });
+  }, [agentStatus, agentSelection]);
+
+  /**
+   * Which conversation authored the run now on the Results page.
+   *
+   * Keyed by run id rather than held as a bare conversation id, because opening
+   * an older run from Run History replaces `latestRun` without replacing this —
+   * so the control that leads back to a conversation has to be able to tell
+   * whether it belongs to the run actually on screen.
+   */
+  const [runOrigin, setRunOrigin] = useState<
+    { runId: string; conversationId: string } | null
+  >(null);
+
+  const handleRunComplete = useCallback(
+    (config: RunConfig, result: RunResult, conversationId?: string): void => {
+      setDraftHandoff(null);
+      setLatestRun({ config, result });
+      setRunOrigin(
+        conversationId === undefined ? null : { runId: config.id, conversationId },
+      );
+      // Surface the finished run on the Results page (and move the sidebar there).
+      setActivePage("results");
+    },
+    [],
+  );
+
+  /**
+   * The conversation this run can lead back to, or null.
+   *
+   * Derived once. The same rule was written twice — in the callback and in the
+   * prop that decides whether to pass it — so a change to when the control is
+   * valid had to be remembered in both places.
+   */
+  const askAgentTarget =
+    runOrigin !== null && runOrigin.runId === latestRun?.config.id ? runOrigin : null;
+
+  /**
+   * Take the outcome back to the conversation that proposed it.
+   *
+   * The message lands in the composer rather than being sent. The analyst owns
+   * this conversation — they may want to add what they were actually trying to
+   * do, or ask something else entirely — and a message that sent itself would
+   * spend a provider request on every failed run whether or not anyone wanted
+   * the diagnosis.
+   */
+  const askAgentAboutRun = useCallback(async (): Promise<void> => {
+    if (askAgentTarget === null || latestRun === null) return;
+
+    /*
+     * Confirmed present before navigating, rather than trusted.
+     *
+     * A conversation can be deleted from the rail one at a time, and that path
+     * tells the shell only that the ACTIVE conversation changed — never which
+     * id went. Checking here covers every deletion route, including ones added
+     * later, instead of chasing each one. If the thread is gone the origin goes
+     * with it, which takes the control off the Results page rather than leaving
+     * it pointing at nothing.
+     */
+    const conversation = await window.chats.get(askAgentTarget.conversationId);
+    if (conversation === null) {
+      setRunOrigin(null);
+      return;
+    }
+
+    setActiveConversationId(askAgentTarget.conversationId);
+    /*
+     * Appended, never substituted. The composer holds the one piece of
+     * user-authored prose in this app that is not yet on disk, and the shell
+     * keeps it across navigation precisely so a half-typed thought survives a
+     * trip to the form. Overwriting it here would destroy that thought with no
+     * warning and no undo.
+     */
+    const report = describeRunForAgent(latestRun.config, latestRun.result);
+    setChatComposer((current) =>
+      current.trim().length === 0 ? report : `${current.trimEnd()}\n\n${report}`,
+    );
+    setActivePage("agent");
+  }, [askAgentTarget, latestRun]);
 
   // Opening a saved run from History shows it on the Results page too, so the
   // sidebar always reflects where the run detail is displayed.
@@ -245,12 +565,31 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           </span>
         </div>
         <div className="top-header__right">
-          <NetworkStatus
+          {/*
+            Settings, and the networked-features indicator, in one control.
+            They used to be two — a "Network on · …" badge here and a Settings
+            entry in the left nav — which meant the badge reported a state
+            whose only fix lived somewhere the badge did not point at.
+          */}
+          <SettingsButton
             status={agentStatus}
             provider={agentSelection.provider}
             model={agentSelection.model}
+            active={activePage === "settings"}
+            onOpen={() => setActivePage("settings")}
           />
-          <ThemeToggle theme={theme} onToggle={() => setTheme((current) => (current === "dark" ? "light" : "dark"))} />
+          {/*
+            A quick binary override. It pins the opposite of what is CURRENTLY
+            PAINTED, which is the only thing it can offer while following the
+            system — "system" is not a theme you can toggle to. Getting back to
+            following it is a deliberate trip to Settings, and the button's
+            tooltip says as much before it is pressed.
+          */}
+          <ThemeToggle
+            theme={theme}
+            preference={themePreference}
+            onToggle={() => setThemePreference(theme === "dark" ? "light" : "dark")}
+          />
         </div>
       </header>
 
@@ -286,6 +625,14 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               initialDraft={draftHandoff?.state}
               provenance={draftHandoff?.provenance}
               proposed={draftHandoff?.proposed}
+              /*
+                Read during render, which is safe for exactly this shape: the
+                ref is written only by a child effect, never during a render,
+                and the value is consumed only by a mount-time initialiser.
+              */
+              conversationId={draftHandoff?.conversationId}
+              restoredState={formSnapshotRef.current ?? undefined}
+              onStateChange={rememberFormState}
             />
           ) : null}
           {activePage === "agent" ? (
@@ -301,8 +648,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               onComposerChange={setChatComposer}
               view={chatView}
               onViewChange={setChatView}
-              onSelectionChange={(provider, model) => setAgentSelection({ provider, model })}
-              onCredentialChange={refreshAgentStatus}
+              onSelectionChange={chooseSelection}
+              onOpenSettings={() => setActivePage("settings")}
+              getFormContext={getFormContext}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);
                 setDraftHandoff(handoff);
@@ -324,6 +672,47 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               }}
               store={window.store}
               onRerunRequest={handleRerunRequest}
+              /*
+                Offered only for the run actually on screen. Opening an older
+                run from History replaces `latestRun` without replacing the
+                origin, so without the id check the control would carry the
+                wrong run's outcome into a conversation.
+              */
+              onAskAgent={
+                askAgentTarget === null ? undefined : () => void askAgentAboutRun()
+              }
+            />
+          ) : null}
+          {activePage === "settings" ? (
+            <SettingsPage
+              service={resolvedAgentService}
+              status={agentStatus}
+              chats={window.chats}
+              appInfo={window.appInfo}
+              provider={agentSelection.provider}
+              model={agentSelection.model}
+              onSelectionChange={chooseSelection}
+              onCredentialConfigured={handleCredentialConfigured}
+              onCredentialCleared={handleCredentialCleared}
+              onCatalogRefreshed={handleCatalogRefreshed}
+              /*
+                The open conversation was just deleted. Without this the id
+                survives and ChatPage's `send` appends to a row the store no
+                longer has, which it rejects — so the next message, and every
+                one after it, fails to save.
+              */
+              onConversationsCleared={() => {
+                setActiveConversationId(null);
+                // The origin points at a conversation that no longer exists.
+                // Left standing, Results keeps offering a way back to it and
+                // the analyst lands in a blank thread whose id the store has
+                // already forgotten — the next send then fails on append.
+                setRunOrigin(null);
+              }}
+              themePreference={themePreference}
+              onThemePreferenceChange={setThemePreference}
+              activeTab={settingsTab}
+              onActiveTabChange={setSettingsTab}
             />
           ) : null}
           {showHistorySurface ? (

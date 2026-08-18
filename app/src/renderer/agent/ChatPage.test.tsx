@@ -9,6 +9,7 @@ import {
   type AgentChatResult,
   type AgentProviderStatus,
   type AgentService,
+  type FormContextEntry,
   type ProviderId,
 } from "../../shared/agentTypes";
 import { InMemoryChatStore } from "../../shared/chatStore";
@@ -43,6 +44,9 @@ interface HarnessOptions {
   onReviewDraft?: (handoff: DraftHandoff) => void;
   /** Which view to land on. The shell owns this, so the harness does too. */
   view?: ChatView;
+  onOpenSettings?: () => void;
+  onSelectionChange?: (provider: ProviderId, model: string) => void;
+  formContext?: readonly FormContextEntry[];
 }
 
 /**
@@ -54,6 +58,9 @@ function renderChat(options: HarnessOptions = {}) {
   const store = options.store ?? new InMemoryChatStore();
   const service = options.service ?? fakeAgentService();
   const onReviewDraft = options.onReviewDraft ?? vi.fn();
+  const onOpenSettings = options.onOpenSettings ?? vi.fn();
+  const onSelectionChange = options.onSelectionChange ?? vi.fn();
+  const provider = options.provider ?? "anthropic";
 
   function Harness(): React.JSX.Element {
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -66,21 +73,22 @@ function renderChat(options: HarnessOptions = {}) {
         service={service}
         store={store}
         status={options.status ?? statusWith(["anthropic", "openai"])}
-        provider={options.provider ?? "anthropic"}
-        model={PROVIDER_MODELS.anthropic.defaultModel}
+        provider={provider}
+        model={PROVIDER_MODELS[provider].defaultModel}
         activeConversationId={activeConversationId}
         onActiveConversationChange={setActiveConversationId}
         composer={composer}
         onComposerChange={setComposer}
-        onSelectionChange={vi.fn()}
-        onCredentialChange={vi.fn()}
+        onSelectionChange={onSelectionChange}
+        onOpenSettings={onOpenSettings}
+        getFormContext={() => options.formContext ?? []}
         onReviewDraft={onReviewDraft}
       />
     );
   }
 
   render(<Harness />);
-  return { store, service, onReviewDraft };
+  return { store, service, onReviewDraft, onOpenSettings, onSelectionChange };
 }
 
 /*
@@ -285,10 +293,7 @@ describe("ChatPage — a turn", () => {
     ]);
     expect(seen[1]?.messages).toEqual([
       { role: "user", content: "Estimate Grover search" },
-      {
-        role: "assistant",
-        content: JSON.stringify({ reply: "Updated.", draft: FAKE_GENERATED_DRAFT }),
-      },
+      { role: "assistant", content: "Updated.", draft: FAKE_GENERATED_DRAFT },
       { role: "user", content: "make the gate time 80" },
     ]);
   });
@@ -551,6 +556,53 @@ describe("ChatPage — the outbound request", () => {
 
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(screen.getByText(/No key is configured for Anthropic/)).toBeVisible();
+  });
+
+  /**
+   * Key entry moved to Settings, so the sentence that used to say "add one
+   * under Model provider above" now points at a page this one cannot show.
+   * A dead-end instruction is worse than none: the control it names is gone.
+   */
+  it("offers a way to reach Settings when the selected provider holds no key", async () => {
+    const { onOpenSettings } = renderChat({
+      status: statusWith(["openai"]),
+      provider: "anthropic",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("offers the same route when no provider is configured at all", async () => {
+    const { onOpenSettings } = renderChat({ status: statusWith([]) });
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  /** Nothing on this page may accept a key any more — Settings owns that. */
+  it("no longer carries a credential panel", () => {
+    renderChat({ status: statusWith([]) });
+
+    expect(screen.queryByText("Model provider")).toBeNull();
+    expect(screen.queryByLabelText(/API key/i)).toBeNull();
+  });
+
+  /**
+   * The switcher stays, because which model answers is a per-conversation
+   * decision and the network badge beside it names the pair being used.
+   */
+  it("switches provider and model without leaving the page", async () => {
+    const { onSelectionChange } = renderChat();
+
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "openai");
+
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      "openai",
+      PROVIDER_MODELS.openai.defaultModel,
+    );
   });
 });
 
@@ -1178,5 +1230,397 @@ describe("ChatPage — audit regressions", () => {
     expect(
       within(table).getByText(/including the ones your search is currently hiding/),
     ).toBeVisible();
+  });
+});
+
+/**
+ * The reply used to be a string field inside a strict JSON envelope, so nothing
+ * could render until the whole object closed — up to two minutes of a static
+ * "Thinking…". With the draft moved to a tool call the prose is just prose, and
+ * arrives a fragment at a time.
+ */
+describe("ChatPage — a reply arriving", () => {
+  /** Holds the turn open so the transcript can be inspected mid-stream. */
+  function streamingService(fragments: readonly string[]) {
+    let release = (): void => {};
+    const base = fakeAgentService({ stream: fragments });
+    const service: AgentService = {
+      ...base,
+      async requestReply(request): Promise<AgentChatResult> {
+        const result = await base.requestReply(request);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return result;
+      },
+    };
+    return { service, release: () => release() };
+  }
+
+  it("paints the prose as it arrives, before the turn lands", async () => {
+    const { service, release } = streamingService(["Gate-based ", "suits this best."]);
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    // Mid-flight: the fragments are on screen and nothing has been stored yet.
+    expect(await screen.findByText(/Gate-based suits this best\./)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /use this configuration/i })).toBeNull();
+
+    release();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /use this configuration/i })).toBeVisible(),
+    );
+  });
+
+  it("says Thinking… only until the first fragment", async () => {
+    const { service, release } = streamingService(["Working on it."]);
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    await waitFor(() => expect(screen.queryByText("Thinking…")).toBeNull());
+    release();
+  });
+
+  /**
+   * The streamed copy and the stored one must never both be on screen — the
+   * analyst would read the same sentence twice and reasonably assume the model
+   * had said it twice.
+   */
+  it("shows the finished turn once, not twice", async () => {
+    const { service, release } = streamingService(["Here is a starting point."]);
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+    // Released only once the turn is demonstrably in flight. Calling it before
+    // `runTurn` reaches its await resolves nothing, and the turn never lands.
+    await screen.findByText("Here is a starting point.");
+    release();
+
+    await waitFor(() =>
+      expect(screen.getAllByText("Here is a starting point.")).toHaveLength(1),
+    );
+  });
+
+  /**
+   * Streaming is a push channel with no request/response pairing of its own, so
+   * a fragment from an abandoned turn is indistinguishable from a live one
+   * unless the id is checked.
+   */
+  it("ignores fragments belonging to a request it is no longer running", async () => {
+    const service: AgentService = {
+      ...fakeAgentService(),
+      onReplyDelta(listener) {
+        // Fires immediately under an id this page has never issued.
+        listener({ requestId: "someone-elses-request", fragment: "LEAKED" });
+        return () => {};
+      },
+    };
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    expect(screen.queryByText(/LEAKED/)).toBeNull();
+  });
+
+  it("renders the model's markdown rather than showing its syntax", async () => {
+    renderChat({ service: fakeAgentService({ reply: "Use **gate-based** here." }) });
+
+    await sendMessage("Estimate Grover search");
+
+    expect(await screen.findByText("gate-based")).toBeVisible();
+    expect(screen.queryByText(/\*\*gate-based\*\*/)).toBeNull();
+  });
+
+  /** The analyst's own words are shown as typed — markdown is the model's register. */
+  it("does not reformat what the analyst wrote", async () => {
+    renderChat();
+
+    await sendMessage("compare **two** architectures");
+
+    // Scoped to the transcript: the conversation title is derived from this
+    // same first message, so a page-wide query matches it too.
+    const turn = await screen.findByText("You");
+    expect(turn.parentElement).toHaveTextContent("compare **two** architectures");
+    expect(turn.parentElement?.querySelector("strong")).toBeNull();
+  });
+});
+
+describe("ChatPage — what the analyst has already filled in", () => {
+  it("sends the form context with every turn", async () => {
+    const seen: AgentChatRequest[] = [];
+    const service: AgentService = {
+      ...fakeAgentService(),
+      async requestReply(request): Promise<AgentChatResult> {
+        seen.push(request);
+        return fakeAgentService().requestReply(request);
+      },
+    };
+    renderChat({
+      service,
+      formContext: [{ field: "architecture.gateTime", value: "80" }],
+    });
+
+    await sendMessage("Estimate Grover search");
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]?.formContext).toEqual([{ field: "architecture.gateTime", value: "80" }]);
+  });
+
+  /**
+   * Absent, not empty. `previewRequest` renders this object verbatim as "the
+   * exact outbound request", and a `formContext: []` there would claim the form
+   * was inspected and found bare when in fact it was never read.
+   */
+  it("omits the field entirely when the form is untouched", async () => {
+    const seen: AgentChatRequest[] = [];
+    const service: AgentService = {
+      ...fakeAgentService(),
+      async requestReply(request): Promise<AgentChatResult> {
+        seen.push(request);
+        return fakeAgentService().requestReply(request);
+      },
+    };
+    renderChat({ service, formContext: [] });
+
+    await sendMessage("Estimate Grover search");
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]).not.toHaveProperty("formContext");
+  });
+});
+
+/**
+ * The fake service reads `request.requestId` straight off the object it was
+ * handed, so every streaming test above passes whether or not that field
+ * survives the trip through main. It did not: `readChatRequest` rebuilds the
+ * request field by field and dropped it, so every fragment shipped tagged
+ * `undefined` and this page discarded all of them — streaming was dead in the
+ * shipped app while the suite stayed green.
+ *
+ * This service answers only what a request actually carried, which is the
+ * property the fake cannot check.
+ */
+describe("ChatPage — streaming survives the round trip", () => {
+  it("only paints fragments tagged with an id the request really carried", async () => {
+    const listeners = new Set<(delta: { requestId: string; fragment: string }) => void>();
+    const service: AgentService = {
+      ...fakeAgentService(),
+      onReplyDelta(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async requestReply(request): Promise<AgentChatResult> {
+        // Exactly what main does: narrow, then tag from the narrowed value.
+        const narrowed: { requestId?: string } = {};
+        if (typeof request.requestId === "string") narrowed.requestId = request.requestId;
+        for (const listener of listeners) {
+          listener({ requestId: narrowed.requestId ?? "", fragment: "Streamed." });
+        }
+        return {
+          ok: true,
+          reply: "Streamed.",
+          draft: null,
+          provider: "Test fixture",
+          model: "deterministic fixture",
+        };
+      },
+    };
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    // One copy: the streamed paint and the stored turn are the same sentence.
+    await waitFor(() => expect(screen.getAllByText("Streamed.")).toHaveLength(1));
+  });
+
+  /**
+   * The streamed text has to actually reach the screen while the turn is still
+   * in flight. Every other streaming test here resolves the request straight
+   * away, so the stored turn paints and the assertion passes whether or not a
+   * single fragment was ever revealed — the same blind spot that let the
+   * dropped `requestId` ship green. This one holds the request open, so the
+   * only thing that can put the words on screen is the reveal loop.
+   */
+  it("paints the reply while it is still arriving, before the turn resolves", async () => {
+    const listeners = new Set<(delta: { requestId: string; fragment: string }) => void>();
+    // A holder, not a bare `let`: control-flow analysis narrows a variable only
+    // assigned inside a callback to `never` at the call site below.
+    const gate: { release: (() => void) | null } = { release: null };
+    const service: AgentService = {
+      ...fakeAgentService(),
+      onReplyDelta(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async requestReply(request): Promise<AgentChatResult> {
+        for (const fragment of ["Gate-based ", "looks ", "right ", "here."]) {
+          for (const listener of listeners) {
+            listener({ requestId: request.requestId ?? "", fragment });
+          }
+        }
+        // Held open, so nothing but the reveal can paint.
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
+        return {
+          ok: true,
+          reply: "Gate-based looks right here.",
+          draft: null,
+          provider: "Test fixture",
+          model: "deterministic fixture",
+        };
+      },
+    };
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    // Revealed a few characters at a time, so this only passes once the frame
+    // loop has run enough times to get through the sentence.
+    await waitFor(
+      () => expect(screen.getByText(/Gate-based looks right here\./)).toBeVisible(),
+      { timeout: 4000 },
+    );
+
+    gate.release?.();
+  });
+
+  /**
+   * What "smoother" actually means, measured.
+   *
+   * The provider delivers in clumps — one character here, ninety there. The old
+   * batch painted whatever had landed in the window, so the steps on screen
+   * were as uneven as the delivery. Here the painted increments should be far
+   * more even than the bursts that produced them, which is the whole claim.
+   */
+  it("paints in even steps even though delivery is lumpy", async () => {
+    const BURSTS = [2, 1, 90, 3, 1, 120, 4, 60, 1, 2];
+    const PROSE = "x".repeat(BURSTS.reduce((a, b) => a + b, 0));
+    const listeners = new Set<(delta: { requestId: string; fragment: string }) => void>();
+    const gate: { release: (() => void) | null } = { release: null };
+    const service: AgentService = {
+      ...fakeAgentService(),
+      onReplyDelta(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async requestReply(request): Promise<AgentChatResult> {
+        let at = 0;
+        for (const size of BURSTS) {
+          await new Promise((r) => setTimeout(r, 40));
+          const fragment = PROSE.slice(at, at + size);
+          at += size;
+          for (const listener of listeners) {
+            listener({ requestId: request.requestId ?? "", fragment });
+          }
+        }
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
+        return {
+          ok: true,
+          reply: PROSE,
+          draft: null,
+          provider: "Test fixture",
+          model: "deterministic fixture",
+        };
+      },
+    };
+    renderChat({ service });
+
+    // Sample the streamed turn as it grows, then look at the step sizes.
+    const lengths: number[] = [];
+    const stop = { now: false };
+    const poll = (): void => {
+      // `.chat-md` is the assistant's prose specifically — the analyst's own
+      // turn is rendered as typed and shares `.chat-turn__text`.
+      const all = document.querySelectorAll(".chat-md");
+      const el = all[all.length - 1];
+      const len = el?.textContent?.length ?? 0;
+      if (len > 0 && len !== lengths[lengths.length - 1]) lengths.push(len);
+      if (!stop.now) setTimeout(poll, 8);
+    };
+    poll();
+
+    await sendMessage("Estimate Grover search");
+    await waitFor(() => expect(lengths[lengths.length - 1]).toBe(PROSE.length), {
+      timeout: 8000,
+    });
+    stop.now = true;
+    gate.release?.();
+
+    const steps = lengths.slice(1).map((len, i) => len - lengths[i]!);
+    expect(steps.length).toBeGreaterThan(10);
+    // No paint may dump a whole large burst. The biggest arrival was 120
+    // characters; the biggest thing drawn at once must be far under that.
+    expect(Math.max(...steps)).toBeLessThan(40);
+  }, 20000);
+
+  it("sends a request id at all", async () => {
+    const seen: AgentChatRequest[] = [];
+    const service: AgentService = {
+      ...fakeAgentService(),
+      async requestReply(request): Promise<AgentChatResult> {
+        seen.push(request);
+        return fakeAgentService().requestReply(request);
+      },
+    };
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(typeof seen[0]?.requestId).toBe("string");
+    expect(seen[0]?.requestId).not.toBe("");
+  });
+});
+
+describe("ChatPage — the request preview", () => {
+  /**
+   * Constraint 8: the panel shows the exact outbound request. The form context
+   * is interpolated into the system prompt, so a preview built without it
+   * describes a prompt the analyst is never actually sending — on the one
+   * surface that exists to tell them what leaves the machine.
+   */
+  it("shows the form context that the send will carry", async () => {
+    const previewed: AgentChatRequest[] = [];
+    const service: AgentService = {
+      ...fakeAgentService(),
+      async previewRequest(request): Promise<unknown> {
+        previewed.push(request);
+        return { note: "preview", ...request };
+      },
+    };
+    renderChat({
+      service,
+      formContext: [{ field: "architecture.gateTime", value: "80" }],
+    });
+
+    await userEvent.click(screen.getByText("Show the exact request this would send"));
+
+    await waitFor(() => expect(previewed.length).toBeGreaterThan(0));
+    expect(previewed.at(-1)?.formContext).toEqual([
+      { field: "architecture.gateTime", value: "80" },
+    ]);
+  });
+
+  /** A preview streams nothing, so it has no id to name. */
+  it("carries no request id", async () => {
+    const previewed: AgentChatRequest[] = [];
+    const service: AgentService = {
+      ...fakeAgentService(),
+      async previewRequest(request): Promise<unknown> {
+        previewed.push(request);
+        return { note: "preview", ...request };
+      },
+    };
+    renderChat({ service });
+
+    await userEvent.click(screen.getByText("Show the exact request this would send"));
+
+    await waitFor(() => expect(previewed.length).toBeGreaterThan(0));
+    expect(previewed.at(-1)).not.toHaveProperty("requestId");
   });
 });

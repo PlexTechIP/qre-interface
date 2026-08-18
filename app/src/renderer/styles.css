@@ -25,6 +25,13 @@
   --color-table-head-bg: #f8fafc;
   --color-well-bg: #f8fafc;
   --color-input-border: #cbd5e1;
+  /* The fill every text control in the app already uses via `.field__input`.
+     Defined as the surface token rather than a second copy of its hex, so the
+     agent composer, key field and selects cannot drift from the form controls
+     on Run Configuration. It was referenced by those three rules and defined by
+     neither theme, which made the declaration invalid at computed-value time
+     and left them transparent. */
+  --color-input-bg: var(--color-surface);
   --color-focus-ring: #67e8f9;
   --color-accent: #0891b2;
   --color-accent-bg: #e0f7fb;
@@ -32,6 +39,11 @@
   --color-danger-bg: #fef2f2;
   --color-danger-border: #fecaca;
   --color-danger-text: #dc2626;
+  /* Success prose, not the status dot. --color-status-online is 3.33:1 on the
+     card here — clears 1.4.11 for a non-text indicator and fails 1.4.3 for
+     text, so light gets its own darker green. Measured 5.02:1 on
+     --color-surface, 4.79:1 on --color-well-bg. */
+  --color-success-text: #15803d;
   --color-skeleton-a: #e2e8f0;
   --color-skeleton-b: #f1f5f9;
   --color-raw-number: #b06a00;
@@ -89,6 +101,7 @@
   --color-table-head-bg: #141d2e;
   --color-well-bg: #212e44;
   --color-input-border: #3a4a64;
+  --color-input-bg: var(--color-surface);
   --color-focus-ring: #22d3ee;
   --color-accent: #22d3ee;
   --color-accent-bg: #0d3a45;
@@ -96,6 +109,9 @@
   --color-danger-bg: #3a1b1b;
   --color-danger-border: #7f2626;
   --color-danger-text: #f87171;
+  /* Dark reuses the indicator green: on this surface it is already 8.09:1 as
+     text, so a second hex would be a duplicate with nothing to justify it. */
+  --color-success-text: var(--color-status-online);
   --color-skeleton-a: #212e44;
   --color-skeleton-b: #263349;
   --color-raw-number: #f2b84b;
@@ -371,7 +387,12 @@ select {
   background: var(--color-muted);
 }
 
-.agent-status--on .agent-status__dot {
+/* Two ways to reach one colour, because the dot appears in two shapes: inside
+   a labelled pill (the provider cards), and standalone on an icon button (the
+   header's Settings control). The standalone form cannot satisfy a descendant
+   selector, and when it only carried `--on` it silently rendered grey. */
+.agent-status--on .agent-status__dot,
+.agent-status__dot--on {
   background: var(--color-status-online);
   /* Derived from the same token rather than a second one, so the halo can
      never drift away from the dot it surrounds. */
@@ -1073,6 +1094,30 @@ select {
   padding: 24px;
 }
 
+/* The way back to the agent, inside the failure it is about. Sized like the
+   toolbar's buttons it moved out of, but given the accent border so it reads
+   as the offered next step rather than one more thing in a row. */
+.alert-card__action {
+  margin-top: 14px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.alert-card__action:hover {
+  background: var(--color-accent-bg);
+}
+
+.alert-card__action:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .state-card > strong {
   display: block;
   margin-bottom: 6px;
@@ -1402,7 +1447,6 @@ select {
 .agent-prompt:focus-visible,
 .agent-credential-input:focus-visible,
 .agent-select:focus-visible,
-.agent-provider-panel__summary:focus-visible,
 .agent-secondary:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
@@ -1439,41 +1483,8 @@ select {
   font: inherit;
 }
 
-.agent-provider-panel__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.agent-provider-panel__summary::-webkit-details-marker {
-  display: none;
-}
-
-.agent-provider-panel__summary strong,
-.agent-provider-panel__summary small {
-  display: block;
-}
-
-.agent-provider-panel__summary strong {
-  color: var(--color-heading);
-  font-size: 17px;
-}
-
-.agent-provider-panel__summary small {
-  margin-top: 5px;
-  color: var(--color-muted);
-  font-size: 13px;
-}
-
-.agent-provider-panel[open] .agent-credential-form {
-  margin-top: 14px;
-}
-
 .agent-success {
-  color: var(--color-success-text, var(--color-body));
+  color: var(--color-success-text);
   font-size: 13px;
 }
 
@@ -1636,9 +1647,7 @@ select {
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
   padding: 8px 11px;
-  /* See `--color-input-bg` note on the composer: the token is referenced by
-     the agent inputs and defined by neither theme. */
-  background: var(--color-input-bg, var(--color-surface));
+  background: var(--color-input-bg);
   color: var(--color-text);
   font: inherit;
   font-size: 13px;
@@ -1832,7 +1841,7 @@ select {
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
   padding: 7px 10px;
-  background: var(--color-input-bg, var(--color-surface));
+  background: var(--color-input-bg);
   color: var(--color-text);
   font: inherit;
   font-size: 13px;
@@ -2056,7 +2065,13 @@ select {
   color: var(--color-accent);
 }
 
-.chat-turn--pending .chat-turn__text {
+/* The placeholder only, NOT every pending turn.
+ *
+ * This selector was `.chat-turn--pending .chat-turn__text` when the pending row
+ * could only ever be the word "Thinking…". Streamed prose carries the same
+ * class, so the rule italicised whole replies as they arrived and then dropped
+ * them back to upright the instant the turn landed — a flicker on every turn. */
+.chat-turn__waiting {
   color: var(--color-muted);
   font-style: italic;
 }
@@ -3690,12 +3705,19 @@ input[type="range"]:focus-visible,
   padding-left: 18px;
 }
 
+/* The field name doubles as the affordance. A dotted underline is the
+   long-standing "there is more behind this" hint, and it is quiet enough that
+   the box still reads as a summary rather than a toolbar — which was the
+   original reason nothing was marked at all. That version marked the entries
+   only on hover, so the jump was a feature you had to already know about. */
 .validation-box__field {
   font-weight: 700;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
 }
 
-/* Each issue is a button that scrolls to and flashes its field. It reads as
-   plain list text until hovered, so the box stays a summary, not a toolbar. */
+/* Each issue is a button that scrolls to and flashes its field. */
 .validation-box__jump {
   display: block;
   width: 100%;
@@ -3711,10 +3733,24 @@ input[type="range"]:focus-visible,
   cursor: pointer;
 }
 
+.validation-box__jump::after {
+  content: " \2192";
+  opacity: 0.45;
+}
+
 .validation-box__jump:hover,
 .validation-box__jump:focus-visible {
   background: var(--color-danger-border);
-  text-decoration: underline;
+}
+
+.validation-box__jump:hover .validation-box__field,
+.validation-box__jump:focus-visible .validation-box__field {
+  text-decoration-style: solid;
+}
+
+.validation-box__jump:hover::after,
+.validation-box__jump:focus-visible::after {
+  opacity: 1;
 }
 
 .validation-box--pending .validation-box__jump:hover,
@@ -4969,4 +5005,510 @@ button.danger:hover {
   .modal-card {
     max-height: 90vh;
   }
+}
+
+/* === Settings surface ================================================
+   The provider/model selector is shared with Describe a Run, so it lives
+   here beside the page that owns key entry rather than in the agent block.
+   ==================================================================== */
+.settings-page {
+  display: grid;
+  gap: 16px;
+  /* Settings is read and reasoned about, not scanned in columns — the wide
+     workspace would otherwise stretch every explanatory line to 160ch. */
+  max-width: 900px;
+}
+
+.settings-subhead {
+  margin: 0 0 4px;
+  color: var(--color-heading);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+/* --- Provider + model selector (shared with the chat page) ----------*/
+.provider-select {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+  max-width: 640px;
+}
+
+.provider-select__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The selects cap at 460px on their own, which leaves a ragged right edge
+   inside a grid column that is already narrower than that. */
+.provider-select__field .agent-select {
+  max-width: none;
+}
+
+/* --- Active provider block ------------------------------------------*/
+.settings-active-model {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+/* --- One card per provider ------------------------------------------*/
+.settings-provider-cards {
+  display: grid;
+  gap: 14px;
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--color-well-bg);
+}
+
+.provider-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.provider-card__name {
+  margin: 0;
+  color: var(--color-heading);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.provider-card__intro {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* --- The model catalogue, for providers whose models are fetched ------
+ *
+ * Divided from the key form above it rather than boxed: it is a second
+ * subject inside one provider's card, not a second card. A nested border
+ * inside `.provider-card`'s own border reads as a card-in-a-card, which is
+ * how a settings page starts looking like a form generator.
+ */
+.catalog-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-card-border);
+}
+
+.catalog-panel .agent-actions {
+  margin-top: 2px;
+}
+
+/* The balance is the one figure on this card anyone scans for, so it is
+ * weighted rather than left as prose. `tabular-nums` so two dollar amounts on
+ * one line have their decimal points in the same place. No `color` here: the
+ * surrounding note sets none and inherits the same value, so declaring one
+ * would look like a distinction and make none. */
+.catalog-panel__credits {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Appearance ------------------------------------------------------*/
+.settings-fieldset {
+  display: flex;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.settings-fieldset > .settings-subhead {
+  /* A <legend> sits in the border gap by default; there is no border here,
+     so it needs to take part in the flex row like the options do. */
+  float: left;
+  padding: 0;
+  align-self: center;
+}
+
+.settings-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-radio input {
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.settings-radio input:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* --- About ----------------------------------------------------------*/
+.settings-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.settings-facts__row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.settings-facts__row dt {
+  min-width: 160px;
+  color: var(--color-label-soft);
+}
+
+.settings-facts__row dd {
+  margin: 0;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* === Chat page — provider controls ===================================
+   What replaced the credential panel: the selector stays, key entry left.
+   ==================================================================== */
+.chat-model-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 12px;
+  padding: 14px 20px;
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+/* The route to Settings, shown only when the selected provider has no key. */
+.chat-needs-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-needs-key > p {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+/* --- Storage locations ----------------------------------------------*/
+.settings-subhead--spaced {
+  margin-top: 22px;
+}
+
+.settings-note {
+  margin-top: 10px;
+}
+
+.storage-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.storage-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--color-well-bg);
+}
+
+.storage-row__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.storage-row__head .settings-subhead {
+  margin: 0;
+}
+
+/* An env override is otherwise invisible; this is the only place it shows. */
+.storage-row__badge {
+  border: 1px solid var(--color-accent-border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--color-accent-bg);
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.storage-row__description {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.storage-row__path {
+  margin: 2px 0 4px;
+  /* Paths are long and have no spaces, so they must be allowed to break
+     mid-token or they force the whole page to scroll sideways. */
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  /* Selectable by drag as well as by the Copy button — someone reading a path
+     out of a bug report wants half of it, not all of it. */
+  user-select: text;
+}
+
+.storage-row .agent-actions {
+  margin-top: 2px;
+}
+
+/* --- Assistant prose, rendered as markdown ---------------------------
+ *
+ * The transcript could not carry formatting until M3: the reply was a string
+ * field inside a strict JSON envelope, so the system prompt forbade markdown
+ * outright. With the draft moved to a tool call the prose is ordinary writing,
+ * and a model explaining a trade-off reaches for a short list the way anyone
+ * would.
+ *
+ * `white-space: normal` overrides `.chat-turn__text`, which sets `pre-wrap`.
+ * That was right for prose whose only structure was its own newlines; it is
+ * wrong here, where markdown has already produced real block elements and
+ * pre-wrap would render every source newline as a second break on top of them.
+ */
+.chat-md {
+  white-space: normal;
+}
+
+.chat-md > :first-child {
+  margin-top: 0;
+}
+
+.chat-md > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-md p {
+  margin: 0 0 10px;
+}
+
+.chat-md ul,
+.chat-md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.chat-md li {
+  margin-bottom: 4px;
+}
+
+.chat-md code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--color-well-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.chat-md__pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 8px;
+  background: var(--color-well-bg);
+  /* Code is the one thing here that must not be re-wrapped to fit. */
+  overflow-x: auto;
+}
+
+.chat-md__pre code {
+  padding: 0;
+  background: none;
+}
+
+.chat-md blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--color-card-border);
+  color: var(--color-muted);
+}
+
+/* A table is the one block that can be wider than the bubble. It scrolls
+   inside its own container so the transcript never scrolls sideways. */
+.chat-md__table-scroll {
+  margin: 0 0 10px;
+  overflow-x: auto;
+}
+
+.chat-md__table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.chat-md__table th,
+.chat-md__table td {
+  padding: 5px 10px;
+  border: 1px solid var(--color-card-border);
+  text-align: left;
+}
+
+.chat-md__table th {
+  color: var(--color-heading);
+  font-weight: 650;
+}
+
+/* A link keeps its words and loses its destination — see AssistantProse.tsx.
+   Underlined so the phrasing still reads as a reference to something. */
+.chat-md__link {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.chat-md__image {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* --- The turn being written ------------------------------------------ */
+
+/* A caret, so a pause between fragments reads as thinking rather than as a
+   reply that has finished mid-sentence. */
+.chat-turn__cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: var(--color-accent);
+  vertical-align: text-bottom;
+  animation: chat-caret 1.1s steps(2, start) infinite;
+}
+
+@keyframes chat-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Someone who has asked for less motion does not need a blinking caret to know
+   a reply is arriving — the text itself is moving. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-turn__cursor {
+    animation: none;
+  }
+}
+
+/* --- The header's Settings control -----------------------------------
+ *
+ * Sized and shaped like `.theme-toggle` beside it, because they are peers:
+ * two small header affordances that open or flip something. It carries a
+ * status dot as well, so it is a little wider than square.
+ *
+ * It replaced a "Network on · Anthropic/…" text badge. That badge reported a
+ * state whose only fix lived on the page this button opens, so the two were
+ * merged rather than sat next to each other.
+ */
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  cursor: pointer;
+}
+
+.settings-button:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.settings-button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Settings is the page on screen. Marked on the control rather than only in
+   `aria-current`, so the state is not for screen readers alone. */
+.settings-button--active {
+  border-color: var(--color-accent-border);
+  background: var(--color-well-bg);
+  color: var(--color-accent);
+}
+
+/* --- Settings tabs ---------------------------------------------------- */
+.settings-tabs {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+.settings-tabs__tab {
+  padding: 9px 14px;
+  border: none;
+  /* The selected tab is joined to its panel by this line; the rest are not. */
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-tabs__tab:hover {
+  color: var(--color-heading);
+}
+
+.settings-tabs__tab--active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* Inset, because a tab's outline would otherwise be clipped by the list's
+   own bottom border. */
+.settings-tabs__tab:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.settings-tabs__panel {
+  display: grid;
+  gap: 20px;
+}
+
+/* An author `display` outranks the UA stylesheet's `[hidden] { display: none }`
+   whatever the specificity, so the rule above painted every panel at once and
+   the tabs did nothing. Any element that sets `display` and is hidden with the
+   attribute has to turn it off itself. */
+.settings-tabs__panel[hidden] {
+  display: none;
 }

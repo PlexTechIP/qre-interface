@@ -47,6 +47,20 @@ export interface DraftHandoff {
   state: FormState;
   provenance: RunProvenance;
   /**
+   * The conversation this proposal came out of.
+   *
+   * Carried so the analyst can get back to it after running — to ask what went
+   * wrong, or what to change about what came back. Without it a model-authored
+   * run is a one-way street: the one participant who could explain the outcome
+   * never learns the run happened.
+   *
+   * Session-scoped by design. It is NOT written into `RunConfig`: the contract
+   * is closed and versioned, the two databases are deliberately separate, and a
+   * run record pointing at a conversation the analyst has since deleted would
+   * be a dangling reference the store cannot enforce.
+   */
+  conversationId: string;
+  /**
    * Exactly the values the model chose. Everything else in `state` is a form
    * default the model never mentioned.
    *
@@ -175,6 +189,7 @@ function logArchitecture(
 export function draftToFormState(
   draft: GeneratedRunDraft,
   model: string,
+  conversationId: string,
 ): DraftMappingResult {
   const unsupported = unsupportedFields(draft);
   if (unsupported.length > 0) {
@@ -345,6 +360,7 @@ export function draftToFormState(
   return {
     ok: true,
     handoff: {
+      conversationId,
       state: normalizeFormState({
         ...initial,
         name: draft.name ?? "",

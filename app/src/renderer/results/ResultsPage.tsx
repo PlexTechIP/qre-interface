@@ -25,6 +25,14 @@ interface ResultsPageProps {
   store: Pick<RunStore, "get">;
   /** Reuse the shell handoff that History uses for Rerun. */
   onRerunRequest: (request: RerunRequest) => void;
+  /**
+   * Take this run's outcome back to the conversation that proposed it.
+   *
+   * Absent when there is nowhere to go back to — a configuration the analyst
+   * wrote themselves, or a run opened from History in a later session, where
+   * the thread is no longer something the shell can point at.
+   */
+  onAskAgent?: (() => void) | undefined;
 }
 
 type RecordResolution =
@@ -43,6 +51,7 @@ export function ResultsPage({
   onSelectedIndexChange,
   store,
   onRerunRequest,
+  onAskAgent,
 }: ResultsPageProps): React.JSX.Element {
   const [recordResolution, setRecordResolution] =
     useState<RecordResolution>({ status: "loading" });
@@ -104,6 +113,7 @@ export function ResultsPage({
 
   const record =
     recordResolution.status === "ready" ? recordResolution.record : null;
+  const failed = latestRun.result.status === "failed";
 
   return (
     <div className="results-page-frame">
@@ -127,6 +137,22 @@ export function ResultsPage({
           >
             Rerun
           </button>
+          {/*
+            Only for a run a model proposed, and only while the shell still
+            knows which conversation proposed it.
+
+            The failed variant is NOT here — it renders inside the error card
+            below instead. A failure is the case where this control earns its
+            place, and the toolbar is the wrong place to earn it: the analyst is
+            reading the error, not scanning for actions beside Export. What is
+            left here is the success variant, which has no error card to live in
+            and belongs with the other things you can do with a finished run.
+          */}
+          {onAskAgent === undefined || failed ? null : (
+            <button type="button" onClick={onAskAgent}>
+              Ask the agent about this run
+            </button>
+          )}
         </div>
         {recordResolution.status === "loading" ? (
           <p id="results-actions-status" className="muted" role="status">
@@ -153,6 +179,7 @@ export function ResultsPage({
         config={latestRun.config}
         {...(selectedIndex !== undefined ? { selectedIndex } : {})}
         {...(onSelectedIndexChange ? { onSelectedIndexChange } : {})}
+        {...(failed && onAskAgent ? { onAskAgent } : {})}
       />
 
       {isExportOpen && record ? (
