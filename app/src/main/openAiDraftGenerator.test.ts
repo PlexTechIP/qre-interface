@@ -13,11 +13,39 @@ function response(payload: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => payload } as unknown as Response;
 }
 
-function completion(envelope: unknown): Response {
-  return response({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(envelope) } }] });
+/**
+ * A completed turn: prose in `content`, the proposal in `tool_calls`.
+ *
+ * The arguments arrive as a JSON *string* in this wire format, which is the one
+ * real difference from Anthropic's — and the one place a strict schema cannot
+ * help, because a truncated response yields a string that does not close.
+ */
+function completion(draft: unknown, text = "Here is a starting point."): Response {
+  return response({
+    choices: [
+      {
+        finish_reason: "stop",
+        message: {
+          content: text,
+          ...(draft === undefined
+            ? {}
+            : {
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "propose_run_config",
+                      arguments: JSON.stringify(draft),
+                    },
+                  },
+                ],
+              }),
+        },
+      },
+    ],
+  });
 }
-
-const reply = (draft: unknown, text = "Here is a starting point."): unknown => ({ reply: text, draft });
 
 const generator = (fetchImpl: unknown) =>
   openAiDraftGenerator("gpt-5.6-terra", fetchImpl as typeof fetch);
@@ -25,8 +53,9 @@ const generator = (fetchImpl: unknown) =>
 describe("openAiDraftGenerator", () => {
   it("builds strict JSON schema output without a credential", () => {
     const body = openAiDraftGenerator().buildRequestBody(TURNS);
-    expect(body).toMatchObject({ model: "gpt-5.6-terra", response_format: { type: "json_schema", json_schema: { strict: true, name: "runconfig_chat" } } });
-    expect(body.response_format.json_schema.schema).toMatchObject({ required: ["reply", "draft"] });
+    expect(body).toMatchObject({ model: "gpt-5.6-terra", tool_choice: "auto" });
+    expect(body.tools[0]?.function).toMatchObject({ name: "propose_run_config", strict: true });
+    expect(body.tools[0]?.function.parameters).toMatchObject({ additionalProperties: false });
     expect(JSON.stringify(body)).not.toContain(API_KEY);
   });
 
@@ -44,7 +73,7 @@ describe("openAiDraftGenerator", () => {
   });
 
   it("uses Bearer authentication and parses a completed turn", async () => {
-    const fetchImpl = vi.fn(async () => completion(reply(FAKE_GENERATED_DRAFT)));
+    const fetchImpl = vi.fn(async () => completion(FAKE_GENERATED_DRAFT));
     const result = await generator(fetchImpl).requestReply(API_KEY, TURNS);
     expect(result).toMatchObject({
       ok: true,
@@ -59,14 +88,14 @@ describe("openAiDraftGenerator", () => {
   });
 
   it("accepts a turn that proposes nothing", async () => {
-    const fetchImpl = vi.fn(async () => completion(reply(null, "Which error budget?")));
+    const fetchImpl = vi.fn(async () => completion(undefined, "Which error budget?"));
     const result = await generator(fetchImpl).requestReply(API_KEY, TURNS);
     expect(result).toMatchObject({ ok: true, reply: "Which error budget?", draft: null });
   });
 
   /** The same contract check as the Anthropic twin — see `draftValidation.ts`. */
   it("refuses a reply that does not match the generation contract", async () => {
-    const fetchImpl = vi.fn(async () => completion(reply({ name: "draft" })));
+    const fetchImpl = vi.fn(async () => completion({ name: "draft" }));
     const result = await generator(fetchImpl).requestReply(API_KEY, TURNS);
     expect(result).toMatchObject({ ok: false, code: "INVALID_RESPONSE" });
     if (result.ok) return;
@@ -93,13 +122,15 @@ describe("openAiDraftGenerator", () => {
    * prose where the other returned `{ reply, draft }` would make the two
    * incomparable in a way no test of the prompt alone would catch.
    */
-  it("asks for the same envelope as the Anthropic adapter", () => {
+  it("offers the same tool as the Anthropic adapter", () => {
     const openAi = openAiDraftGenerator().buildRequestBody(TURNS);
     const anthropic = new AnthropicDraftGenerator().buildRequestBody(TURNS);
 
-    expect(openAi.response_format.json_schema.schema).toEqual(
-      anthropic.output_config.format.schema,
-    );
+    // Same name and same input schema, from the same constant. Two providers
+    // given differently-shaped tools would produce drafts that are not
+    // comparable, which no test of either one alone would catch.
+    expect(openAi.tools[0]?.function.name).toBe(anthropic.tools[0]?.name);
+    expect(openAi.tools[0]?.function.parameters).toEqual(anthropic.tools[0]?.input_schema);
   });
 
   it.each([[401, "AUTHENTICATION"], [429, "RATE_LIMITED"], [500, "INVALID_RESPONSE"]])("resolves HTTP %i as %s", async (status, code) => {

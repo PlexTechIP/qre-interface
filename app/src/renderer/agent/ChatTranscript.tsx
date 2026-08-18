@@ -5,10 +5,18 @@ import type { ChatMessage } from "../../shared/chatTypes";
 import { ARCHITECTURE_LABELS } from "../constants/labels";
 import { applicationLabel } from "../history/historyLabels";
 import { CopyButton } from "../CopyButton";
+import { AssistantProse } from "./AssistantProse";
 
 interface ChatTranscriptProps {
   messages: readonly ChatMessage[];
   sending: boolean;
+  /**
+   * Prose that has arrived for the turn still in flight.
+   *
+   * Empty while waiting for the provider's first byte, which is the one moment
+   * the old static "Thinking…" was telling the truth.
+   */
+  streamed: string;
   onUseDraft: (message: ChatMessage) => void;
   /** A proposal this mapping refuses, reported on the card it belongs to. */
   draftError: { messageId: string; message: string } | null;
@@ -43,6 +51,7 @@ function describeDraft(draft: GeneratedRunDraft): { label: string; value: string
 export function ChatTranscript({
   messages,
   sending,
+  streamed,
   onUseDraft,
   draftError,
 }: ChatTranscriptProps): React.JSX.Element {
@@ -83,6 +92,12 @@ export function ChatTranscript({
    * two-message conversation that already fits used to scroll the page heading
    * and the provider panel off the top for no benefit.
    *
+   * `streamed` is a dependency because a reply now grows in place: without it
+   * the effect fired once when the turn started and never again, so a reply
+   * longer than the viewport scrolled off the bottom while the analyst watched
+   * the top of it. The visibility check above is what keeps a per-fragment
+   * dependency from being a nuisance.
+   *
    * Not unit-tested: jsdom reports every element as 0×0 and implements
    * `scrollIntoView` as a no-op, so an assertion here would pass whatever the
    * code did. Verified in the running app instead.
@@ -93,7 +108,7 @@ export function ChatTranscript({
     const box = target.getBoundingClientRect();
     const alreadyVisible = box.top >= 0 && box.bottom <= window.innerHeight;
     if (!alreadyVisible) target.scrollIntoView({ block: "end" });
-  }, [newest, sending]);
+  }, [newest, sending, streamed]);
 
   return (
     <ol className="chat-transcript" aria-label="Transcript" ref={list}>
@@ -117,7 +132,16 @@ export function ChatTranscript({
             <p className="chat-turn__who">
               {message.role === "user" ? "You" : (message.model ?? "Assistant")}
             </p>
-            <p className="chat-turn__text">{message.text}</p>
+            {/*
+              A user's own words are shown exactly as typed. Markdown is the
+              MODEL's register, and rendering the analyst's `*` as emphasis
+              would quietly rewrite what they said they wanted.
+            */}
+            {message.role === "user" ? (
+              <p className="chat-turn__text">{message.text}</p>
+            ) : (
+              <AssistantProse text={message.text} />
+            )}
 
             {proposal === null ? null : (
               <div className={`chat-draft${superseded ? " chat-draft--superseded" : ""}`}>
@@ -200,12 +224,23 @@ export function ChatTranscript({
         );
       })}
 
+      {/*
+        The turn being written, painted as it arrives.
+        `role="status"` on the container rather than on the text: an assertive
+        region re-announcing on every token would talk over the analyst for the
+        length of the reply. A polite status announces when it settles.
+      */}
       {sending ? (
-        <li className="chat-turn chat-turn--assistant chat-turn--pending">
+        <li className="chat-turn chat-turn--assistant chat-turn--pending" role="status">
           <p className="chat-turn__who">Assistant</p>
-          <p className="chat-turn__text" role="status">
-            Thinking…
-          </p>
+          {streamed.length === 0 ? (
+            <p className="chat-turn__text chat-turn__waiting">Thinking…</p>
+          ) : (
+            <>
+              <AssistantProse text={streamed} />
+              <span className="chat-turn__cursor" aria-hidden="true" />
+            </>
+          )}
         </li>
       ) : null}
     </ol>

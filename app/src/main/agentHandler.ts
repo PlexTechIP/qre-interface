@@ -7,6 +7,7 @@ import {
   type AgentChatResult,
   type AgentProviderStatus,
   type ChatTurn,
+  type FormContextEntry,
   type ModelCatalogEntry,
   type ProviderAvailability,
   type ProviderCatalogResult,
@@ -19,6 +20,7 @@ import {
   AGENT_CATALOG_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
   AGENT_REPLY_CHANNEL,
+  AGENT_REPLY_DELTA_CHANNEL,
   AGENT_STATUS_CHANNEL,
 } from "./ipcChannels.js";
 import type { ModelCatalog } from "./modelCatalog.js";
@@ -42,17 +44,37 @@ export interface DraftGenerator {
    * process learns nothing between two calls, which is what keeps a preview
    * equal to the thing that would actually be sent.
    */
-  buildRequestBody(messages: readonly ChatTurn[]): unknown;
-  /**
-   * `cancel` is the analyst abandoning the request, not a deadline — the
-   * adapter keeps its own timeout and distinguishes the two, so an aborted
-   * request reports CANCELLED rather than blaming the provider for being slow.
-   */
+  buildRequestBody(
+    messages: readonly ChatTurn[],
+    formContext?: readonly FormContextEntry[],
+  ): unknown;
   requestReply(
     apiKey: string,
     messages: readonly ChatTurn[],
-    cancel?: AbortSignal,
+    options?: ReplyOptions,
   ): Promise<AgentChatResult>;
+}
+
+/** Everything about one send that is not the transcript itself. */
+export interface ReplyOptions {
+  /**
+   * The analyst abandoning the request, not a deadline — the adapter keeps its
+   * own timeout and distinguishes the two, so an aborted request reports
+   * CANCELLED rather than blaming the provider for being slow.
+   */
+  readonly cancel?: AbortSignal;
+  /** What the analyst has already filled in. Folded into the system prompt. */
+  readonly formContext?: readonly FormContextEntry[];
+  /**
+   * Called with each fragment of prose as it arrives.
+   *
+   * Its presence is what turns streaming on: an adapter given no listener asks
+   * for a whole response, because there is nobody to hand the pieces to. That
+   * keeps `previewRequest` and the non-streaming tests on exactly the path they
+   * were on, and makes streaming a capability of the call rather than of the
+   * adapter.
+   */
+  readonly onDelta?: (fragment: string) => void;
 }
 
 export interface DraftGeneratorFactory {
@@ -138,7 +160,10 @@ export function registerAgentHandlers(
     AGENT_PREVIEW_CHANNEL,
     (_event, payload: unknown): unknown => {
       const request = readChatRequest(AGENT_PREVIEW_CHANNEL, payload);
-      return generatorFor(generators, request).buildRequestBody(request.messages);
+      return generatorFor(generators, request).buildRequestBody(
+        request.messages,
+        request.formContext ?? [],
+      );
     },
   );
 
@@ -303,7 +328,27 @@ export function registerAgentHandlers(
       inFlight.get(sender)?.abort();
       inFlight.set(sender, controller);
       try {
-        return await generator.requestReply(apiKey, request.messages, controller.signal);
+        return await generator.requestReply(apiKey, request.messages, {
+          cancel: controller.signal,
+          formContext: request.formContext ?? [],
+          /*
+           * Pushed straight back to the window that asked, tagged with the id
+           * it sent. Without the tag a window that cancelled and re-sent would
+           * paint the abandoned request's fragments into the new turn — the
+           * two streams are indistinguishable once they are just strings.
+           *
+           * `isDestroyed` because a window closed mid-stream is ordinary: the
+           * adapter is still draining a response nobody is waiting for, and
+           * `send` on a destroyed sender throws.
+           */
+          onDelta: (fragment) => {
+            if (event.sender.isDestroyed()) return;
+            event.sender.send(AGENT_REPLY_DELTA_CHANNEL, {
+              requestId: request.requestId,
+              fragment,
+            });
+          },
+        });
       } finally {
         // Only if it is still ours. A second request that started while this one
         // was in flight already owns the slot, and clearing it unconditionally
@@ -454,7 +499,59 @@ function readChatRequest(channel: string, value: unknown): AgentChatRequest {
   if (!isModelForProvider(provider, model)) {
     throw new Error(`${channel} requires a supported model for ${provider}.`);
   }
-  return { messages: turns, generationSchema, provider, model };
+  const formContext = readFormContext(channel, (value as Record<string, unknown>)["formContext"]);
+  /*
+   * Carried through, not rebuilt.
+   *
+   * This function rebuilds its result field by field so a renderer that sent a
+   * whole stored message loses the extra ones — and `requestId` was initially
+   * left off that list, which silently broke streaming end to end: every
+   * fragment went out tagged `undefined`, and the renderer discarded all of
+   * them because its own id is a UUID. Nothing failed; the reply simply
+   * appeared all at once, exactly as it had before the milestone.
+   */
+  const rawRequestId = (value as Record<string, unknown>)["requestId"];
+  if (rawRequestId !== undefined && typeof rawRequestId !== "string") {
+    throw new Error(`${channel} requires requestId to be a string when present.`);
+  }
+  return {
+    messages: turns,
+    generationSchema,
+    provider,
+    model,
+    ...(formContext === undefined ? {} : { formContext }),
+    ...(rawRequestId === undefined ? {} : { requestId: rawRequestId }),
+  };
+}
+
+/**
+ * The analyst's half-filled form, narrowed.
+ *
+ * Every entry is interpolated into the system prompt, so an entry that is not
+ * two strings would put `[object Object]` — or `undefined` — into the text the
+ * model reads, and into the preview the analyst is shown as "the exact outbound
+ * request". Absent is fine; malformed is a renderer that was not built against
+ * this main process.
+ */
+function readFormContext(
+  channel: string,
+  value: unknown,
+): readonly FormContextEntry[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(`${channel} requires formContext to be an array when present.`);
+  }
+  return value.map((entry, index) => {
+    const record = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : null;
+    const field = record?.["field"];
+    const fieldValue = record?.["value"];
+    if (typeof field !== "string" || typeof fieldValue !== "string") {
+      throw new Error(
+        `${channel} requires formContext entry ${index} to have string field and value.`,
+      );
+    }
+    return { field, value: fieldValue };
+  });
 }
 
 /**
@@ -469,14 +566,35 @@ function readChatTurn(channel: string, value: unknown, index: number): ChatTurn 
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${channel} requires message ${index} to be an object.`);
   }
-  const { role, content } = value as Record<string, unknown>;
+  const { role, content, draft } = value as Record<string, unknown>;
   if (role !== "user" && role !== "assistant") {
     throw new Error(`${channel} requires message ${index} to have role "user" or "assistant".`);
   }
   if (typeof content !== "string") {
     throw new Error(`${channel} requires message ${index} to have string content.`);
   }
-  return { role, content };
+  // A proposal belongs to an assistant turn and nothing else. Dropped rather
+  // than rejected on a user turn, for the same reason this function rebuilds
+  // instead of passing through: a renderer that sent a whole stored message by
+  // mistake should lose the extra fields, not the conversation.
+  if (role === "user") return { role, content };
+
+  /*
+   * The replayed proposal, narrowed to a shape and no further.
+   *
+   * Shape, because that is what this process can be sure about — the same rule
+   * the rest of this function follows. NOT the full generation contract: a
+   * transcript recorded against an older schema would otherwise become
+   * unopenable, and the adapters hand this straight to a provider that
+   * validates it anyway. An array or a string, though, is a renderer that was
+   * not built against this main process.
+   */
+  if (draft !== undefined && draft !== null && (typeof draft !== "object" || Array.isArray(draft))) {
+    throw new Error(`${channel} requires message ${index} draft to be an object or null.`);
+  }
+  return draft === undefined
+    ? { role, content }
+    : { role, content, draft: draft as NonNullable<ChatTurn["draft"]> | null };
 }
 
 function generatorFor(

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   PROVIDER_IDS,
+  type AgentChatRequest,
+  type AgentChatResult,
   type AgentProviderStatus,
   type AgentService,
   type ModelCatalogEntry,
@@ -932,5 +934,86 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
         /OpenRouter\/deepseek\/deepseek-chat/,
       ),
     );
+  });
+});
+
+/**
+ * The run form's state used to live only inside `RunConfiguration`, which is a
+ * conditional render — so it was discarded on every sidebar click. That made
+ * the week-6 backlog item "a model draft still discards a half-filled form"
+ * unfixable in principle: by the time the analyst was on the chat page there
+ * was no half-filled form left to discard.
+ */
+describe("App shell — the run form across navigation", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.localStorage.clear();
+  });
+
+  const nameField = (): HTMLElement => screen.getByLabelText(/Run Name/i);
+
+  it("still has what the analyst typed after a trip to another tab", async () => {
+    window.agent = fakeAgentService();
+    render(<App />);
+
+    await userEvent.type(nameField(), "Shor at scale");
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+
+    expect(nameField()).toHaveValue("Shor at scale");
+  });
+
+  /**
+   * The other half of the same fix: what survives navigation is also what the
+   * model is told. Without it a proposal is authored against defaults and
+   * silently resets the field the analyst had just filled in.
+   */
+  it("tells the model what is already filled in", async () => {
+    const seen: AgentChatRequest[] = [];
+    window.agent = {
+      ...fakeAgentService(),
+      async requestReply(request): Promise<AgentChatResult> {
+        seen.push(request);
+        return fakeAgentService().requestReply(request);
+      },
+    };
+    render(<App />);
+
+    await userEvent.type(nameField(), "Shor at scale");
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      await screen.findByLabelText("Your message"),
+      "size this for me",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]?.formContext).toEqual(
+      expect.arrayContaining([{ field: "name", value: "Shor at scale" }]),
+    );
+  });
+
+  it("says nothing about a form nobody has touched", async () => {
+    const seen: AgentChatRequest[] = [];
+    window.agent = {
+      ...fakeAgentService(),
+      async requestReply(request): Promise<AgentChatResult> {
+        seen.push(request);
+        return fakeAgentService().requestReply(request);
+      },
+    };
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(
+      await screen.findByLabelText("Your message"),
+      "size this for me",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]).not.toHaveProperty("formContext");
   });
 });

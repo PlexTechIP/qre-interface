@@ -117,6 +117,36 @@ export type ChatRole = "user" | "assistant";
 export interface ChatTurn {
   readonly role: ChatRole;
   readonly content: string;
+  /**
+   * The proposal this assistant turn attached, replayed so follow-ups edit it
+   * rather than restart from defaults.
+   *
+   * It travels beside the prose rather than serialised into it because the two
+   * providers represent a past tool call differently — Anthropic wants a
+   * `tool_use` block answered by a `tool_result`, OpenAI wants `tool_calls` on
+   * the assistant message answered by a `role: "tool"` message. Handing the
+   * adapters a JSON string would force each to parse prose looking for a draft
+   * it had itself just stringified.
+   *
+   * Absent on user turns, and null on an assistant turn that only talked.
+   */
+  readonly draft?: GeneratedRunDraft | null;
+}
+
+/**
+ * One field the analyst has already set in the run form.
+ *
+ * Addressed by the schema path the model already knows the field by — the same
+ * `architecture.errorRate` vocabulary `GENERATION_FIELD_GUIDE` teaches it — so
+ * "carry this through" needs no translation table on either side.
+ *
+ * A rendered `value` rather than the typed one: this exists to be read in a
+ * prompt, and a snapshot that mirrored `FormState`'s real types would drag a
+ * renderer-owned UI type across the IPC boundary and into the main process.
+ */
+export interface FormContextEntry {
+  readonly field: string;
+  readonly value: string;
 }
 
 /**
@@ -138,6 +168,33 @@ export interface AgentChatRequest {
   /** Provider and model travel with every request, never as main-process state. */
   provider: ProviderId;
   model: string;
+  /**
+   * What the analyst has already filled in on the run form, if anything.
+   *
+   * Without it a proposal is authored against defaults and silently discards
+   * work already done — the analyst sets an error budget, asks for "Grover over
+   * 20 qubits", and gets a draft that resets the budget they just chose. With
+   * it the model is told what is already settled and asked to carry it through.
+   *
+   * Optional because the form can be untouched, and because the request has to
+   * remain sendable from a page that has no form open.
+   */
+  formContext?: readonly FormContextEntry[];
+  /**
+   * Tags the fragments this request will stream back.
+   *
+   * Streaming is a push channel, so a window that cancelled and re-sent would
+   * otherwise paint the abandoned request's fragments into the new turn — once
+   * they are just strings the two streams are indistinguishable. Optional
+   * because `previewRequest` streams nothing and has no id to give.
+   */
+  requestId?: string;
+}
+
+/** One fragment of prose, on its way to the window that asked for it. */
+export interface AgentReplyDelta {
+  readonly requestId: string;
+  readonly fragment: string;
 }
 
 /**
@@ -360,4 +417,18 @@ export interface AgentService {
    * nothing here that hands a key back.
    */
   refreshCatalog(provider: ProviderId): Promise<ProviderCatalogResult>;
+  /**
+   * Listen for prose arriving mid-request.
+   *
+   * The one push on this surface. `requestReply` keeps its shape and still
+   * resolves with the whole validated turn, so persistence and error handling
+   * are untouched — this exists purely so the wait is legible instead of two
+   * minutes of "Thinking…".
+   *
+   * Returns its own unsubscribe rather than expecting a matching `off`: a
+   * listener registered in an effect has to be removed by that effect's
+   * cleanup, and handing back the exact remover is the shape that cannot be
+   * called with the wrong argument.
+   */
+  onReplyDelta(listener: (delta: AgentReplyDelta) => void): () => void;
 }

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   AgentChatRequest,
   AgentChatResult,
+  AgentReplyDelta,
   AgentProviderStatus,
   AgentService,
   CredentialClearResult,
@@ -35,6 +36,7 @@ import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
   AGENT_CANCEL_CHANNEL,
   AGENT_CATALOG_CHANNEL,
+  AGENT_REPLY_DELTA_CHANNEL,
   AGENT_PREVIEW_CHANNEL,
   AGENT_REPLY_CHANNEL,
   AGENT_STATUS_CHANNEL,
@@ -124,6 +126,22 @@ const agent: AgentService = {
   // — has no way to give it back.
   refreshCatalog(provider: ProviderId): Promise<ProviderCatalogResult> {
     return ipcRenderer.invoke(AGENT_CATALOG_CHANNEL, provider) as Promise<ProviderCatalogResult>;
+  },
+  /*
+   * The one listener on this surface, and the only place `ipcRenderer.on`
+   * appears in the preload at all.
+   *
+   * The IpcRendererEvent is deliberately not forwarded: it carries `sender` and
+   * `ports`, which are handles into the main process, and handing those to the
+   * renderer would put a capability behind a callback that exists to deliver
+   * strings. Only the payload crosses.
+   */
+  onReplyDelta(listener: (delta: AgentReplyDelta) => void): () => void {
+    const forward = (_event: unknown, delta: AgentReplyDelta): void => listener(delta);
+    ipcRenderer.on(AGENT_REPLY_DELTA_CHANNEL, forward);
+    return () => {
+      ipcRenderer.removeListener(AGENT_REPLY_DELTA_CHANNEL, forward);
+    };
   },
   configureCredential(
     provider: Parameters<AgentService["configureCredential"]>[0],

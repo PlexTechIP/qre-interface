@@ -116,7 +116,7 @@ describe("toChatTurns", () => {
    * a model asked to change one field with no configuration in its context
    * re-derives the whole thing — silently moving fields the analyst had settled.
    */
-  it("replays an assistant turn as the envelope the model emitted", () => {
+  it("replays an assistant turn with its proposal attached", () => {
     const turns = toChatTurns([
       message({
         role: "assistant",
@@ -125,13 +125,16 @@ describe("toChatTurns", () => {
         model: "Anthropic/claude-sonnet-5",
       }),
     ]);
+
+    // The draft travels as a value, not serialised into `content`. Each
+    // provider represents a past proposal as its own flavour of tool call, so
+    // the adapters need it as data to lower it — stringifying here would make
+    // each of them parse prose looking for JSON this function just wrote.
     expect(turns).toEqual([
       {
         role: "assistant",
-        content: JSON.stringify({
-          reply: "Here is a starting point.",
-          draft: FAKE_GENERATED_DRAFT,
-        }),
+        content: "Here is a starting point.",
+        draft: FAKE_GENERATED_DRAFT,
       },
     ]);
   });

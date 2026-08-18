@@ -10,7 +10,11 @@ import type {
   ProviderCatalogResult,
 } from "../shared/agentTypes.js";
 import { OPENROUTER_SHORTLIST } from "../shared/providerModels.js";
-import { registerAgentHandlers, type DraftGenerator } from "./agentHandler.js";
+import {
+  registerAgentHandlers,
+  type DraftGenerator,
+  type ReplyOptions,
+} from "./agentHandler.js";
 import type { CredentialStore } from "./credentialStore.js";
 import { ModelCatalog } from "./modelCatalog.js";
 import { AGENT_CANCEL_CHANNEL, AGENT_CATALOG_CHANNEL, AGENT_REPLY_CHANNEL, AGENT_PREVIEW_CHANNEL, AGENT_STATUS_CHANNEL } from "./ipcChannels.js";
@@ -60,7 +64,8 @@ function setup(options: SetupOptions = {}) {
   const seenSignals: (AbortSignal | undefined)[] = [];
   const seenMessages: (readonly ChatTurn[])[] = [];
   const respond = (provider: string, model: string) =>
-    vi.fn(async (_key: string, messages: readonly ChatTurn[], cancel?: AbortSignal): Promise<AgentChatResult> => {
+    vi.fn(async (_key: string, messages: readonly ChatTurn[], replyOptions?: ReplyOptions): Promise<AgentChatResult> => {
+      const cancel = replyOptions?.cancel;
       seenSignals.push(cancel);
       seenMessages.push(messages);
       if (options.awaitCancel === true) {
@@ -593,5 +598,82 @@ describe("registerAgentHandlers — overlapping refreshes", () => {
     await invoke(AGENT_CATALOG_CHANNEL, "openrouter");
 
     expect(catalogClient.fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * `agent:replyDelta` is the first channel main initiates, and it is invisible
+ * to the exact-channel-set assertion above — that one enumerates
+ * `ipcMain.handle`, while this rides `webContents.send`. So the one new
+ * outbound capability in the milestone needs its own boundary test.
+ */
+describe("registerAgentHandlers — what the push channel may carry", () => {
+  function setupWithSender(options: SetupOptions & { stream?: readonly string[] } = {}) {
+    const handlers = new Map<string, Listener>();
+    const ipcMain: Pick<IpcMain, "handle"> = { handle(channel, listener) { handlers.set(channel, listener as Listener); } };
+    const store = (): Store => ({ hasCredential: vi.fn(() => true), readForRequest: vi.fn(() => "sk-secret-value") });
+    const sent: { channel: string; payload: unknown }[] = [];
+    const event = {
+      sender: {
+        id: 1,
+        isDestroyed: () => options.stream === undefined ? false : false,
+        send: (channel: string, payload: unknown) => sent.push({ channel, payload }),
+      },
+    } as unknown as IpcMainInvokeEvent;
+
+    const generator = (): { create: (model: string) => DraftGenerator } => ({
+      create: (model) => ({
+        provider: "OpenAI",
+        model,
+        buildRequestBody: () => ({}),
+        requestReply: async (_key, _messages, replyOptions) => {
+          for (const fragment of options.stream ?? []) replyOptions?.onDelta?.(fragment);
+          return { ok: true, reply: "done", draft: null, provider: "OpenAI", model };
+        },
+      }),
+    });
+    registerAgentHandlers(
+      ipcMain,
+      { anthropic: store(), openai: store(), openrouter: store() },
+      { anthropic: generator(), openai: generator(), openrouter: generator() },
+    );
+    const reply = (payload: unknown): Promise<unknown> =>
+      Promise.resolve((handlers.get(AGENT_REPLY_CHANNEL) as Listener)(event, payload));
+    return { reply, sent };
+  }
+
+  it("pushes each fragment tagged with the id the renderer sent", async () => {
+    const { reply, sent } = setupWithSender({ stream: ["Gate-", "based."] });
+
+    await reply({ ...request, requestId: "req-7" });
+
+    expect(sent).toEqual([
+      { channel: "agent:replyDelta", payload: { requestId: "req-7", fragment: "Gate-" } },
+      { channel: "agent:replyDelta", payload: { requestId: "req-7", fragment: "based." } },
+    ]);
+  });
+
+  /**
+   * The surface is the security boundary. A payload that grew to carry the
+   * buffered tool arguments, the transcript, or anything derived from the key
+   * would pass every other test in this file.
+   */
+  it("carries nothing but a request id and a string", async () => {
+    const { reply, sent } = setupWithSender({ stream: ["hello"] });
+
+    await reply({ ...request, requestId: "req-7" });
+
+    for (const { payload } of sent) {
+      expect(Object.keys(payload as object).sort()).toEqual(["fragment", "requestId"]);
+    }
+    expect(JSON.stringify(sent)).not.toContain("sk-secret-value");
+  });
+
+  it("pushes nothing at all when the turn does not stream", async () => {
+    const { reply, sent } = setupWithSender();
+
+    await reply({ ...request, requestId: "req-7" });
+
+    expect(sent).toEqual([]);
   });
 });

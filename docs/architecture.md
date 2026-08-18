@@ -77,6 +77,64 @@ needs the stored key. The renderer names a provider and receives a model list
 and a dollar balance; the key is read in main and, as everywhere else here, has
 no way back out.
 
+`agent:replyDelta` is the only channel main initiates. `agent:reply` keeps its
+invoke shape and still resolves with the whole validated turn — persistence and
+error handling are untouched — while the delta channel carries prose fragments
+tagged with the request id the renderer sent. The tag is load-bearing: a window
+that cancels and re-sends would otherwise paint the abandoned request's
+fragments into the new turn, because once they are strings the two streams are
+indistinguishable. It carries no credential, no draft and no conversation id.
+
+### A proposal is a tool call
+
+The assistant used to answer with a strict `{reply, draft}` JSON envelope. That
+single decision caused three symptoms at once: nothing could stream (the JSON
+must close before any of it parses), the prose could not use markdown (it was a
+JSON string value), and the model wrote in the clipped register of something
+filling in a form.
+
+Both adapters now give the model one tool, `propose_run_config`, whose input
+schema is `WIRE_GENERATION_SCHEMA` unchanged — the committed contract did not
+move and neither did the drift test that pins it. The model converses in
+ordinary streamed text and calls the tool when it has something to propose.
+
+- **A turn has two independent halves.** Prose with no call is a question, which
+  is what makes "ask before guessing" representable at all. A call with no prose
+  is still a proposal. Only a turn carrying neither is unreadable.
+- **A turn is refused whole.** A proposal that fails the generation contract
+  takes its prose with it — otherwise "here is a configuration for Grover" sits
+  in the transcript above a card that cannot be opened.
+- **Storage did not change.** A stored turn is still `{text, draft}`. Each
+  adapter lowers that into its own representation on replay: Anthropic wants a
+  `tool_use` block answered by a `tool_result` in the next message with roles
+  alternating, so the answer is folded into the user turn that follows; the
+  chat-completions path has no alternation rule, so `role: "tool"` is its own
+  message. The shared rules live in `main/toolTurn.ts`.
+- **Streaming is a property of the call, not the adapter.** An adapter given no
+  `onDelta` asks for a whole response. Tool arguments are buffered rather than
+  forwarded — half a configuration is not a configuration — so only prose
+  streams, which is what the analyst is waiting to read.
+
+For OpenRouter the catalogue filter tightened accordingly: a model must
+advertise **both** `tools` and `structured_outputs`, because a proposal is a
+strict-argument tool call. The roadmap's fallback envelope generator was not
+built — a second code path kept alive for models the picker will not offer is
+worse than the filter.
+
+### What the analyst has already filled in
+
+`AgentChatRequest.formContext` carries the run form's non-default fields,
+addressed by schema path (`architecture.errorRate`), so "carry this through"
+needs no translation table at either end. Without it a proposal is authored
+against defaults and silently resets work already done.
+
+This required lifting the form's state. `RunConfiguration` is a conditional
+render like every page, so its `FormState` was discarded on every sidebar click
+— which made the defect unfixable in principle, because by the time the analyst
+reached the chat page there was no half-filled form left to discard. The shell
+now mirrors the state and seeds it back on remount. The page stays authoritative
+while mounted; the shell holds it between mounts.
+
 ### Two kinds of provider
 
 Anthropic and OpenAI publish a handful of models each and the app pins them, so

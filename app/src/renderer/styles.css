@@ -2036,7 +2036,13 @@ select {
   color: var(--color-accent);
 }
 
-.chat-turn--pending .chat-turn__text {
+/* The placeholder only, NOT every pending turn.
+ *
+ * This selector was `.chat-turn--pending .chat-turn__text` when the pending row
+ * could only ever be the word "Thinking…". Streamed prose carries the same
+ * class, so the rule italicised whole replies as they arrived and then dropped
+ * them back to upright the instant the turn landed — a flicker on every turn. */
+.chat-turn__waiting {
   color: var(--color-muted);
   font-style: italic;
 }
@@ -5222,4 +5228,138 @@ button.danger:hover {
 
 .storage-row .agent-actions {
   margin-top: 2px;
+}
+
+/* --- Assistant prose, rendered as markdown ---------------------------
+ *
+ * The transcript could not carry formatting until M3: the reply was a string
+ * field inside a strict JSON envelope, so the system prompt forbade markdown
+ * outright. With the draft moved to a tool call the prose is ordinary writing,
+ * and a model explaining a trade-off reaches for a short list the way anyone
+ * would.
+ *
+ * `white-space: normal` overrides `.chat-turn__text`, which sets `pre-wrap`.
+ * That was right for prose whose only structure was its own newlines; it is
+ * wrong here, where markdown has already produced real block elements and
+ * pre-wrap would render every source newline as a second break on top of them.
+ */
+.chat-md {
+  white-space: normal;
+}
+
+.chat-md > :first-child {
+  margin-top: 0;
+}
+
+.chat-md > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-md p {
+  margin: 0 0 10px;
+}
+
+.chat-md ul,
+.chat-md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.chat-md li {
+  margin-bottom: 4px;
+}
+
+.chat-md code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--color-well-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.chat-md__pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-card-border);
+  border-radius: 8px;
+  background: var(--color-well-bg);
+  /* Code is the one thing here that must not be re-wrapped to fit. */
+  overflow-x: auto;
+}
+
+.chat-md__pre code {
+  padding: 0;
+  background: none;
+}
+
+.chat-md blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--color-card-border);
+  color: var(--color-muted);
+}
+
+/* A table is the one block that can be wider than the bubble. It scrolls
+   inside its own container so the transcript never scrolls sideways. */
+.chat-md__table-scroll {
+  margin: 0 0 10px;
+  overflow-x: auto;
+}
+
+.chat-md__table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.chat-md__table th,
+.chat-md__table td {
+  padding: 5px 10px;
+  border: 1px solid var(--color-card-border);
+  text-align: left;
+}
+
+.chat-md__table th {
+  color: var(--color-heading);
+  font-weight: 650;
+}
+
+/* A link keeps its words and loses its destination — see AssistantProse.tsx.
+   Underlined so the phrasing still reads as a reference to something. */
+.chat-md__link {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.chat-md__image {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* --- The turn being written ------------------------------------------ */
+
+/* A caret, so a pause between fragments reads as thinking rather than as a
+   reply that has finished mid-sentence. */
+.chat-turn__cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: var(--color-accent);
+  vertical-align: text-bottom;
+  animation: chat-caret 1.1s steps(2, start) infinite;
+}
+
+@keyframes chat-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Someone who has asked for less motion does not need a blinking caret to know
+   a reply is arriving — the text itself is moving. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-turn__cursor {
+    animation: none;
+  }
 }

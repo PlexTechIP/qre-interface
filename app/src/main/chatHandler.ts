@@ -136,7 +136,7 @@ function readNewConversation(channel: string, value: unknown): NewConversation {
  * wider object cannot smuggle extra columns' worth of data onto disk.
  *
  * The draft is checked against the generation contract, not merely for being an
- * object. It arrives having already passed `validateChatReply` on the way out
+ * object. It arrives having already passed `validateGeneratedDraft` on the way out
  * of the provider, so this only ever rejects a renderer that has lost track of
  * its own state — but it is what makes "every draft in the store is
  * contract-valid" true rather than merely likely, which is what

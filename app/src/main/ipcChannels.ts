@@ -68,3 +68,13 @@ export const APP_INFO_STORAGE_CHANNEL = "appInfo:storage";
 // path: main maps the id onto a path it resolved itself, so no string from the
 // renderer can steer the file manager.
 export const APP_INFO_REVEAL_CHANNEL = "appInfo:reveal";
+
+// Prose arriving mid-request, pushed rather than invoked.
+//
+// The only channel here that main initiates. `agent:reply` keeps its invoke
+// shape and still resolves with the whole validated turn — persistence and
+// error handling are untouched — while this carries the fragments that make the
+// wait legible. It is one-way and carries no credential, no draft and no
+// conversation id: just a request id and a string, so a listener that leaked
+// would leak prose the analyst is already reading on their own screen.
+export const AGENT_REPLY_DELTA_CHANNEL = "agent:replyDelta";

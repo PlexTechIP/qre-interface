@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentProviderStatus,
   AgentService,
+  FormContextEntry,
   ProviderId,
 } from "../../shared/agentTypes";
 import type {
@@ -44,6 +45,21 @@ interface ChatPageProps {
   provider: ProviderId;
   model: string;
   onSelectionChange: (provider: ProviderId, model: string) => void;
+  /**
+   * What the analyst has already set on the run form.
+   *
+   * Sent with every turn so a proposal starts from their work instead of from
+   * defaults. Without it the model authors against an empty form and the draft
+   * silently resets fields they had already chosen — the week-6 backlog's "a
+   * model draft still discards a half-filled form".
+   */
+  /**
+   * Read as a function rather than taken as a value, so the shell does not have
+   * to re-render on every keystroke in the run form just to keep this current.
+   * Called when a turn is sent and when the request preview is rebuilt, which
+   * are the only two moments it is read.
+   */
+  getFormContext: () => readonly FormContextEntry[];
   /**
    * Which conversation is open, owned by the shell.
    *
@@ -114,6 +130,8 @@ const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /** Long enough to coalesce typing, short enough to feel immediate. */
+/** Long enough to batch the fragments of one burst, short enough to read as live. */
+const STREAM_FLUSH_MS = 60;
 const SETTLE_MS = 200;
 
 /**
@@ -162,6 +180,7 @@ export function ChatPage({
   provider,
   model,
   onSelectionChange,
+  getFormContext,
   activeConversationId,
   onActiveConversationChange,
   composer,
@@ -295,10 +314,32 @@ export function ChatPage({
    * describes what would go out now, not what would have gone out when they
    * opened it.
    */
+  /*
+   * Derived once, on arrival.
+   *
+   * That is not a staleness bug, it is the lifetime: the run form lives on a
+   * different page, every page here is a conditional render, and this component
+   * therefore mounts fresh each time the analyst comes back from editing the
+   * form. The value is current as of the moment they arrived, and the form
+   * cannot change while they are looking at this page.
+   *
+   * Reading it as a function rather than taking it as a prop is what keeps the
+   * shell from re-rendering on every keystroke typed on that other page.
+   */
+  const formContext = useMemo(getFormContext, [getFormContext]);
+
   const settledComposer = useSettled(composer, SETTLE_MS);
   const nextRequest = useMemo(
-    () => buildChatRequest(messages, provider, model, settledComposer),
-    [messages, provider, model, settledComposer],
+    /*
+     * The form context is part of this, because it is part of what gets sent.
+     *
+     * Leaving it out made the "exact outbound request" panel show a system
+     * prompt WITHOUT the analyst's own field values while the real request
+     * carried them — so the one surface that exists to report what leaves the
+     * machine was the one hiding what this milestone added to it.
+     */
+    () => buildChatRequest(messages, provider, model, settledComposer, { formContext }),
+    [messages, provider, model, settledComposer, formContext],
   );
 
   useEffect(() => {
@@ -345,13 +386,88 @@ export function ChatPage({
    */
   const busy = useRef(false);
 
+  /**
+   * The prose of the turn currently arriving, and the id it belongs to.
+   *
+   * Held together so a fragment can be matched to the request that asked for
+   * it: a window that cancelled and re-sent would otherwise paint the abandoned
+   * request's fragments into the new turn, and once they are just strings the
+   * two streams are indistinguishable.
+   */
+  const [streaming, setStreaming] = useState<{ requestId: string; text: string }>({
+    requestId: "",
+    text: "",
+  });
+
+  /**
+   * The turn currently being streamed, readable from the delta listener.
+   *
+   * The listener is registered once for the life of the page, so it cannot
+   * close over the live id — it reads it here instead.
+   */
+  const liveRequestId = useRef("");
+  /** Fragments that have arrived since the last paint. See the flush below. */
+  const pendingFragments = useRef("");
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /*
+   * One subscription for the life of the page, not one per turn.
+   *
+   * Registering inside `runTurn` would add and remove a listener on every send,
+   * and a fragment arriving between the provider's first byte and the effect
+   * committing would be dropped. The id filter is what makes a single
+   * long-lived listener safe.
+   *
+   * Fragments are coalesced rather than painted one by one. Every paint
+   * re-parses the whole accumulated reply as markdown, so painting per fragment
+   * meant a full parse of a growing string for each of the hundreds a long
+   * reply arrives in. A short window batches the several that land inside it,
+   * which is well under what reads as a pause.
+   */
+  useEffect(() => {
+    return service.onReplyDelta(({ requestId, fragment }) => {
+      if (requestId !== liveRequestId.current) return;
+      pendingFragments.current += fragment;
+      if (flushTimer.current !== null) return;
+      flushTimer.current = setTimeout(() => {
+        flushTimer.current = null;
+        const buffered = pendingFragments.current;
+        pendingFragments.current = "";
+        if (buffered.length === 0) return;
+        setStreaming((current) =>
+          current.requestId === liveRequestId.current
+            ? { requestId: current.requestId, text: current.text + buffered }
+            : current,
+        );
+      }, STREAM_FLUSH_MS);
+    });
+  }, [service]);
+
+  // A page that unmounts mid-stream must not leave a timer holding a setState
+  // for a component React has already dropped.
+  useEffect(
+    () => () => {
+      if (flushTimer.current !== null) clearTimeout(flushTimer.current);
+    },
+    [],
+  );
+
   /** One turn against the provider. Callers hold the send slot. */
   const runTurn = useCallback(
     async (conversationId: string, transcript: readonly ChatMessage[]): Promise<void> => {
+      // Minted here so the listener can be armed BEFORE the request goes out:
+      // a provider that answers quickly would otherwise stream its first
+      // fragments at an id nothing is listening for.
+      const requestId = crypto.randomUUID();
+      liveRequestId.current = requestId;
+      pendingFragments.current = "";
+      setStreaming({ requestId, text: "" });
       setSending(true);
       setNote(null);
       try {
-        const result = await service.requestReply(buildChatRequest(transcript, provider, model));
+        const result = await service.requestReply(
+          buildChatRequest(transcript, provider, model, "", { requestId, formContext }),
+        );
         if (!result.ok) {
           // Cancelling is not a failure — it is the analyst getting what they
           // asked for. Showing it in the same red as a revoked key would teach
@@ -374,9 +490,19 @@ export function ChatPage({
         setNote({ tone: "error", text: describeError(error) });
       } finally {
         setSending(false);
+        // Cleared once the turn has landed in the transcript, so the streamed
+        // copy and the stored one are never both on screen. The buffer goes
+        // too, or a fragment that raced the reply would paint onto the next turn.
+        liveRequestId.current = "";
+        pendingFragments.current = "";
+        if (flushTimer.current !== null) {
+          clearTimeout(flushTimer.current);
+          flushTimer.current = null;
+        }
+        setStreaming({ requestId: "", text: "" });
       }
     },
-    [service, store, provider, model, refreshList],
+    [service, store, provider, model, refreshList, formContext],
   );
 
   const send = async (): Promise<void> => {
@@ -773,6 +899,7 @@ export function ChatPage({
             <ChatTranscript
               messages={messages}
               sending={sending}
+              streamed={streaming.text}
               onUseDraft={useDraft}
               draftError={draftError}
             />

@@ -12,6 +12,7 @@ import {
   GENERATION_SCHEMA_ID,
   type AgentChatRequest,
   type AgentChatResult,
+  type FormContextEntry,
   type ProviderId,
 } from "../../shared/agentTypes";
 import {
@@ -97,6 +98,7 @@ export function buildChatRequest(
   provider: ProviderId,
   model: string,
   pending = "",
+  extras: { formContext?: readonly FormContextEntry[]; requestId?: string } = {},
 ): AgentChatRequest {
   const turns = toChatTurns(messages);
   const text = pending.trim();
@@ -105,6 +107,15 @@ export function buildChatRequest(
     generationSchema: GENERATION_SCHEMA_ID,
     provider,
     model,
+    // Both omitted rather than sent empty, because `previewRequest` renders
+    // this object verbatim as "the exact outbound request" — a `formContext: []`
+    // in that panel would claim the analyst's form was inspected and found bare
+    // when in fact it was never read, and a `requestId` on a preview would name
+    // a stream that is not going to happen.
+    ...(extras.formContext !== undefined && extras.formContext.length > 0
+      ? { formContext: extras.formContext }
+      : {}),
+    ...(extras.requestId === undefined ? {} : { requestId: extras.requestId }),
   };
 }
 

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { AgentProviderStatus, AgentService, ProviderId } from "../shared/agentTypes";
+import type {
+  AgentProviderStatus,
+  AgentService,
+  FormContextEntry,
+  ProviderId,
+} from "../shared/agentTypes";
 import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/providerModels";
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { ChatPage, type ChatView } from "./agent/ChatPage";
@@ -11,6 +16,8 @@ import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import type { RerunRequest } from "./history/rerun";
 import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
+import { formContextFromState } from "./agent/formContext";
+import type { FormState } from "./state/formState";
 import { RunConfiguration } from "./RunConfiguration";
 import { SettingsPage } from "./settings/SettingsPage";
 import {
@@ -152,6 +159,41 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [selectedRowByRunId, setSelectedRowByRunId] = useState<SelectedRowByRunId>({});
   // A reconstructed config queued by a Rerun, pre-filled into the form.
   const [rerunConfig, setRerunConfig] = useState<RunConfig | null>(null);
+  /**
+   * The run form as it last stood, mirrored up out of `RunConfiguration`.
+   *
+   * Two jobs, and neither is possible while the form's state lives only inside
+   * a page that unmounts on every sidebar click. It survives navigation, so a
+   * half-filled form is still there when the analyst comes back from asking the
+   * model about it. And it is what tells the model what they have already
+   * decided, so a proposal starts from their work instead of resetting it.
+   *
+   * A REF, not state. The form reports every keystroke, and holding this in
+   * state re-rendered the whole shell — and re-derived the model's form context
+   * — on each one. Nothing renders from it directly: it is read at mount to
+   * seed the form back, and on demand to describe the form to the model.
+   *
+   * The page stays authoritative while mounted; this is a mirror, not a lift of
+   * the state machinery. Normalisation, provenance and the run flow all stay
+   * where they were.
+   */
+  const formStateRef = useRef<FormState | null>(null);
+  const rememberFormState = useCallback((state: FormState): void => {
+    formStateRef.current = state;
+  }, []);
+
+  /**
+   * What the analyst has already decided, computed when somebody asks.
+   *
+   * Handed to the chat page as a function so that page can read it on arrival
+   * rather than the shell pushing it down on every keystroke. Stable, so it
+   * never invalidates anything downstream.
+   */
+  const getFormContext = useCallback(
+    (): readonly FormContextEntry[] =>
+      formStateRef.current === null ? [] : formContextFromState(formStateRef.current),
+    [],
+  );
   const [agentStatus, setAgentStatus] = useState<AgentProviderStatus>(
     UNAVAILABLE_AGENT_STATUS,
   );
@@ -491,6 +533,13 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               initialDraft={draftHandoff?.state}
               provenance={draftHandoff?.provenance}
               proposed={draftHandoff?.proposed}
+              /*
+                Read during render, which is safe for exactly this shape: the
+                ref is written only by a child effect, never during a render,
+                and the value is consumed only by a mount-time initialiser.
+              */
+              restoredState={formStateRef.current ?? undefined}
+              onStateChange={rememberFormState}
             />
           ) : null}
           {activePage === "agent" ? (
@@ -508,6 +557,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               onViewChange={setChatView}
               onSelectionChange={chooseSelection}
               onOpenSettings={() => setActivePage("settings")}
+              getFormContext={getFormContext}
               onReviewDraft={(handoff) => {
                 setRerunConfig(null);
                 setDraftHandoff(handoff);

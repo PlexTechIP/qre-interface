@@ -27,17 +27,33 @@ function response(payload: unknown, status = 200): Response {
 const fetchStub = (respond: () => Response) =>
   vi.fn(async (_url: string, _init?: RequestInit) => respond());
 
-const completion = (envelope: unknown): Response =>
-  response({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(envelope) } }] });
-
-const reply = (draft: unknown, text = "Here is a starting point."): unknown => ({
-  reply: text,
-  draft,
-});
+/** Prose in `content`, the proposal in `tool_calls` — see the OpenAI twin. */
+const completion = (draft: unknown, text = "Here is a starting point."): Response =>
+  response({
+    choices: [
+      {
+        finish_reason: "stop",
+        message: {
+          content: text,
+          ...(draft === undefined
+            ? {}
+            : {
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "propose_run_config", arguments: JSON.stringify(draft) },
+                  },
+                ],
+              }),
+        },
+      },
+    ],
+  });
 
 describe("openRouterDraftGenerator — what makes it not OpenAI", () => {
   it("posts to OpenRouter rather than to OpenAI", async () => {
-    const fetchImpl = fetchStub(() => completion(reply(FAKE_GENERATED_DRAFT)));
+    const fetchImpl = fetchStub(() => completion(FAKE_GENERATED_DRAFT));
     await openRouterDraftGenerator(MODEL, fetchImpl as unknown as typeof fetch).requestReply(
       API_KEY,
       TURNS,
@@ -63,7 +79,7 @@ describe("openRouterDraftGenerator — what makes it not OpenAI", () => {
   });
 
   it("reports itself as OpenRouter, carrying the vendor-qualified slug", async () => {
-    const fetchImpl = fetchStub(() => completion(reply(FAKE_GENERATED_DRAFT)));
+    const fetchImpl = fetchStub(() => completion(FAKE_GENERATED_DRAFT));
     const result = await openRouterDraftGenerator(
       MODEL,
       fetchImpl as unknown as typeof fetch,
@@ -74,7 +90,7 @@ describe("openRouterDraftGenerator — what makes it not OpenAI", () => {
 
   /** Same reasoning as the catalogue client: no public leaderboard, no telemetry. */
   it("sends no app-attribution headers", async () => {
-    const fetchImpl = fetchStub(() => completion(reply(null)));
+    const fetchImpl = fetchStub(() => completion(undefined));
     await openRouterDraftGenerator(MODEL, fetchImpl as unknown as typeof fetch).requestReply(
       API_KEY,
       TURNS,
@@ -96,11 +112,11 @@ describe("openRouterDraftGenerator — what makes it not OpenAI", () => {
  * OpenAI test above while quietly drifting here.
  */
 describe("openRouterDraftGenerator — behaviour inherited from the shared core", () => {
-  it("asks for the same strict envelope OpenAI does", () => {
+  it("offers the same strict tool OpenAI does", () => {
     const openRouter = openRouterDraftGenerator(MODEL).buildRequestBody(TURNS);
     const openAi = openAiDraftGenerator().buildRequestBody(TURNS);
 
-    expect(openRouter.response_format).toEqual(openAi.response_format);
+    expect(openRouter.tools).toEqual(openAi.tools);
     expect(openRouter.messages).toEqual(openAi.messages);
   });
 
@@ -115,7 +131,7 @@ describe("openRouterDraftGenerator — behaviour inherited from the shared core"
   });
 
   it("still validates the reply against the generation contract", async () => {
-    const fetchImpl = fetchStub(() => completion({ reply: "here you go" }));
+    const fetchImpl = fetchStub(() => completion({ name: "not a draft" }));
     const result = await openRouterDraftGenerator(
       MODEL,
       fetchImpl as unknown as typeof fetch,
@@ -125,7 +141,7 @@ describe("openRouterDraftGenerator — behaviour inherited from the shared core"
   });
 
   it("never puts the key in the outbound body", async () => {
-    const fetchImpl = fetchStub(() => completion(reply(null)));
+    const fetchImpl = fetchStub(() => completion(undefined));
     await openRouterDraftGenerator(MODEL, fetchImpl as unknown as typeof fetch).requestReply(
       API_KEY,
       TURNS,

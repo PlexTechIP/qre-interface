@@ -178,22 +178,25 @@ export function matchesSearchTerms(text: string, terms: readonly string[]): bool
 /**
  * The transcript, lowered to what actually goes over the wire.
  *
- * An assistant turn replays as the JSON envelope the model emitted rather than
- * as its prose. Sending back only the prose would drop the draft, and a model
- * asked to "make the gate time 80" while shown a transcript with no
- * configuration in it re-derives one from scratch — silently changing fields
- * the analyst had already settled. Replaying the envelope makes the previous
- * proposal part of the context, which is the whole mechanism by which
- * refinement works.
+ * An assistant turn replays with its draft attached, not just its prose.
+ * Sending back only the prose would drop the configuration, and a model asked
+ * to "make the gate time 80" while shown a transcript containing none re-derives
+ * one from scratch — silently changing fields the analyst had already settled.
+ * Replaying the proposal makes it part of the context, which is the whole
+ * mechanism by which refinement works.
+ *
+ * The draft travels as a value rather than serialised into `content`. Under the
+ * old `{reply, draft}` envelope this function stringified the pair, because the
+ * envelope WAS the wire format; now each provider represents a past proposal as
+ * its own flavour of tool call, so the adapters need the draft as data to lower
+ * it. Stringifying here would force each of them to parse prose looking for
+ * JSON this function had just written.
  */
 export function toChatTurns(messages: readonly ChatMessage[]): ChatTurn[] {
   return messages.map((message) =>
     message.role === "user"
       ? { role: "user" as const, content: message.text }
-      : {
-          role: "assistant" as const,
-          content: JSON.stringify({ reply: message.text, draft: message.draft }),
-        },
+      : { role: "assistant" as const, content: message.text, draft: message.draft },
   );
 }
 

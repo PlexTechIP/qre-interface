@@ -11,16 +11,20 @@ const CATALOG_TIMEOUT_MS = 10_000;
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
 /**
- * The parameter name OpenRouter uses to advertise strict JSON-schema output.
+ * What a model must advertise to be offered at all.
  *
- * Load-bearing rather than cosmetic. Every reply this app reads is a strict
- * `{reply, draft}` envelope, and OpenRouter routes a single slug across many
- * upstream hosts with different capabilities — so a model without this is not a
- * weaker choice, it is one that fails on every send. Filtering here is what
- * makes `provider: { require_parameters: true }` on the outbound request a
- * narrowing rather than a wall.
+ * Both, not either. A proposal is a call to `propose_run_config`, so a model
+ * that cannot call tools cannot ever produce one — and the call's parameters
+ * are sent `strict: true`, which is what `structured_outputs` promises to
+ * honour. A model missing either is not a weaker choice; it is one that fails
+ * on every send that needed a configuration.
+ *
+ * Load-bearing rather than cosmetic: OpenRouter routes a single slug across
+ * many upstream hosts with different capabilities. Filtering here is what makes
+ * `provider: { require_parameters: true }` on the outbound request a narrowing
+ * rather than a wall.
  */
-const STRUCTURED_OUTPUT_PARAMETER = "structured_outputs";
+const REQUIRED_PARAMETERS = ["tools", "structured_outputs"] as const;
 
 /**
  * Reads what OpenRouter will route to, and what the key has left to spend.
@@ -115,7 +119,7 @@ export class OpenRouterCatalogClient {
     return {
       ok: true,
       models: data
-        .filter(routesStructuredOutput)
+        .filter(canProposeConfigurations)
         .map(readEntry)
         .filter((entry): entry is ModelCatalogEntry => entry !== null),
     };
@@ -157,17 +161,16 @@ export class OpenRouterCatalogClient {
 }
 
 /**
- * Whether OpenRouter says this model honours a strict response schema.
+ * Whether OpenRouter says this model can do what a proposal requires.
  *
  * An entry with no `supported_parameters` at all is excluded rather than
  * assumed capable: the promoted path has to work, and an optimistic guess here
  * shows up as a failed send with a message about the generation contract.
  */
-function routesStructuredOutput(candidate: unknown): boolean {
+function canProposeConfigurations(candidate: unknown): boolean {
   const parameters = asRecord(candidate)?.["supported_parameters"];
-  return (
-    Array.isArray(parameters) && parameters.includes(STRUCTURED_OUTPUT_PARAMETER)
-  );
+  if (!Array.isArray(parameters)) return false;
+  return REQUIRED_PARAMETERS.every((required) => parameters.includes(required));
 }
 
 /**

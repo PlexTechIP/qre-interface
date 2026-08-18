@@ -49,6 +49,28 @@ interface RunConfigurationProps {
    * is read once alongside it, for the same reason `provenance` is.
    */
   proposed?: readonly ProposedField[] | undefined;
+  /**
+   * The form as it stood when this page was last open.
+   *
+   * Every page in this app is a conditional render, so this component unmounts
+   * on any sidebar click and used to take a half-filled form with it. The shell
+   * keeps the last state and hands it back here, which is what makes "fill in
+   * half the form, go ask the model about it, come back" a thing that works.
+   *
+   * Ranked BELOW `initialDraft` and `initialConfig`: a model proposal or a
+   * rerun is something the analyst just asked for, and restoring over it would
+   * undo the navigation they made to get it.
+   */
+  restoredState?: FormState | undefined;
+  /**
+   * Report the form upward on every change.
+   *
+   * The shell needs it for two things it cannot get any other way: seeding
+   * `restoredState` on the next mount, and telling the model what the analyst
+   * has already decided (see `formContextFromState`). This component stays
+   * authoritative while it is mounted — the shell only mirrors.
+   */
+  onStateChange?: (state: FormState) => void;
 }
 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
@@ -58,10 +80,15 @@ export function RunConfiguration({
   initialDraft,
   provenance,
   proposed,
+  restoredState,
+  onStateChange,
 }: RunConfigurationProps = {}): React.JSX.Element {
-  const [state, setState] = useState<FormState>(() =>
-    initialDraft ??
-    (initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState()),
+  const [state, setState] = useState<FormState>(
+    () =>
+      initialDraft ??
+      (initialConfig
+        ? formStateFromRunConfig(initialConfig)
+        : (restoredState ?? createInitialFormState())),
   );
   /**
    * Who authored the configuration NOW IN THE FORM — held here rather than read
@@ -106,6 +133,18 @@ export function RunConfiguration({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfig, initialDraft]);
  
+  /*
+   * Mirror the form upward.
+   *
+   * An effect rather than a call inside `update`, because `state` also changes
+   * through the seeding effect above and through `useRunFlow`'s edit path — a
+   * notification wired into one writer would silently miss the others, and the
+   * shell would restore a form the analyst had already moved on from.
+   */
+  useEffect(() => {
+    onStateChange?.(state);
+  }, [state, onStateChange]);
+
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).
   const reportedIdRef = useRef<string | null>(null);

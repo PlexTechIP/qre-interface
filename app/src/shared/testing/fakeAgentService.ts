@@ -24,6 +24,7 @@ import {
   type AgentService,
   type CredentialClearResult,
   type CredentialConfigureResult,
+  type AgentReplyDelta,
   type GeneratedRunDraft,
   type ProviderCatalogResult,
 } from "../agentTypes";
@@ -57,12 +58,18 @@ export interface FakeAgentServiceOptions {
   reply?: string;
   /** Resolve as a typed failure instead, the way a real provider outcome does. */
   failure?: Extract<AgentChatResult, { ok: false }>;
+  /**
+   * Fragments to push before `requestReply` resolves, so a test can watch a
+   * reply arrive rather than only see it land.
+   */
+  stream?: readonly string[];
 }
 
 export function fakeAgentService(
   options: FakeAgentServiceOptions = {},
 ): AgentService {
   const draft = options.draft === undefined ? FAKE_GENERATED_DRAFT : options.draft;
+  const listeners = new Set<(delta: AgentReplyDelta) => void>();
   return {
     async getStatus(): Promise<AgentProviderStatus> {
       return {
@@ -86,7 +93,15 @@ export function fakeAgentService(
       return { note: "Test fixture — no request leaves this machine.", ...request };
     },
 
-    async requestReply(_request: AgentChatRequest): Promise<AgentChatResult> {
+    async requestReply(request: AgentChatRequest): Promise<AgentChatResult> {
+      // Pushed before resolving, in the order a real stream would arrive, and
+      // tagged with the id the caller sent — a fixture that used its own id
+      // would let a component ignore the tag and still pass.
+      for (const fragment of options.stream ?? []) {
+        for (const listener of listeners) {
+          listener({ requestId: request.requestId ?? "", fragment });
+        }
+      }
       if (options.failure !== undefined) return options.failure;
       return {
         ok: true,
@@ -132,6 +147,22 @@ export function fakeAgentService(
         code: "NETWORK",
         message:
           "The test fixture makes no requests, so there is no model catalogue to refresh.",
+      };
+    },
+
+    /**
+     * Scripted, so a test can assert progressive rendering.
+     *
+     * `options.stream` gives the fragments a reply arrives in; without it the
+     * fixture registers the listener and never calls it, which is the shape of
+     * a provider that answered in one piece. The unsubscribe is real either
+     * way — a fixture whose remover did nothing would let a leak in the
+     * component under test pass silently.
+     */
+    onReplyDelta(listener: (delta: AgentReplyDelta) => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
       };
     },
   };

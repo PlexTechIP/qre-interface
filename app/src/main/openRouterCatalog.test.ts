@@ -80,17 +80,21 @@ describe("OpenRouterCatalogClient — the catalogue", () => {
   });
 
   /**
-   * The app's whole reply path is a strict `{reply, draft}` JSON schema.
-   * OpenRouter routes one slug across many upstream hosts and not all of them
-   * honour it, so a model that cannot promise structured output is not a
-   * degraded choice — it is one that fails on every single send.
+   * A proposal is a call to `propose_run_config` with strict arguments, so a
+   * model needs BOTH capabilities. OpenRouter routes one slug across many
+   * upstream hosts and not all of them have either, so a model missing one is
+   * not a degraded choice — it is one that fails every send needing a config.
    */
-  it("drops models that cannot do structured output", async () => {
+  it("drops models that cannot attach a proposal", async () => {
     const fetchImpl = routed(
       response({
         data: [
           model("anthropic/claude-sonnet-5"),
-          model("someone/text-only", { supported_parameters: ["tools"] }),
+          // Tools but no strict schema: it could call `propose_run_config` and
+          // hand back arguments that do not match the contract.
+          model("someone/loose-tools", { supported_parameters: ["tools"] }),
+          // Strict schemas but no tools: nothing to attach a proposal WITH.
+          model("someone/no-tools", { supported_parameters: ["structured_outputs"] }),
           model("someone/no-parameters-field", { supported_parameters: undefined }),
         ],
       }),
@@ -155,7 +159,7 @@ describe("OpenRouterCatalogClient — the catalogue", () => {
    * they were dropped one step earlier and this asserted nothing.
    */
   it("skips entries with no usable slug rather than listing a blank row", async () => {
-    const structured = ["structured_outputs"];
+    const structured = ["tools", "structured_outputs"];
     const fetchImpl = routed(
       response({
         data: [

@@ -28,33 +28,33 @@ const DESCRIPTIVE_KEYS = new Set(["description", "title"]);
 export const WIRE_GENERATION_SCHEMA = stripDescriptive(generationSchema) as JsonRecord;
 
 /**
- * The envelope every assistant turn is decoded into: prose, and a proposal when
- * there is one.
+ * The one tool the model is given: attach a configuration proposal to a turn.
  *
- * Structured output is all-or-nothing — a schema of `GeneratedRunDraft` alone
- * left the model no way to say anything except a complete configuration, so
- * "which error budget do you want?" was unrepresentable and it guessed instead.
- * Wrapping rather than loosening keeps the guarantee that made structured
- * output worth using: when a draft IS present it is schema-valid, and the only
- * new degree of freedom is `null`.
+ * This is what replaced the `{reply, draft}` envelope, and the reason the whole
+ * conversation reads differently now. Under the envelope every reply was a
+ * string field inside strict JSON, which forced three things at once: nothing
+ * could stream (the JSON has to close before any of it parses), the prose could
+ * not use markdown (it was a JSON string value), and the model wrote in the
+ * clipped register of something filling in a form. As a tool call the prose is
+ * just prose — streamed, formatted, addressed to a person — and the draft
+ * arrives beside it as structured arguments.
  *
- * Built HERE, at the wire layer, from the committed contract. The contract file
- * is not edited and the drift test that pins it is untouched: this is a shape
- * the provider is asked for, not a change to what a draft is.
+ * The input schema is `WIRE_GENERATION_SCHEMA` unchanged. The committed
+ * contract did not move, the drift test that pins it did not move, and a draft
+ * is still all-or-nothing: `additionalProperties: false` with every property
+ * required, which is exactly the strict-tool-parameter subset both providers
+ * want. What changed is where it rides.
  */
-export const WIRE_CHAT_SCHEMA: JsonRecord = {
-  type: "object",
-  additionalProperties: false,
-  required: ["reply", "draft"],
-  properties: {
-    reply: { type: "string" },
-    // One more union at the top level. The provider caps a structured-output
-    // schema at 16 union-typed parameters — the reason `parameters` is one
-    // variant per benchmark rather than every key nulled — so the budget is
-    // spent deliberately, once, on the field that makes conversation possible.
-    draft: { anyOf: [WIRE_GENERATION_SCHEMA, { type: "null" }] },
-  },
-};
+export const PROPOSE_RUN_CONFIG_TOOL = {
+  name: "propose_run_config",
+  description: [
+    "Attach a complete quantum-resource-estimation configuration to your reply.",
+    "Call this as soon as you can propose a plausible configuration — the analyst reviews and edits every field before anything runs, so a complete draft they can correct beats a question they have to answer first.",
+    "Call it again with the WHOLE configuration, amended, whenever they ask for a change: there is no partial update, and a field you leave out is a field you have silently reset.",
+    "Do not call it when the request is genuinely ambiguous in a way no sensible default settles, or when they asked something that is not a configuration change — say so in prose instead.",
+  ].join(" "),
+  schema: WIRE_GENERATION_SCHEMA,
+} as const;
 
 /** The same prose, addressed to the model as `path — description` lines. */
 export const GENERATION_FIELD_GUIDE = collectDescriptions(generationSchema as JsonRecord);
@@ -74,12 +74,15 @@ export const GENERATION_FIELD_GUIDE = collectDescriptions(generationSchema as Js
  * schema and rejected by `additionalProperties: false`.
  */
 export const CHAT_SYSTEM_PROMPT = [
-  "You help an analyst arrive at a quantum-resource-estimation configuration by talking it through.",
+  "You are a quantum resource estimation specialist, helping an analyst arrive at a run configuration by talking it through.",
   "",
-  "Every reply is one JSON object with two fields. `reply` is what you say to the analyst, as plain prose — no markdown, no JSON, and never a restatement of the draft field by field, which they can already see. `draft` is a complete configuration proposal, or null.",
+  "Talk like a colleague, not a form. Your prose goes straight to a person, so it is ordinary writing — you may use markdown for emphasis, short lists, and inline `code` where it genuinely helps read a value. Keep it brief: two or three sentences is usually right, and never restate the draft field by field, which they can already see beside your message.",
   "",
-  "Propose a draft as soon as you can propose a plausible one. The analyst reviews and edits every field before anything runs, so a complete draft they can correct beats a question they have to answer first. Use null only when the request is genuinely ambiguous in a way no sensible default settles, or when they asked something that is not a configuration change.",
-  "When they ask you to change something you already proposed, repeat the WHOLE draft with that change applied, carrying every other field through unchanged. A draft is always complete; there is no partial update, and a field you drop is a field you have silently reset.",
+  "Attach a configuration by calling the `propose_run_config` tool. The prose and the proposal are two halves of one turn: say why you chose what you chose — which architecture, which error budget, and what trade-off that reflects — and let the tool carry the values.",
+  "",
+  "Ask before guessing when the request is genuinely ambiguous in a way no sensible default settles. A single focused question beats a confident configuration built on an assumption they did not make. Ask it in prose, with no tool call, and suggest what you would pick if they have no preference.",
+  "Offer a natural next step once you have proposed something — the field most worth revisiting, or the comparison that would tell them something.",
+  "",
   "Never invent a benchmark, architecture, or factory that is not in the schema's enums.",
   "When the request does not mention a field, choose the value a domain expert would default to and leave optional fields null rather than guessing a specific number.",
   "You are proposing configuration only. You never decide when a run executes, and you never author run identity or timestamps — the application owns those.",
@@ -91,6 +94,30 @@ export const CHAT_SYSTEM_PROMPT = [
   "Field guidance — the schema cannot express these bounds, so respect them:",
   GENERATION_FIELD_GUIDE,
 ].join("\n");
+
+/**
+ * The analyst's half-filled form, addressed to the model.
+ *
+ * Appended to the system prompt per request rather than baked into it, because
+ * it changes on every send while the rest of the prompt never does.
+ *
+ * Without this the model authors from defaults and the proposal silently resets
+ * work already done — the analyst picks an error budget, asks for "Grover over
+ * 20 qubits", and gets back a draft that overwrites the budget they had just
+ * chosen. The fields are named by their schema path, which is the same
+ * vocabulary the field guide above uses, so no translation is needed at either
+ * end.
+ */
+export function formContextPrompt(
+  entries: readonly { readonly field: string; readonly value: string }[],
+): string {
+  if (entries.length === 0) return "";
+  return [
+    "",
+    "The analyst has already set these fields in the run form. Carry every one of them into your proposal unchanged unless they ask for a change or it contradicts something they just said — and if you do change one, say which and why:",
+    ...entries.map((entry) => `- ${entry.field}: ${entry.value}`),
+  ].join("\n");
+}
 
 function stripDescriptive(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(stripDescriptive);
