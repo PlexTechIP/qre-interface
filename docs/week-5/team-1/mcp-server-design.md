@@ -225,11 +225,11 @@ is reusable too, and this is the finding the tool contracts rest on.**
 That means the MCP server does not need to reimplement — or bypass — a single
 validation rule. §6.1 is built on this.
 
-**[VERIFIED · `ed52411`] There are four preload surfaces, not three.**
-`app/src/main/preload.ts` lines 63–66 call `contextBridge.exposeInMainWorld` for:
-`estimator`, `uploads`, `store`, `files`. (`main`'s research-doc Currency note
-already carries this correction; this confirms it independently.) **Lesson:** a
-design doc written against a moving codebase rots in a week — hence the SHA stamps.
+**[VERIFIED · `b6a5091`] There are five preload surfaces.**
+`app/src/main/preload.ts:101–105` calls `contextBridge.exposeInMainWorld` for:
+`estimator`, `uploads`, `store`, `agent`, `files`. The earlier `ed52411` pass
+correctly counted four at that revision; `agent` landed afterwards. **Lesson:** a
+design doc written against a moving codebase rots quickly — hence the SHA stamps.
 
 > **Demonstration of exactly that.** `COMPARE_MIN_SELECTION` was at
 > `comparisonModel.ts:334` at `ed52411` and is at **`:425` at `5cdf2b1`** — four
@@ -1104,9 +1104,9 @@ speculative. No recommendation until we have watched one real analyst session.
 
 | # | Item | Owner | Blocks |
 |---|---|---|---|
-| OPEN-1 | Confirm the "MCP server never migrates; refuses on version mismatch" rule (§4.1) | PM + Team 2 | Store access |
-| OPEN-2 | Ask Team 2 to enable WAL in `SqliteRunStore`, or record a decision not to (§4.2) | PM | Nothing — mitigation only |
-| OPEN-3 | `ConfigDraft` shape: raw `FormState` vs. a flattened projection (§6.1) | Week-6 dev | Tool schemas |
+| OPEN-1 — **closed 2026-08-18** | The MCP server never migrates and refuses a `user_version` mismatch (§4.1 and the Week 6 register below) | Team 2 | Store access |
+| OPEN-2 — **closed 2026-08-18** | WAL is enabled in `SqliteRunStore`; PM review remains required before merge (§4.2 and the Week 6 register below) | Team 2 + PM review | Nothing — mitigation only |
+| OPEN-3 — **closed 2026-08-18** | `ConfigDraft` uses the existing flattened `GeneratedRunDraft`, not raw `FormState` (§6.1 and the Week 6 register below) | Team 2 | Tool schemas |
 | OPEN-4 | Behaviour on clients without the Tasks extension: run synchronously, or refuse writes (§6.3) | PM | `qre_run_estimate` |
 | OPEN-5 | Pin the NSA/CISA citations to specific recommendations (§7) | Team 1 | Nothing — rigour |
 | OPEN-6 | Whether to suppress user-authored `name` from tool output entirely (§7.3) | Security review | Read tools |
@@ -1201,3 +1201,110 @@ requires clients to treat tool annotations as untrusted (§7.1). The intent was
 right; the mechanism was not available. §7.2 rebuilds it on install-time
 enablement plus server-issued elicitation, both of which the server can actually
 verify.
+
+---
+
+## Week 6 Team 2 decision register — 2026-08-18
+
+**Signed:** Rishabh, Team 2
+
+**Code baseline inspected:** `b6a5091` plus Team 2 concurrency-spike commit
+`2310977`
+
+### OPEN-1 — MCP schema-version ownership
+
+**[VERIFIED · `2310977`]** The two-process spike started two real
+`SqliteRunStore` constructors against the same 20,000-row schema-v1 database.
+Across three trials in each journal mode, all six constructor pairs completed,
+retained every row, transformed every legacy factory value, produced schema
+version 2, and passed `PRAGMA integrity_check`. The current v1→v2 migration is
+therefore safe in the measured simultaneous-open scenario; the spike found no
+current migration defect that forces this rule.
+
+**[INFERENCE · decision]** Keep the rule anyway: the MCP server **never
+migrates**. Before constructing its read store, it reads `PRAGMA user_version`
+without side effects and compares it with the exported
+`DATABASE_SCHEMA_VERSION` from `sqliteRunStore.ts`; it must not duplicate the
+numeric version. On any mismatch—older, newer, or uninitialized—it refuses to
+open and returns a sanitized actionable error telling the analyst to launch or
+update the dashboard. The dashboard remains the sole migration owner. This
+prevents an independently spawned, potentially stale server from running schema
+DDL on open and does not assume every future migration will retain the current
+migration's transactional and idempotent properties.
+
+### OPEN-2 — journal mode
+
+**[VERIFIED · `2310977`]** In the controlled read-during-write case, rollback
+journal readers waited about 773–782 ms for the writer and then saw its commit;
+WAL readers returned the preceding committed snapshot in about 1.76–1.91 ms
+while the write was still open. Both modes preserved integrity. WAL did not
+remove SQLite's single-writer constraint: a second writer still failed
+recoverably after the configured five-second timeout in both modes.
+
+**[INFERENCE · decision]** Enable WAL in the dashboard-owned
+`SqliteRunStore`, after migration completes. The implementation sets
+`PRAGMA journal_mode = WAL` in the constructor and a focused test confirms the
+mode persists on a reopened file. SQLite leaves `:memory:` stores in their
+native `memory` mode, so existing in-memory behavior is unchanged. WAL creates
+`-wal` and `-shm` sidecars; backup, copy, and packaging procedures must treat
+those as part of a live database. A PM must review the store change before
+merge, as required by the Week 6 definition of done.
+
+**[VERIFIED · Week 6 Part E, 2026-08-18]** After the change, a one-trial version
+of the full concurrency matrix remained green. In its rollback-prefixed
+migration case, both synchronized constructors opened the same preconfigured
+schema-v1 `DELETE` database successfully, retained all 20,000 rows, and left the
+file in WAL mode. This specifically exercises concurrent first-time WAL
+initialization after migration.
+
+### OPEN-3 — `ConfigDraft` shape
+
+**[VERIFIED · `b6a5091`]** The live code has moved beyond the two choices as
+originally described. `app/src/shared/agentTypes.ts:86` already defines the
+flattened, identity-free `GeneratedRunDraft`; it omits uploads/local file paths,
+derived QEC, QRE version, provenance, `id`, and `createdAt`.
+`app/src/renderer/agent/draftToFormState.ts:52` maps that boundary into a fresh
+`FormState` and calls `normalizeFormState` at `:178`. The resulting state then
+uses `toRunConfig` (`app/src/renderer/state/toRunConfig.ts:285`) and the existing
+form/schema validation layers.
+
+**[INFERENCE · decision]** Define the MCP `ConfigDraft` boundary as the existing
+flattened `GeneratedRunDraft` shape, not raw `FormState`. Reuse its adapter and
+the normal pipeline:
+
+`ConfigDraft` → `draftToFormState` → normalized `FormState` → form validation →
+`toRunConfig` → JSON Schema validation.
+
+Raw `FormState` contains drafts for every inactive architecture, session-only
+saved programs, and upload file paths. Exposing it would enlarge the MCP schema,
+couple clients to renderer bookkeeping, and allow the model to name local paths.
+The flattened boundary keeps identity server-owned and reuses the already-tested
+human-review handoff. The MCP scaffold may add a type alias; it must not create a
+second independently maintained draft shape.
+
+### Corrections and live operational issue
+
+**[VERIFIED · `b6a5091`]** §3's current preload count is five, not four:
+`estimator`, `uploads`, `store`, `agent`, and `files`
+(`app/src/main/preload.ts:101–105`). The §3 claim above is corrected in place;
+the Appendix A count remains an accurate historical statement about the older
+`ed52411` revision.
+
+**[VERIFIED · `b6a5091`]** The default database-path mismatch remains live.
+Electron resolves `app/src/main/main.ts:62` to
+`app.getPath("userData")/run-history.sqlite`, while the non-Electron helper at
+`app/src/main/dataDir.ts:17` resolves to
+`~/.qre-dashboard/run-history.sqlite`. `QRE_DB_PATH` overrides both, but without
+that override a server using the helper can silently open a different database
+from the dashboard. Part E does not modify either owner-restricted file.
+
+**Channel ticket text (ready to file):**
+
+> **Bug: dashboard and non-Electron code resolve different default run-history
+> databases.** `main.ts:62` uses
+> `app.getPath("userData")/run-history.sqlite`; `dataDir.ts:17` uses
+> `~/.qre-dashboard/run-history.sqlite`. An MCP server that reuses
+> `resolveDefaultDatabasePath()` can therefore show different history from the
+> dashboard unless `QRE_DB_PATH` is explicitly set. Please choose one canonical
+> resolver/path and route both entry points through it. Team 2 documented but did
+> not fix this because `main.ts` is outside our Week 6 ownership.

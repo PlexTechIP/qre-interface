@@ -105,21 +105,23 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 ## E. Close three open items, in writing
 
-- [ ] **OPEN-1** — the "never migrates; refuses on version mismatch" rule (§4.1),
+- [x] **OPEN-1** — the "never migrates; refuses on version mismatch" rule (§4.1),
       informed by your spike
-- [ ] **OPEN-2** — WAL: enable it in `SqliteRunStore`, or record the decision not
+- [x] **OPEN-2** — WAL: enable it in `SqliteRunStore`, or record the decision not
       to. **If the spike says enable it, the one-line change is yours** — say so in
-      the PR and get a PM on the review
-- [ ] **OPEN-3** — `ConfigDraft` shape: raw `FormState` or a flattened projection
+      the PR and get a PM on the review. Enabled after migration; PM review is
+      still required before merge
+- [x] **OPEN-3** — `ConfigDraft` shape: raw `FormState` or a flattened projection
       (§6.1). **Decide this even if §F gets cut**
-- [ ] Append the answers to `mcp-server-design.md` as a dated, signed section in
+- [x] Append the answers to `mcp-server-design.md` as a dated, signed section in
       its existing `[VERIFIED]` / `[INFERENCE]` register. **Do not start a second
       document**
-- [ ] **Correct §3's preload count while you are there.** It says four; there are
+- [x] **Correct §3's preload count while you are there.** It says four; there are
       now **five** — `estimator`, `uploads`, `store`, `agent`, `files`
       (`preload.ts:101-105`). `agent` landed after the document was written
 - [ ] **File, do not fix:** `main.ts:62` and `dataDir.ts:17` still resolve
-      different default DB paths. Post it in the channel as a ticket
+      different default DB paths. Post it in the channel as a ticket. Copy-ready
+      ticket text is in the design register; external channel post is outstanding
 
 ## F. What else did you find — required, and not a formality
 

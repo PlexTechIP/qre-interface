@@ -21,7 +21,9 @@ while a second process alternates reads and writes.
 
 ## How to reproduce
 
-From `app/` with Node 24.18.0 and dependencies installed:
+The measurements are pinned to commit `2310977`, before Part E enabled WAL in
+the product store. From `app/` at that commit, with Node 24.18.0 and dependencies
+installed:
 
 ```sh
 node --import tsx src/main/spikes/sqliteConcurrencySpike.ts
@@ -147,8 +149,8 @@ hide the busy timeout, or damage the database in these trials.
 
 The product change must still account for WAL's persistent journal mode and its
 `-wal` / `-shm` sidecar files in backup, copying, and future packaging behavior.
-This spike recommends the change; it does not make it on the concurrency-spike
-branch.
+The spike commit recommends the change without making it. Part E subsequently
+implements the recommendation on the same feature branch and PR.
 
 ## Baseline note unrelated to the spike
 
