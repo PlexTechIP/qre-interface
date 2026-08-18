@@ -5,16 +5,24 @@ $ErrorActionPreference = "Stop"
 Push-Location $PSScriptRoot
 
 try {
+    # Floor, not exact pin — matches setup_venv.sh; an exact pin broke on every patch release.
+    $requiredMinor = "3.13"
+    $requiredPatch = 14
+    $installHelp = "Install it with the Python installer from python.org (check " +
+        "'Add python.exe to PATH'), or 'winget install Python.Python.3.13', then rerun setup_venv.ps1."
+
     if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
-        throw "The Python launcher was not found. Install Python 3.13.14, then rerun setup_venv.ps1."
+        throw "The Python launcher (py) was not found. $installHelp"
     }
 
-    $actualPython = & py -3.13 -c "import platform; print(platform.python_version())"
+    $actualPython = & py "-$requiredMinor" -c "import platform; print(platform.python_version())"
     if ($LASTEXITCODE -ne 0) {
-        throw "Python 3.13.14 was not found. Install it, then rerun setup_venv.ps1."
+        throw "Python $requiredMinor was not found via 'py -$requiredMinor'. $installHelp"
     }
-    if ($actualPython -ne "3.13.14") {
-        throw "Python 3.13.14 is required; py -3.13 resolved to $actualPython."
+    $actualPatch = [int]($actualPython.Split(".")[2])
+    if ($actualPatch -lt $requiredPatch) {
+        throw "Python $requiredMinor.$requiredPatch or a later $requiredMinor.x is required; " +
+            "py -$requiredMinor resolved to $actualPython. $installHelp"
     }
 
     & py -3.13 -m venv .venv
