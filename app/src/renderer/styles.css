@@ -5363,3 +5363,94 @@ button.danger:hover {
     animation: none;
   }
 }
+
+/* --- The header's Settings control -----------------------------------
+ *
+ * Sized and shaped like `.theme-toggle` beside it, because they are peers:
+ * two small header affordances that open or flip something. It carries a
+ * status dot as well, so it is a little wider than square.
+ *
+ * It replaced a "Network on · Anthropic/…" text badge. That badge reported a
+ * state whose only fix lived on the page this button opens, so the two were
+ * merged rather than sat next to each other.
+ */
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-button-text);
+  cursor: pointer;
+}
+
+.settings-button:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.settings-button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Settings is the page on screen. Marked on the control rather than only in
+   `aria-current`, so the state is not for screen readers alone. */
+.settings-button--active {
+  border-color: var(--color-accent-border);
+  background: var(--color-well-bg);
+  color: var(--color-accent);
+}
+
+/* --- Settings tabs ---------------------------------------------------- */
+.settings-tabs {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+.settings-tabs__tab {
+  padding: 9px 14px;
+  border: none;
+  /* The selected tab is joined to its panel by this line; the rest are not. */
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-tabs__tab:hover {
+  color: var(--color-heading);
+}
+
+.settings-tabs__tab--active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* Inset, because a tab's outline would otherwise be clipped by the list's
+   own bottom border. */
+.settings-tabs__tab:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.settings-tabs__panel {
+  display: grid;
+  gap: 20px;
+}

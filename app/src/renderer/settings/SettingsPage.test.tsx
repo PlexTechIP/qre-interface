@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -58,6 +58,12 @@ function setup(
     model?: string;
     /** `null` stands for "no preload bridge", which is a real shipped case. */
     appInfo?: AppInfoService | null;
+    /**
+     * Which panel the test's subject lives on. Settings shows one at a time, so
+     * a test about provider keys has to open that tab first — and which tab a
+     * subject lives on is a fact about the page, not about the test.
+     */
+    tab?: string;
   } = {},
 ) {
   const chats = overrides.chats ?? new InMemoryChatStore();
@@ -89,6 +95,12 @@ function setup(
     />,
   );
 
+  // `fireEvent` rather than `userEvent`: this runs inside a synchronous
+  // `setup()` that every existing test calls without awaiting.
+  if (overrides.tab !== undefined) {
+    fireEvent.click(screen.getByRole("tab", { name: overrides.tab }));
+  }
+
   return {
     chats,
     service,
@@ -109,13 +121,13 @@ describe("SettingsPage", () => {
 
   describe("AI providers", () => {
     it("shows one key card per provider the app knows about", () => {
-      setup();
+      setup({ tab: "AI providers" });
       expect(screen.getByRole("region", { name: "Anthropic" })).toBeVisible();
       expect(screen.getByRole("region", { name: "OpenAI" })).toBeVisible();
     });
 
     it("reports each provider's key state independently", () => {
-      setup();
+      setup({ tab: "AI providers" });
       const anthropic = screen.getByRole("region", { name: "Anthropic" });
       const openai = screen.getByRole("region", { name: "OpenAI" });
       expect(within(anthropic).getByText("Configured")).toBeVisible();
@@ -124,7 +136,7 @@ describe("SettingsPage", () => {
 
     it("changes the active provider and model together", async () => {
       const user = userEvent.setup();
-      const { onSelectionChange } = setup();
+      const { onSelectionChange } = setup({ tab: "AI providers" });
 
       await user.selectOptions(screen.getByLabelText("Provider"), "openai");
 
@@ -134,7 +146,7 @@ describe("SettingsPage", () => {
     it("tells the shell which provider was configured, not merely that something changed", async () => {
       const user = userEvent.setup();
       const configureCredential = vi.fn(async () => ({ ok: true as const }));
-      const { onCredentialConfigured } = setup({ service: { configureCredential } });
+      const { onCredentialConfigured } = setup({ tab: "AI providers", service: { configureCredential } });
 
       const openai = screen.getByRole("region", { name: "OpenAI" });
       await user.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai-value");
@@ -147,7 +159,7 @@ describe("SettingsPage", () => {
     it("tells the shell when a key is removed", async () => {
       const user = userEvent.setup();
       const clearCredential = vi.fn(async () => ({ ok: true as const }));
-      const { onCredentialCleared } = setup({ service: { clearCredential } });
+      const { onCredentialCleared } = setup({ tab: "AI providers", service: { clearCredential } });
 
       const anthropic = screen.getByRole("region", { name: "Anthropic" });
       await user.click(within(anthropic).getByRole("button", { name: "Remove key" }));
@@ -157,7 +169,7 @@ describe("SettingsPage", () => {
     });
 
     it("says plainly when nothing is configured yet", () => {
-      setup({ status: UNCONFIGURED });
+      setup({ tab: "AI providers", status: UNCONFIGURED });
       expect(screen.getByText(/no provider is configured/i)).toBeVisible();
     });
   });
@@ -209,7 +221,7 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       const chats = new InMemoryChatStore();
       await chats.create({ id: "c-1", title: "Keep me", createdAt: new Date().toISOString() });
-      setup({ chats });
+      setup({ tab: "Data & storage", chats });
 
       await user.click(screen.getByRole("button", { name: "Delete all conversations" }));
 
@@ -221,7 +233,7 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       const chats = new InMemoryChatStore();
       await chats.create({ id: "c-1", title: "Goodbye", createdAt: new Date().toISOString() });
-      setup({ chats });
+      setup({ tab: "Data & storage", chats });
 
       await user.click(screen.getByRole("button", { name: "Delete all conversations" }));
       await user.click(screen.getByRole("button", { name: "Yes, delete everything" }));
@@ -234,7 +246,7 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       const chats = new InMemoryChatStore();
       await chats.create({ id: "c-1", title: "Keep me", createdAt: new Date().toISOString() });
-      setup({ chats });
+      setup({ tab: "Data & storage", chats });
 
       await user.click(screen.getByRole("button", { name: "Delete all conversations" }));
       await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -253,7 +265,7 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       const chats = new InMemoryChatStore();
       await chats.create({ id: "c-1", title: "Goodbye", createdAt: new Date().toISOString() });
-      const { onConversationsCleared } = setup({ chats });
+      const { onConversationsCleared } = setup({ tab: "Data & storage", chats });
 
       await user.click(screen.getByRole("button", { name: "Delete all conversations" }));
       await user.click(screen.getByRole("button", { name: "Yes, delete everything" }));
@@ -265,7 +277,7 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       const chats = new InMemoryChatStore();
       vi.spyOn(chats, "clear").mockRejectedValue(new Error("database is locked"));
-      const { onConversationsCleared } = setup({ chats });
+      const { onConversationsCleared } = setup({ tab: "Data & storage", chats });
 
       await user.click(screen.getByRole("button", { name: "Delete all conversations" }));
       await user.click(screen.getByRole("button", { name: "Yes, delete everything" }));
@@ -280,7 +292,7 @@ describe("SettingsPage", () => {
       const user = userEvent.setup();
       const chats = new InMemoryChatStore();
       vi.spyOn(chats, "clear").mockRejectedValue(new Error("database is locked"));
-      setup({ chats });
+      setup({ tab: "Data & storage", chats });
 
       await user.click(screen.getByRole("button", { name: "Delete all conversations" }));
       await user.click(screen.getByRole("button", { name: "Yes, delete everything" }));
@@ -291,7 +303,7 @@ describe("SettingsPage", () => {
 
   describe("About", () => {
     it("reports the bundled QRE engine version", () => {
-      setup();
+      setup({ tab: "About" });
       expect(screen.getByText(QRE_VERSION)).toBeVisible();
     });
   });
@@ -302,7 +314,7 @@ describe("SettingsPage", () => {
    */
   describe("Storage locations", () => {
     it("shows where each database lives", async () => {
-      setup();
+      setup({ tab: "Data & storage" });
 
       expect(
         await screen.findByText("/fixture/userData/run-history.sqlite"),
@@ -317,6 +329,7 @@ describe("SettingsPage", () => {
      */
     it("marks a database an environment variable moved", async () => {
       setup({
+        tab: "Data & storage",
         appInfo: fakeAppInfoService({
           locations: [
             { id: "runDatabase", path: "/elsewhere/runs.sqlite", overridden: true },
@@ -335,7 +348,7 @@ describe("SettingsPage", () => {
     it("opens a database's folder by name, never by path", async () => {
       const user = userEvent.setup();
       const revealed: string[] = [];
-      setup({ appInfo: fakeAppInfoService({ onReveal: (id) => revealed.push(id) }) });
+      setup({ tab: "Data & storage", appInfo: fakeAppInfoService({ onReveal: (id) => revealed.push(id) }) });
 
       const buttons = await screen.findAllByRole("button", { name: "Show in folder" });
       await user.click(buttons[0]!);
@@ -346,6 +359,7 @@ describe("SettingsPage", () => {
     it("surfaces a folder that would not open", async () => {
       const user = userEvent.setup();
       setup({
+        tab: "Data & storage",
         appInfo: fakeAppInfoService({
           revealResult: {
             ok: false,
@@ -363,9 +377,11 @@ describe("SettingsPage", () => {
 
     /** Component tests render without a preload bridge; a path is informational. */
     it("says nothing at all when running without the preload bridge", async () => {
-      setup({ appInfo: null });
+      setup({ tab: "Data & storage", appInfo: null });
 
-      expect(await screen.findByRole("heading", { name: "Data & storage" })).toBeVisible();
+      // The panel is still there — it is named by its tab now, not by a
+      // heading — and simply lists no paths.
+      expect(await screen.findByRole("tabpanel", { name: "Data & storage" })).toBeVisible();
       expect(screen.queryByRole("button", { name: "Show in folder" })).toBeNull();
     });
 
@@ -377,6 +393,7 @@ describe("SettingsPage", () => {
      */
     it("ignores a location this build does not know about", async () => {
       setup({
+        tab: "Data & storage",
         appInfo: fakeAppInfoService({
           locations: [
             { id: "runDatabase", path: "/fixture/runs.sqlite", overridden: false },
@@ -391,8 +408,10 @@ describe("SettingsPage", () => {
 
       expect(await screen.findByText("/fixture/runs.sqlite")).toBeVisible();
       expect(screen.queryByText("/fixture/vectors.sqlite")).toBeNull();
-      // The rest of the page is still standing.
-      expect(screen.getByRole("region", { name: "Anthropic" })).toBeVisible();
+      // The rest of the page is still standing. An unknown id used to reach a
+      // copy lookup that returned undefined and threw inside render, taking the
+      // whole page down rather than one row.
+      expect(screen.getAllByRole("tab")).toHaveLength(4);
     });
 
     /**
@@ -401,6 +420,7 @@ describe("SettingsPage", () => {
      */
     it("says so when the paths could not be read", async () => {
       setup({
+        tab: "Data & storage",
         appInfo: {
           getStorage: () => Promise.reject(new Error("no handler registered")),
           reveal: async () => ({ ok: true as const }),
@@ -450,7 +470,7 @@ describe("SettingsPage — providers with a fetched catalogue", () => {
   ];
 
   it("offers a refresh only on the card that has something to refresh", () => {
-    setup({ status: withOpenRouter(CATALOGUE) });
+    setup({ tab: "AI providers", status: withOpenRouter(CATALOGUE) });
 
     const openrouter = screen.getByRole("region", { name: "OpenRouter" });
     expect(
@@ -466,7 +486,7 @@ describe("SettingsPage — providers with a fetched catalogue", () => {
   });
 
   it("reports how many models the provider is routing", () => {
-    setup({ status: withOpenRouter(CATALOGUE) });
+    setup({ tab: "AI providers", status: withOpenRouter(CATALOGUE) });
 
     const openrouter = screen.getByRole("region", { name: "OpenRouter" });
     expect(within(openrouter).getByText(/1 model available/i)).toBeVisible();
@@ -475,6 +495,7 @@ describe("SettingsPage — providers with a fetched catalogue", () => {
   it("tells the shell when a refresh lands, so every picker updates", async () => {
     const user = userEvent.setup();
     const { onCatalogRefreshed } = setup({
+      tab: "AI providers",
       status: withOpenRouter(CATALOGUE),
       service: {
         async refreshCatalog() {
@@ -496,6 +517,7 @@ describe("SettingsPage — providers with a fetched catalogue", () => {
    */
   it("offers the fetched models in the active-model picker", () => {
     setup({
+      tab: "AI providers",
       status: withOpenRouter(CATALOGUE),
       provider: "openrouter",
       model: "deepseek/deepseek-chat",
@@ -506,9 +528,111 @@ describe("SettingsPage — providers with a fetched catalogue", () => {
   });
 
   it("explains what to do first when the provider holds no key", () => {
-    setup({ status: withOpenRouter(null, false) });
+    setup({ tab: "AI providers", status: withOpenRouter(null, false) });
 
     const openrouter = screen.getByRole("region", { name: "OpenRouter" });
     expect(within(openrouter).getByText(/add an openrouter key/i)).toBeVisible();
+  });
+});
+
+/**
+ * Settings grew from one scrolling column into four subjects that have nothing
+ * to do with each other — provider keys, appearance, stored data, and version
+ * information. Tabs are what stop "change the theme" being a scroll past three
+ * provider cards.
+ */
+describe("SettingsPage — tabs", () => {
+  const tab = (name: string | RegExp): HTMLElement =>
+    screen.getByRole("tab", { name });
+
+  it("offers one tab per subject", () => {
+    setup();
+
+    expect(screen.getAllByRole("tab").map((entry) => entry.textContent)).toEqual([
+      "General",
+      "AI providers",
+      "Data & storage",
+      "About",
+    ]);
+  });
+
+  /**
+   * AI providers first would put a wall of key entry in front of someone who
+   * came to change the theme. General is the one panel that is safe to land on.
+   */
+  it("opens on General", () => {
+    setup();
+
+    expect(tab("General")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: "Light" })).toBeVisible();
+  });
+
+  it("shows only the panel whose tab is selected", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    expect(screen.queryByRole("region", { name: "Anthropic" })).toBeNull();
+
+    await user.click(tab("AI providers"));
+
+    expect(screen.getByRole("region", { name: "Anthropic" })).toBeVisible();
+    expect(screen.queryByRole("radio", { name: "Light" })).toBeNull();
+  });
+
+  it("reaches every panel", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(tab("Data & storage"));
+    expect(screen.getByText(/Run history database/i)).toBeVisible();
+
+    await user.click(tab("About"));
+    expect(screen.getByText(QRE_VERSION)).toBeVisible();
+  });
+
+  /** A panel has to say which tab it belongs to, or it is an anonymous div. */
+  it("names each panel after its tab", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(tab("AI providers"));
+
+    expect(screen.getByRole("tabpanel", { name: "AI providers" })).toBeVisible();
+  });
+
+  /**
+   * Arrow keys, not Tab. A tablist is one stop in the page's tab order, and
+   * moving between the tabs themselves is the arrow keys' job — otherwise
+   * reaching the last panel means four presses through controls nobody wanted.
+   */
+  it("moves between tabs with the arrow keys", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(tab("General"));
+    await user.keyboard("{ArrowRight}");
+
+    expect(tab("AI providers")).toHaveAttribute("aria-selected", "true");
+    expect(tab("AI providers")).toHaveFocus();
+  });
+
+  it("wraps around at either end", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(tab("General"));
+    await user.keyboard("{ArrowLeft}");
+    expect(tab("About")).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowRight}");
+    expect(tab("General")).toHaveAttribute("aria-selected", "true");
+  });
+
+  /** Only the selected tab is a tab stop; the rest are reached with arrows. */
+  it("keeps the tablist to one stop in the page's tab order", () => {
+    setup();
+
+    expect(tab("General")).toHaveAttribute("tabindex", "0");
+    expect(tab("About")).toHaveAttribute("tabindex", "-1");
   });
 });

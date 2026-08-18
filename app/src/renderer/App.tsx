@@ -10,7 +10,6 @@ import { isModelForProvider, isProviderId, PROVIDER_MODELS } from "../shared/pro
 import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { ChatPage, type ChatView } from "./agent/ChatPage";
 import type { DraftHandoff } from "./agent/draftToFormState";
-import { NetworkStatus } from "./agent/NetworkStatus";
 import { QRE_VERSION } from "./constants/staticOptions";
 import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import type { RerunRequest } from "./history/rerun";
@@ -19,6 +18,7 @@ import type { SelectedRowByRunId } from "./results/selectedRows";
 import { formContextFromState } from "./agent/formContext";
 import type { FormState } from "./state/formState";
 import { RunConfiguration } from "./RunConfiguration";
+import { SettingsButton } from "./settings/SettingsButton";
 import { SettingsPage } from "./settings/SettingsPage";
 import {
   DARK_QUERY,
@@ -113,7 +113,6 @@ const NAV_ITEMS: readonly NavItem[] = [
   { page: "history", label: "Run History", icon: <ClockIcon /> },
   { page: "comparison", label: "Comparison", icon: <BarsIcon /> },
   { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
-  { page: "settings", label: "Settings", icon: <GearIcon /> },
 ];
 
 /**
@@ -481,10 +480,18 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           </span>
         </div>
         <div className="top-header__right">
-          <NetworkStatus
+          {/*
+            Settings, and the networked-features indicator, in one control.
+            They used to be two — a "Network on · …" badge here and a Settings
+            entry in the left nav — which meant the badge reported a state
+            whose only fix lived somewhere the badge did not point at.
+          */}
+          <SettingsButton
             status={agentStatus}
             provider={agentSelection.provider}
             model={agentSelection.model}
+            active={activePage === "settings"}
+            onOpen={() => setActivePage("settings")}
           />
           {/*
             A quick binary override. It pins the opposite of what is CURRENTLY
@@ -690,15 +697,6 @@ function BarsIcon(): React.JSX.Element {
   return (
     <Icon>
       <path d="M6 20v-6M12 20V6M18 20v-9" />
-    </Icon>
-  );
-}
-
-function GearIcon(): React.JSX.Element {
-  return (
-    <Icon>
-      <circle cx="12" cy="12" r="3.1" />
-      <path d="M12 2.8v2.4M12 18.8v2.4M4.5 4.5l1.7 1.7M17.8 17.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.5 19.5l1.7-1.7M17.8 6.2l1.7-1.7" />
     </Icon>
   );
 }

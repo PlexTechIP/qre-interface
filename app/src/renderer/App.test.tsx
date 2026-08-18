@@ -374,21 +374,29 @@ describe("App shell — Settings", () => {
     };
   }
 
-  const badge = (): HTMLElement => screen.getByLabelText(/LLM provider status/);
+  /** The header control that replaced the standalone "Network on" badge. */
+  const badge = (): HTMLElement => screen.getByRole("button", { name: /^Settings/ });
 
-  it("puts Settings last in the sidebar", () => {
+  /**
+   * Settings is reachable from the header on every page rather than from the
+   * left nav. It was moved because the control that opens it is also the app's
+   * networked-features indicator — the badge used to report a state whose only
+   * fix lived somewhere the badge did not point at.
+   */
+  it("keeps Settings out of the primary navigation", () => {
     window.agent = fakeAgentService();
     render(<App />);
 
-    const labels = screen.getAllByRole("button").map((button) => button.textContent);
-    expect(labels.indexOf("Settings")).toBeGreaterThan(labels.indexOf("Describe a Run"));
+    const nav = screen.getByLabelText("Primary navigation");
+    expect(within(nav).queryByRole("button", { name: /^Settings/ })).toBeNull();
+    expect(within(nav).getByRole("button", { name: "Describe a Run" })).toBeVisible();
   });
 
-  it("opens the Settings page from the sidebar", async () => {
+  it("opens the Settings page from the header", async () => {
     window.agent = fakeAgentService();
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
     expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
   });
@@ -412,7 +420,8 @@ describe("App shell — Settings", () => {
   it("makes a newly configured provider active when the current one has no key", async () => {
     window.agent = agentServiceWithKeys(new Set());
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     const openai = screen.getByRole("region", { name: "OpenAI" });
     await userEvent.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai-value");
@@ -420,7 +429,7 @@ describe("App shell — Settings", () => {
 
     await waitFor(() =>
       expect(badge()).toHaveAccessibleName(
-        `LLM provider status: Network on · OpenAI/${PROVIDER_MODELS.openai.defaultModel}`,
+        `Settings — Networked features on: OpenAI/${PROVIDER_MODELS.openai.defaultModel}`,
       ),
     );
   });
@@ -429,7 +438,8 @@ describe("App shell — Settings", () => {
     window.agent = agentServiceWithKeys(new Set<ProviderId>(["anthropic"]));
     render(<App />);
     await waitFor(() => expect(badge()).toHaveAccessibleName(/Anthropic/));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     const openai = screen.getByRole("region", { name: "OpenAI" });
     await userEvent.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai-value");
@@ -452,15 +462,16 @@ describe("App shell — Settings", () => {
       },
     };
     render(<App />);
-    await waitFor(() => expect(badge()).toHaveAccessibleName(/Network on/));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await waitFor(() => expect(badge()).toHaveAccessibleName(/features on/i));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     const anthropic = screen.getByRole("region", { name: "Anthropic" });
     await userEvent.click(within(anthropic).getByRole("button", { name: "Remove key" }));
     await userEvent.click(within(anthropic).getByRole("button", { name: "Remove Anthropic key" }));
 
-    // The header badge would otherwise keep claiming a key that is gone.
-    await waitFor(() => expect(badge()).toHaveAccessibleName(/Network off/));
+    // The header control would otherwise keep claiming a key that is gone.
+    await waitFor(() => expect(badge()).toHaveAccessibleName(/features off/i));
   });
 
   it("shows where the databases live, via the preload bridge", async () => {
@@ -468,7 +479,8 @@ describe("App shell — Settings", () => {
     window.appInfo = fakeAppInfoService();
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "Data & storage" }));
 
     expect(
       await screen.findByText("/fixture/userData/run-history.sqlite"),
@@ -494,7 +506,8 @@ describe("App shell — Settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("button", { name: "Use this configuration" });
 
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "Data & storage" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete all conversations" }));
     await userEvent.click(screen.getByRole("button", { name: "Yes, delete everything" }));
 
@@ -548,7 +561,8 @@ describe("App shell — Settings", () => {
       },
     };
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     const openai = screen.getByRole("region", { name: "OpenAI" });
     await userEvent.type(within(openai).getByLabelText("OpenAI API key"), "sk-openai");
@@ -565,7 +579,7 @@ describe("App shell — Settings", () => {
   it("changes the theme from Settings", async () => {
     window.agent = fakeAgentService();
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
     await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
 
@@ -663,7 +677,7 @@ describe("App shell — system theme", () => {
 
   it("offers System alongside Light and Dark in Settings", async () => {
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
     await userEvent.click(screen.getByRole("radio", { name: "Dark" }));
     expect(document.documentElement.dataset["theme"]).toBe("dark");
@@ -747,7 +761,8 @@ describe("App shell — OpenRouter", () => {
     window.agent = fakeAgentService();
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     expect(screen.getByRole("region", { name: "OpenRouter" })).toBeVisible();
   });
@@ -760,15 +775,16 @@ describe("App shell — OpenRouter", () => {
   it("activates a new key on a model the provider actually routes", async () => {
     window.agent = agentServiceWithCatalogue(new Set());
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     const card = screen.getByRole("region", { name: "OpenRouter" });
     await userEvent.type(within(card).getByLabelText("OpenRouter API key"), "sk-or-value");
     await userEvent.click(within(card).getByRole("button", { name: /validate and save/i }));
 
     await waitFor(() =>
-      expect(screen.getByLabelText(/LLM provider status/)).toHaveAccessibleName(
-        "LLM provider status: Network on · OpenRouter/deepseek/deepseek-chat",
+      expect(screen.getByRole("button", { name: /^Settings/ })).toHaveAccessibleName(
+        "Settings — Networked features on: OpenRouter/deepseek/deepseek-chat",
       ),
     );
   });
@@ -776,7 +792,8 @@ describe("App shell — OpenRouter", () => {
   it("shows the fetched catalogue in the model picker, grouped", async () => {
     window.agent = agentServiceWithCatalogue(new Set(["openrouter"]));
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     await userEvent.selectOptions(
       (await screen.findAllByLabelText("Provider"))[0] as HTMLElement,
@@ -875,9 +892,9 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
     await waitFor(() => expect(refreshCatalog).toHaveBeenCalledOnce());
 
     // Navigating remounts Settings; the shell's record must outlive that.
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
     await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
     expect(refreshCatalog).toHaveBeenCalledOnce();
   });
@@ -887,7 +904,7 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
     window.agent = service;
 
     render(<App />);
-    await screen.findByRole("button", { name: "Settings" });
+    await screen.findByRole("button", { name: /^Settings/ });
 
     expect(refreshCatalog).not.toHaveBeenCalled();
   });
@@ -903,15 +920,16 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
     const { service } = serviceWithColdCatalogue(new Set());
     window.agent = service;
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     const card = screen.getByRole("region", { name: "OpenRouter" });
     await userEvent.type(within(card).getByLabelText("OpenRouter API key"), "sk-or-value");
     await userEvent.click(within(card).getByRole("button", { name: /validate and save/i }));
 
     await waitFor(() =>
-      expect(screen.getByLabelText(/LLM provider status/)).toHaveAccessibleName(
-        "LLM provider status: Network on · OpenRouter/deepseek/deepseek-chat",
+      expect(screen.getByRole("button", { name: /^Settings/ })).toHaveAccessibleName(
+        "Settings — Networked features on: OpenRouter/deepseek/deepseek-chat",
       ),
     );
   });
@@ -921,7 +939,8 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
     const { service } = serviceWithColdCatalogue(new Set(["openrouter"]));
     window.agent = service;
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "AI providers" }));
 
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openrouter");
     await userEvent.selectOptions(
@@ -930,7 +949,7 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText(/LLM provider status/)).toHaveAccessibleName(
+      expect(screen.getByRole("button", { name: /^Settings/ })).toHaveAccessibleName(
         /OpenRouter\/deepseek\/deepseek-chat/,
       ),
     );
