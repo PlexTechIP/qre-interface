@@ -1435,6 +1435,129 @@ describe("ChatPage — streaming survives the round trip", () => {
     await waitFor(() => expect(screen.getAllByText("Streamed.")).toHaveLength(1));
   });
 
+  /**
+   * The streamed text has to actually reach the screen while the turn is still
+   * in flight. Every other streaming test here resolves the request straight
+   * away, so the stored turn paints and the assertion passes whether or not a
+   * single fragment was ever revealed — the same blind spot that let the
+   * dropped `requestId` ship green. This one holds the request open, so the
+   * only thing that can put the words on screen is the reveal loop.
+   */
+  it("paints the reply while it is still arriving, before the turn resolves", async () => {
+    const listeners = new Set<(delta: { requestId: string; fragment: string }) => void>();
+    // A holder, not a bare `let`: control-flow analysis narrows a variable only
+    // assigned inside a callback to `never` at the call site below.
+    const gate: { release: (() => void) | null } = { release: null };
+    const service: AgentService = {
+      ...fakeAgentService(),
+      onReplyDelta(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async requestReply(request): Promise<AgentChatResult> {
+        for (const fragment of ["Gate-based ", "looks ", "right ", "here."]) {
+          for (const listener of listeners) {
+            listener({ requestId: request.requestId ?? "", fragment });
+          }
+        }
+        // Held open, so nothing but the reveal can paint.
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
+        return {
+          ok: true,
+          reply: "Gate-based looks right here.",
+          draft: null,
+          provider: "Test fixture",
+          model: "deterministic fixture",
+        };
+      },
+    };
+    renderChat({ service });
+
+    await sendMessage("Estimate Grover search");
+
+    // Revealed a few characters at a time, so this only passes once the frame
+    // loop has run enough times to get through the sentence.
+    await waitFor(
+      () => expect(screen.getByText(/Gate-based looks right here\./)).toBeVisible(),
+      { timeout: 4000 },
+    );
+
+    gate.release?.();
+  });
+
+  /**
+   * What "smoother" actually means, measured.
+   *
+   * The provider delivers in clumps — one character here, ninety there. The old
+   * batch painted whatever had landed in the window, so the steps on screen
+   * were as uneven as the delivery. Here the painted increments should be far
+   * more even than the bursts that produced them, which is the whole claim.
+   */
+  it("paints in even steps even though delivery is lumpy", async () => {
+    const BURSTS = [2, 1, 90, 3, 1, 120, 4, 60, 1, 2];
+    const PROSE = "x".repeat(BURSTS.reduce((a, b) => a + b, 0));
+    const listeners = new Set<(delta: { requestId: string; fragment: string }) => void>();
+    const gate: { release: (() => void) | null } = { release: null };
+    const service: AgentService = {
+      ...fakeAgentService(),
+      onReplyDelta(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async requestReply(request): Promise<AgentChatResult> {
+        let at = 0;
+        for (const size of BURSTS) {
+          await new Promise((r) => setTimeout(r, 40));
+          const fragment = PROSE.slice(at, at + size);
+          at += size;
+          for (const listener of listeners) {
+            listener({ requestId: request.requestId ?? "", fragment });
+          }
+        }
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
+        return {
+          ok: true,
+          reply: PROSE,
+          draft: null,
+          provider: "Test fixture",
+          model: "deterministic fixture",
+        };
+      },
+    };
+    renderChat({ service });
+
+    // Sample the streamed turn as it grows, then look at the step sizes.
+    const lengths: number[] = [];
+    const stop = { now: false };
+    const poll = (): void => {
+      // `.chat-md` is the assistant's prose specifically — the analyst's own
+      // turn is rendered as typed and shares `.chat-turn__text`.
+      const all = document.querySelectorAll(".chat-md");
+      const el = all[all.length - 1];
+      const len = el?.textContent?.length ?? 0;
+      if (len > 0 && len !== lengths[lengths.length - 1]) lengths.push(len);
+      if (!stop.now) setTimeout(poll, 8);
+    };
+    poll();
+
+    await sendMessage("Estimate Grover search");
+    await waitFor(() => expect(lengths[lengths.length - 1]).toBe(PROSE.length), {
+      timeout: 8000,
+    });
+    stop.now = true;
+    gate.release?.();
+
+    const steps = lengths.slice(1).map((len, i) => len - lengths[i]!);
+    expect(steps.length).toBeGreaterThan(10);
+    // No paint may dump a whole large burst. The biggest arrival was 120
+    // characters; the biggest thing drawn at once must be far under that.
+    expect(Math.max(...steps)).toBeLessThan(40);
+  }, 20000);
+
   it("sends a request id at all", async () => {
     const seen: AgentChatRequest[] = [];
     const service: AgentService = {

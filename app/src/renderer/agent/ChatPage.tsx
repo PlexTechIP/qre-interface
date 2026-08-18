@@ -26,6 +26,7 @@ import { ConversationList } from "./ConversationList";
 import { ConversationExportDialog } from "./ConversationExportDialog";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
 import { ProviderModelSelect } from "../components/ProviderModelSelect";
+import { charsToReveal, minCommitIntervalMs } from "./streamReveal";
 
 interface ChatPageProps {
   service: AgentService;
@@ -129,9 +130,6 @@ const NO_MESSAGES: readonly ChatMessage[] = [];
 const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** Long enough to coalesce typing, short enough to feel immediate. */
-/** Long enough to batch the fragments of one burst, short enough to read as live. */
-const STREAM_FLUSH_MS = 60;
 const SETTLE_MS = 200;
 
 /**
@@ -406,9 +404,21 @@ export function ChatPage({
    * close over the live id — it reads it here instead.
    */
   const liveRequestId = useRef("");
-  /** Fragments that have arrived since the last paint. See the flush below. */
-  const pendingFragments = useRef("");
-  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Everything received for the live turn, whether painted yet or not. */
+  const received = useRef("");
+  /** How much of `received` is on screen. The rest is still being revealed. */
+  const shown = useRef(0);
+  const frame = useRef<number | null>(null);
+  const lastFrameAt = useRef(0);
+  const lastCommitAt = useRef(0);
+
+  /** Stop the reveal loop. Safe to call when it is not running. */
+  const stopReveal = useCallback((): void => {
+    if (frame.current !== null) {
+      cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
+  }, []);
 
   /*
    * One subscription for the life of the page, not one per turn.
@@ -418,39 +428,66 @@ export function ChatPage({
    * committing would be dropped. The id filter is what makes a single
    * long-lived listener safe.
    *
-   * Fragments are coalesced rather than painted one by one. Every paint
-   * re-parses the whole accumulated reply as markdown, so painting per fragment
-   * meant a full parse of a growing string for each of the hundreds a long
-   * reply arrives in. A short window batches the several that land inside it,
-   * which is well under what reads as a pause.
+   * What arrives is buffered, not painted. A provider delivers prose in clumps
+   * shaped by tokenisation and network buffering, so painting each burst as it
+   * lands moves the text in steps as uneven as the network — legible, but it
+   * lurches. `charsToReveal` drains the buffer toward the screen at a rate that
+   * holds the unshown remainder at a roughly constant duration, which is what
+   * reads as smooth; see `streamReveal.ts` for the pacing itself.
+   *
+   * This also bounds the markdown cost, which is why the batch it replaces
+   * existed: every paint re-parses the whole accumulated reply, and a frame
+   * loop paints at the display's rate no matter how many fragments arrived.
+   *
+   * A hidden window stops delivering frames, so the reveal pauses while the app
+   * is minimised or occluded. That is the behaviour worth having: nothing is
+   * lost — arrival keeps filling the buffer — and the first frame after the
+   * window comes back is charged the whole elapsed gap, so it catches up at
+   * once instead of replaying the wait.
    */
   useEffect(() => {
-    return service.onReplyDelta(({ requestId, fragment }) => {
-      if (requestId !== liveRequestId.current) return;
-      pendingFragments.current += fragment;
-      if (flushTimer.current !== null) return;
-      flushTimer.current = setTimeout(() => {
-        flushTimer.current = null;
-        const buffered = pendingFragments.current;
-        pendingFragments.current = "";
-        if (buffered.length === 0) return;
+    const step = (now: number): void => {
+      const elapsed = Math.max(0, now - lastFrameAt.current);
+      lastFrameAt.current = now;
+      shown.current += charsToReveal(received.current.length - shown.current, elapsed);
+      const drained = shown.current >= received.current.length;
+      /*
+       * The cursor advances every frame; the screen does not have to. Painting
+       * re-parses the whole reply, so a long one is throttled to keep that cost
+       * inside its budget — see `minCommitIntervalMs`. A skipped paint shows
+       * more characters next time rather than showing them later, so the pacing
+       * above is unaffected. The last one is never skipped, or the tail of a
+       * reply would sit revealed-but-unpainted until the turn landed.
+       */
+      if (drained || now - lastCommitAt.current >= minCommitIntervalMs(shown.current)) {
+        lastCommitAt.current = now;
+        const text = received.current.slice(0, shown.current);
         setStreaming((current) =>
           current.requestId === liveRequestId.current
-            ? { requestId: current.requestId, text: current.text + buffered }
+            ? { requestId: current.requestId, text }
             : current,
         );
-      }, STREAM_FLUSH_MS);
+      }
+      frame.current = drained ? null : requestAnimationFrame(step);
+    };
+
+    return service.onReplyDelta(({ requestId, fragment }) => {
+      if (requestId !== liveRequestId.current) return;
+      received.current += fragment;
+      if (frame.current !== null) return;
+      // Timed from now rather than from the last frame: the gap since the
+      // previous burst is not reading time the analyst spent, and charging it
+      // as elapsed would dump the whole buffer in the first frame.
+      lastFrameAt.current = performance.now();
+      // Not reset alongside it: a burst arriving right after a paint should
+      // still wait out the interval rather than paint twice in a frame.
+      frame.current = requestAnimationFrame(step);
     });
   }, [service]);
 
-  // A page that unmounts mid-stream must not leave a timer holding a setState
-  // for a component React has already dropped.
-  useEffect(
-    () => () => {
-      if (flushTimer.current !== null) clearTimeout(flushTimer.current);
-    },
-    [],
-  );
+  // A page that unmounts mid-stream must not leave a frame loop holding a
+  // setState for a component React has already dropped.
+  useEffect(() => stopReveal, [stopReveal]);
 
   /** One turn against the provider. Callers hold the send slot. */
   const runTurn = useCallback(
@@ -460,7 +497,10 @@ export function ChatPage({
       // fragments at an id nothing is listening for.
       const requestId = crypto.randomUUID();
       liveRequestId.current = requestId;
-      pendingFragments.current = "";
+      received.current = "";
+      shown.current = 0;
+      lastCommitAt.current = 0;
+      stopReveal();
       setStreaming({ requestId, text: "" });
       setSending(true);
       setNote(null);
@@ -494,15 +534,18 @@ export function ChatPage({
         // copy and the stored one are never both on screen. The buffer goes
         // too, or a fragment that raced the reply would paint onto the next turn.
         liveRequestId.current = "";
-        pendingFragments.current = "";
-        if (flushTimer.current !== null) {
-          clearTimeout(flushTimer.current);
-          flushTimer.current = null;
-        }
+        received.current = "";
+        shown.current = 0;
+        stopReveal();
+        // Any remainder still waiting is not lost: the stored turn rendering
+        // below carries the identical prose, so this hands off rather than
+        // truncating. Snapping the last fraction of a second is the right
+        // trade — holding the finished reply back to finish typing it would
+        // stall a turn the analyst can already see is done.
         setStreaming({ requestId: "", text: "" });
       }
     },
-    [service, store, provider, model, refreshList, formContext],
+    [service, store, provider, model, refreshList, formContext, stopReveal],
   );
 
   const send = async (): Promise<void> => {
