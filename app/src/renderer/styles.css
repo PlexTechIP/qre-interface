@@ -1094,6 +1094,30 @@ select {
   padding: 24px;
 }
 
+/* The way back to the agent, inside the failure it is about. Sized like the
+   toolbar's buttons it moved out of, but given the accent border so it reads
+   as the offered next step rather than one more thing in a row. */
+.alert-card__action {
+  margin-top: 14px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.alert-card__action:hover {
+  background: var(--color-accent-bg);
+}
+
+.alert-card__action:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .state-card > strong {
   display: block;
   margin-bottom: 6px;
@@ -3681,12 +3705,19 @@ input[type="range"]:focus-visible,
   padding-left: 18px;
 }
 
+/* The field name doubles as the affordance. A dotted underline is the
+   long-standing "there is more behind this" hint, and it is quiet enough that
+   the box still reads as a summary rather than a toolbar — which was the
+   original reason nothing was marked at all. That version marked the entries
+   only on hover, so the jump was a feature you had to already know about. */
 .validation-box__field {
   font-weight: 700;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
 }
 
-/* Each issue is a button that scrolls to and flashes its field. It reads as
-   plain list text until hovered, so the box stays a summary, not a toolbar. */
+/* Each issue is a button that scrolls to and flashes its field. */
 .validation-box__jump {
   display: block;
   width: 100%;
@@ -3702,10 +3733,24 @@ input[type="range"]:focus-visible,
   cursor: pointer;
 }
 
+.validation-box__jump::after {
+  content: " \2192";
+  opacity: 0.45;
+}
+
 .validation-box__jump:hover,
 .validation-box__jump:focus-visible {
   background: var(--color-danger-border);
-  text-decoration: underline;
+}
+
+.validation-box__jump:hover .validation-box__field,
+.validation-box__jump:focus-visible .validation-box__field {
+  text-decoration-style: solid;
+}
+
+.validation-box__jump:hover::after,
+.validation-box__jump:focus-visible::after {
+  opacity: 1;
 }
 
 .validation-box--pending .validation-box__jump:hover,
@@ -5458,4 +5503,12 @@ button.danger:hover {
 .settings-tabs__panel {
   display: grid;
   gap: 20px;
+}
+
+/* An author `display` outranks the UA stylesheet's `[hidden] { display: none }`
+   whatever the specificity, so the rule above painted every panel at once and
+   the tabs did nothing. Any element that sets `display` and is hidden with the
+   attribute has to turn it off itself. */
+.settings-tabs__panel[hidden] {
+  display: none;
 }
