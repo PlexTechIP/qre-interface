@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
  
 import type { RunConfig, RunProvenance, RunResult } from "../shared/types";
+import type { ProposedField } from "./agent/draftToFormState";
 import { ApplicationSection } from "./components/ApplicationSection";
 import { ArchitectureSection } from "./components/ArchitectureSection";
 import { ConfigurationSummary } from "./components/ConfigurationSummary";
 import { MicroArchitectureSection } from "./components/MicroArchitectureSection";
+import { ModelProposalSummary } from "./components/ModelProposalSummary";
 import { RunConfigInspector } from "./components/RunConfigInspector";
 import { RunFlowPanel } from "./components/RunFlowPanel";
 import { RunNameSection } from "./components/RunNameSection";
@@ -29,10 +31,32 @@ import {
   useUploadPreflight,
 } from "./state/useUploadPreflight";
  
+/**
+ * The configuration this page currently holds, and where it came from.
+ *
+ * Mirrored to the shell so it survives this page unmounting — every page here
+ * is a conditional render, so navigating away used to discard the form
+ * entirely, and later discarded only its provenance.
+ */
+export interface FormSnapshot {
+  readonly state: FormState;
+  /** Absent for a configuration the analyst authored. */
+  readonly provenance?: RunProvenance;
+  /** What the model chose, for the summary shown above the form. */
+  readonly proposed: readonly ProposedField[];
+  /** The conversation that proposed it, so a finished run can lead back. */
+  readonly conversationId?: string;
+}
+
 interface RunConfigurationProps {
   /** Fired once when a run finishes, so the shell can persist it to History
    *  and surface it on the Results page. Optional — omitted in unit tests. */
-  onRunComplete?: (config: RunConfig, result: RunResult) => void;
+  onRunComplete?: (
+    config: RunConfig,
+    result: RunResult,
+    /** The conversation that authored it, when a model did. */
+    conversationId?: string,
+  ) => void;
   /** Saved configuration to load into the editable form for a Rerun. */
   initialConfig?: RunConfig | null;
   /** Model proposal already mapped into Team 3's existing editable form shape. */
@@ -42,6 +66,44 @@ interface RunConfigurationProps {
    * Run is pressed. Read once, when the draft is loaded — see `draftProvenance`.
    */
   provenance?: RunProvenance | undefined;
+  /**
+   * What the model actually chose in `initialDraft`. Travels with the draft and
+   * is read once alongside it, for the same reason `provenance` is.
+   */
+  proposed?: readonly ProposedField[] | undefined;
+  /**
+   * The conversation `initialDraft` came out of, so a finished run can lead
+   * back to it. Same lifetime as `provenance`: it belongs to the configuration
+   * in the form, not to the props that delivered it.
+   */
+  conversationId?: string | undefined;
+  /**
+   * The form as it stood when this page was last open.
+   *
+   * Every page in this app is a conditional render, so this component unmounts
+   * on any sidebar click and used to take a half-filled form with it. The shell
+   * keeps the last state and hands it back here, which is what makes "fill in
+   * half the form, go ask the model about it, come back" a thing that works.
+   *
+   * Ranked BELOW `initialDraft` and `initialConfig`: a model proposal or a
+   * rerun is something the analyst just asked for, and restoring over it would
+   * undo the navigation they made to get it.
+   */
+  restoredState?: FormSnapshot | undefined;
+  /**
+   * Report the form upward on every change.
+   *
+   * The shell needs it for three things it cannot get any other way: seeding
+   * the next mount, telling the model what the analyst has already decided (see
+   * `formContextFromState`), and knowing that a draft handed down has been
+   * taken up and can be retired.
+   *
+   * It carries the configuration's PROVENANCE as well as its values, because
+   * both have the same lifetime and both die when this component unmounts. A
+   * mirror of the values alone restored a model-authored configuration as an
+   * anonymous one.
+   */
+  onStateChange?: (snapshot: FormSnapshot) => void;
 }
 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
@@ -50,10 +112,27 @@ export function RunConfiguration({
   initialConfig = null,
   initialDraft,
   provenance,
+  proposed,
+  conversationId,
+  restoredState,
+  onStateChange,
 }: RunConfigurationProps = {}): React.JSX.Element {
-  const [state, setState] = useState<FormState>(() =>
-    initialDraft ??
-    (initialConfig ? formStateFromRunConfig(initialConfig) : createInitialFormState()),
+  /*
+   * Seed order: a draft the analyst just accepted, then a rerun they just
+   * asked for, then whatever this page held last time, then a fresh form.
+   *
+   * `restoredState` ranks below the two ARRIVALS and above nothing else. The
+   * shell retires a handoff as soon as this component reports having taken it
+   * up, so a draft still present here is one that has not been seen yet — which
+   * is what stops a remount re-seeding the original proposal over the analyst's
+   * edits to it.
+   */
+  const [state, setState] = useState<FormState>(
+    () =>
+      initialDraft ??
+      (initialConfig
+        ? formStateFromRunConfig(initialConfig)
+        : (restoredState?.state ?? createInitialFormState())),
   );
   /**
    * Who authored the configuration NOW IN THE FORM — held here rather than read
@@ -68,7 +147,23 @@ export function RunConfiguration({
    * configuration does, and is replaced only when a different source loads one.
    */
   const [draftProvenance, setDraftProvenance] = useState<RunProvenance | undefined>(
-    () => (initialDraft ? provenance : undefined),
+    () => (initialDraft ? provenance : restoredState?.provenance),
+  );
+  /** What the model chose in the configuration now in the form. Same lifetime
+   *  as `draftProvenance`, and replaced by the same three writes. */
+  const [draftProposal, setDraftProposal] = useState<readonly ProposedField[]>(
+    () => (initialDraft ? (proposed ?? []) : (restoredState?.proposed ?? [])),
+  );
+  /**
+   * Which conversation authored what is NOW IN THE FORM.
+   *
+   * Held here rather than read off the prop at run time, for exactly the reason
+   * `draftProvenance` is: this component stays mounted through the run panel,
+   * and "Edit configuration" returns to the same state. Reading the prop would
+   * lose the thread on the second run of one configuration.
+   */
+  const [draftConversationId, setDraftConversationId] = useState<string | undefined>(
+    () => (initialDraft ? conversationId : restoredState?.conversationId),
   );
   const { runState, start, retry, edit } = useRunFlow();
 
@@ -78,18 +173,42 @@ export function RunConfiguration({
     if (initialDraft) {
       setState(initialDraft);
       setDraftProvenance(provenance);
+      setDraftProposal(proposed ?? []);
+      setDraftConversationId(conversationId);
     } else if (initialConfig) {
       setState(formStateFromRunConfig(initialConfig));
       // A Rerun replaces the model's draft with a saved config, so whatever
-      // authored that draft no longer describes what is on screen.
+      // authored that draft no longer describes what is on screen — and neither
+      // does the list of what that model chose.
       setDraftProvenance(undefined);
+      setDraftProposal([]);
+      // A Rerun replaces the model's draft, so the thread that produced the
+      // draft no longer describes what is on screen either.
+      setDraftConversationId(undefined);
     }
-    // `provenance` is deliberately not a dependency: it travels WITH a draft,
-    // and re-running this effect when only it changed would re-apply a stale
-    // `initialDraft` over the analyst's edits.
+    // `provenance` and `proposed` are deliberately not dependencies: they travel
+    // WITH a draft, and re-running this effect when only they changed would
+    // re-apply a stale `initialDraft` over the analyst's edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfig, initialDraft]);
  
+  /*
+   * Mirror the form upward.
+   *
+   * An effect rather than a call inside `update`, because `state` also changes
+   * through the seeding effect above and through `useRunFlow`'s edit path — a
+   * notification wired into one writer would silently miss the others, and the
+   * shell would restore a form the analyst had already moved on from.
+   */
+  useEffect(() => {
+    onStateChange?.({
+      state,
+      ...(draftProvenance === undefined ? {} : { provenance: draftProvenance }),
+      proposed: draftProposal,
+      ...(draftConversationId === undefined ? {} : { conversationId: draftConversationId }),
+    });
+  }, [state, draftProvenance, draftProposal, draftConversationId, onStateChange]);
+
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).
   const reportedIdRef = useRef<string | null>(null);
@@ -97,8 +216,8 @@ export function RunConfiguration({
     if (runState.phase !== "done") return;
     if (reportedIdRef.current === runState.config.id) return;
     reportedIdRef.current = runState.config.id;
-    onRunComplete?.(runState.config, runState.result);
-  }, [runState, onRunComplete]);
+    onRunComplete?.(runState.config, runState.result, draftConversationId);
+  }, [runState, onRunComplete, draftConversationId]);
  
   // Every update is normalized so cross-field coupling (Litinski19 fallback)
   // can never leave the draft internally inconsistent.
@@ -125,11 +244,14 @@ export function RunConfiguration({
         }
       : baseErrors;
   const generatedName = generateName(state);
-  const valid = isConfigValid(state) && !blocksRun(preflight);
- 
+  // `draftProvenance` is passed to the gate and to Run from the same variable:
+  // the config the gate approves is then the config that executes, provenance
+  // included. Reading it in only one of the two places is the hole this closed.
+  const valid = isConfigValid(state, draftProvenance) && !blocksRun(preflight);
+
   // Live serialized preview (placeholder stamp) so the dev inspector can prove
   // the draft validates against the contract schema before Run stamps it for real.
-  const previewConfig = toRunConfig(state, schemaValidationStamp());
+  const previewConfig = toRunConfig(state, schemaValidationStamp(draftProvenance));
   const previewValid =
     previewConfig !== null && validateRunConfigSchema(previewConfig).valid;
  
@@ -159,6 +281,14 @@ export function RunConfiguration({
       </header>
  
       <div className="run-config__body">
+        {/* Above the form, because it describes the form: the analyst reads
+            what the model chose, then scrolls into the fields it chose them
+            in. */}
+        <ModelProposalSummary
+          proposed={draftProposal}
+          model={draftProvenance?.model}
+        />
+
         <div className="run-config__form">
           <ApplicationSection
             value={state.application}

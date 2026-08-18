@@ -1,5 +1,4 @@
 import {
-  applicationKey,
   type FieldMetric,
   type FrontierRow,
   type MagicStateFactoryId,
@@ -536,24 +535,4 @@ export function compareSelectionWarning(
       : "";
 
   return `Select at least ${COMPARE_MIN_SELECTION} runs to compare. ${have} — tick ${needed} more in the list below.${hiddenNote}`;
-}
-
-/**
- * Placeholder Markdown preview for the comparison-set export — NOT the Part-3
- * exporter. Lists each selected run's identity so the seam is demonstrable.
- */
-export function buildComparisonExportStub(records: readonly RunRecord[]): string {
-  return [
-    `# Run Comparison (${records.length} run${records.length === 1 ? "" : "s"})`,
-    "",
-    "> Export preview — placeholder. The Markdown comparison exporter ships in Part 3 (week 6).",
-    "",
-    "## Selected runs",
-    ...records.map(
-      (r) =>
-        `- ${r.config.name} · ${applicationKey(r.config)} · ${r.config.architecture.type} · ${r.result.qreVersion} · saved ${r.savedAt}`,
-    ),
-    "",
-    "The real export includes the full comparison table (one column per run) and the per-metric bars.",
-  ].join("\n");
 }

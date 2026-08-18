@@ -4,6 +4,8 @@ import type {
   UploadedProgramFormat,
 } from "../shared/types";
 import type { AgentService } from "../shared/agentTypes";
+import type { AppInfoService } from "../shared/appInfoTypes";
+import type { ChatStore } from "../shared/chatTypes";
 
 /** Mirrors main/engine/uploadValidation.ts's result, which the renderer cannot import. */
 export type UploadPreflightResult =
@@ -25,8 +27,34 @@ declare global {
         format: UploadedProgramFormat,
       ): Promise<UploadPreflightResult>;
     };
-    /** Team 2's optional fifth preload surface. No credential getter exists. */
+    /**
+     * The fifth preload surface. No credential getter exists.
+     *
+     * Optional only because a renderer running outside Electron has no preload
+     * bridge at all — `preload.ts` exposes this unconditionally, so it is
+     * always present in a shipped build. The shell refuses to substitute a
+     * fixture when it is missing; see `resolveAgentService` in App.tsx.
+     */
     agent?: AgentService;
+    /**
+     * The sixth preload surface: conversation persistence, backed by its own
+     * SQLite file. A store, not a second agent — it reaches no provider, which
+     * is why chat history stays readable with the network off.
+     */
+    chats: ChatStore;
+    /**
+     * The seventh preload surface: where this install keeps its data.
+     *
+     * Separate from `store` and `chats` because those each expose ONE
+     * database's contents, while this describes the data directory as a whole
+     * — and because it is the only surface that can reveal a file to the OS,
+     * which is a capability worth being able to point at.
+     *
+     * Optional for the same reason `agent` is: a renderer running outside
+     * Electron has no preload bridge. Settings degrades to hiding the section
+     * rather than failing, since a path is informational.
+     */
+    appInfo?: AppInfoService;
   }
 }
 

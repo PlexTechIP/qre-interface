@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Quantum Resource Estimator</title>
     <script>
+      /*
+        Paint the right theme before React mounts, so a dark-mode launch does
+        not flash white.
+
+        `qre-theme` holds a PREFERENCE — "light", "dark" or "system" — while
+        `data-theme` is always resolved to light or dark, which is why the CSS
+        needs no prefers-color-scheme block. "system", anything unrecognised,
+        and nothing stored at all resolve the same way: ask the OS.
+
+        This duplicates readStoredPreference/resolveTheme from
+        src/renderer/theme.ts on purpose. It has to run before any module
+        loads, so it cannot import them; keep the two in step.
+      */
       (function () {
         var stored = localStorage.getItem("qre-theme");
         var theme =

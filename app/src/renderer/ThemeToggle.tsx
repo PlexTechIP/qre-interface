@@ -1,20 +1,42 @@
-export type Theme = "light" | "dark";
+import type { Theme, ThemePreference } from "./theme";
 
 interface ThemeToggleProps {
+  /** The theme in force. Never "system" — see `theme.ts`. */
   theme: Theme;
+  /**
+   * What was actually chosen. The button behaves the same either way, but a
+   * click while following the system pins an explicit theme, and a control
+   * with a side effect that big should say so before it is pressed.
+   */
+  preference: ThemePreference;
   onToggle: () => void;
 }
 
-export function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
+export function ThemeToggle({ theme, preference, onToggle }: ThemeToggleProps) {
   const isDark = theme === "dark";
+  const action = isDark ? "Switch to light mode" : "Switch to dark mode";
+  /*
+   * One string for both the tooltip and the accessible name.
+   *
+   * `aria-label` overrides `title` in the accessible-name computation, so
+   * warning about the side effect only in `title` told sighted mouse users
+   * and no one else — and following the system is a setting people choose for
+   * accessibility reasons, which makes that exactly the wrong audience to
+   * drop out of it silently. The action leads, so the name still opens with
+   * what the button does.
+   */
+  const label =
+    preference === "system"
+      ? `${action}. This stops the app following your system theme.`
+      : action;
 
   return (
     <button
       type="button"
       className="theme-toggle"
       onClick={onToggle}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      aria-label={label}
+      title={label}
     >
       {isDark ? (
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">

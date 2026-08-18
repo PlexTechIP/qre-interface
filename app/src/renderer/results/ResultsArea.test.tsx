@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResultsArea } from "./ResultsArea";
 import {
   RESULT_SCENARIOS as FIXTURE_SCENARIOS,
@@ -210,6 +210,63 @@ describe("ResultsArea across every committed fixture", () => {
     expect(screen.getAllByText("55,797,618").length).toBeGreaterThan(0);
     expect(screen.queryByText(/nan/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The way back to the agent belongs with the error, not in the page's action
+   * row. On a failed run the error card is the only thing the analyst is
+   * reading, and a control parked beside Export and Rerun — above the fold but
+   * away from the failure — is one nobody connects to the thing that broke.
+   */
+  it("offers the way back to the agent inside the error card", () => {
+    if (!failedScenario?.result) throw new Error("Failed fixture scenario was not found.");
+
+    render(
+      <ResultsArea
+        phase={failedScenario.phase}
+        result={failedScenario.result}
+        config={failedScenario.config}
+        onAskAgent={() => {}}
+      />,
+    );
+
+    const card = screen.getByRole("alert");
+    expect(within(card).getByText(failedScenario.result.error?.code ?? "")).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: /ask the agent what went wrong/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("calls back when that button is used", async () => {
+    if (!failedScenario?.result) throw new Error("Failed fixture scenario was not found.");
+    const onAskAgent = vi.fn();
+
+    render(
+      <ResultsArea
+        phase={failedScenario.phase}
+        result={failedScenario.result}
+        config={failedScenario.config}
+        onAskAgent={onAskAgent}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /ask the agent what went wrong/i }));
+
+    expect(onAskAgent).toHaveBeenCalledTimes(1);
+  });
+
+  /** A run nobody proposed has no conversation to go back to. */
+  it("shows no such button when there is no conversation behind the run", () => {
+    if (!failedScenario?.result) throw new Error("Failed fixture scenario was not found.");
+
+    render(
+      <ResultsArea
+        phase={failedScenario.phase}
+        result={failedScenario.result}
+        config={failedScenario.config}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /ask the agent/i })).toBeNull();
   });
 
   it("renders the failed state usefully whether or not raw diagnostics are present", () => {

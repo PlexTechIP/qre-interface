@@ -233,6 +233,34 @@ describe("Comparison surface (Part E)", () => {
     expect(summary).toHaveTextContent(/1 failed/i);
   });
 
+  /**
+   * The filter is this view's own state, so the export could only ever be the
+   * comparison the analyst actually built if the view hands it over. It used to
+   * export every field a run reported regardless of what was on screen.
+   */
+  it("hands the export the fields it is currently hiding", async () => {
+    const onExport = vi.fn();
+    render(<ComparisonView records={trio} onClear={noop} onRemove={noop} onExport={onExport} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /filter fields/i }));
+    await userEvent.click(screen.getByRole("button", { name: /defaults only/i }));
+    await userEvent.click(screen.getByRole("button", { name: /export comparison/i }));
+
+    expect(onExport).toHaveBeenCalledTimes(1);
+    const hidden = onExport.mock.calls[0]?.[0] as ReadonlySet<string>;
+    expect(hidden.has("physicalFactoryQubits")).toBe(true);
+    expect(hidden.has("physicalQubits")).toBe(false);
+  });
+
+  it("hands the export an empty hidden set when nothing is filtered out", async () => {
+    const onExport = vi.fn();
+    render(<ComparisonView records={trio} onClear={noop} onRemove={noop} onExport={onExport} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /export comparison/i }));
+
+    expect((onExport.mock.calls[0]?.[0] as ReadonlySet<string>).size).toBe(0);
+  });
+
   it("wires the export and per-run remove affordances", async () => {
     const onExport = vi.fn();
     const onRemove = vi.fn();

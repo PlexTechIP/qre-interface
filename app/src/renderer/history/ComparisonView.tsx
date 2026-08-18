@@ -27,8 +27,14 @@ export interface ComparisonViewProps {
   selectedRowByRunId?: SelectedRowByRunId;
   onClear: () => void;
   onRemove: (id: string) => void;
-  /** Opens the comparison-set export stub (the real exporter is Part 3). */
-  onExport: () => void;
+  /**
+   * Opens the comparison-set export, given the fields currently filtered out.
+   *
+   * The filter is this view's own state and the export is the caller's dialog,
+   * so the hidden set has to cross that boundary explicitly — otherwise the
+   * export silently reverts every field the analyst just hid.
+   */
+  onExport: (hiddenKeys: ReadonlySet<string>) => void;
   /** Navigate back to Run History (empty-state CTA). Optional. */
   onGoToHistory?: () => void;
   /** True when hosted inside the app shell, whose surface header already shows
@@ -146,7 +152,11 @@ export function ComparisonView({
                 </span>
               </p>
               <div className="comparison-actions">
-                <button type="button" onClick={onExport} disabled={records.length === 0}>
+                <button
+                  type="button"
+                  onClick={() => onExport(hiddenKeys)}
+                  disabled={records.length === 0}
+                >
                   Export comparison
                 </button>
                 <button type="button" onClick={onClear} disabled={records.length === 0}>

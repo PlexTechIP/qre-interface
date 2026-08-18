@@ -11,10 +11,10 @@ import { RunHistoryFilters } from "./RunHistoryFilters";
 import { RunDetailPanel } from "./RunDetailPanel";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 import { BulkDeleteConfirmDialog } from "./BulkDeleteConfirmDialog";
-import { ExportStubDialog } from "./ExportStubDialog";
+import { ExportDialog } from "./ExportDialog";
 import { RerunDialog } from "./RerunDialog";
 import { ComparisonView } from "./ComparisonView";
-import { ComparisonExportStubDialog } from "./ComparisonExportStubDialog";
+import { ComparisonExportDialog } from "./ComparisonExportDialog";
 import type { SelectedRowByRunId } from "../results/selectedRows";
 import { COMPARE_MIN_SELECTION } from "./comparisonModel";
 import {
@@ -50,8 +50,6 @@ interface RunHistoryContainerProps {
   /** App-shell handoff: load a reconstructed config into the live form (Rerun).
    *  When omitted, Rerun falls back to the read-only preview dialog. */
   onRerunRequest?: (request: RerunRequest) => void;
-  /** The app ships the complete Markdown export; isolated tests keep the stub. */
-  exportMode?: "preview" | "complete";
   /** App-level session selection for each immutable run record. */
   selectedRowByRunId?: SelectedRowByRunId;
   onSelectedRowChange?: (runId: string, selectedIndex: number) => void;
@@ -64,7 +62,6 @@ export function RunHistoryContainer({
   onNavigateToConfig,
   onViewRun,
   onRerunRequest,
-  exportMode = "preview",
   selectedRowByRunId: controlledSelectedRows,
   onSelectedRowChange,
 }: RunHistoryContainerProps = {}) {
@@ -144,8 +141,12 @@ export function RunHistoryContainer({
   const isControlled = controlledView !== undefined;
   const view = controlledView ?? internalView;
   const setView = onViewChange ?? setInternalView;
-  // Whether the comparison-set export dialog is open.
-  const [isComparisonExportOpen, setIsComparisonExportOpen] = useState(false);
+  // The comparison-set export dialog: the fields the Comparison surface was
+  // hiding when Export was pressed, or null when the dialog is closed. The
+  // hidden set is view state owned by `ComparisonView`, so it is captured at
+  // press time rather than read back out of a child.
+  const [comparisonExportHiddenKeys, setComparisonExportHiddenKeys] =
+    useState<ReadonlySet<string> | null>(null);
 
   /**
    * Re-read the store through the query API so the view always reflects stored
@@ -434,7 +435,7 @@ export function RunHistoryContainer({
           selectedRowByRunId={selectedRowByRunId}
           onClear={clearComparison}
           onRemove={toggleComparison}
-          onExport={() => setIsComparisonExportOpen(true)}
+          onExport={setComparisonExportHiddenKeys}
           embedded={isControlled}
           {...(isControlled ? { onGoToHistory: () => setView("history") } : {})}
         />
@@ -494,21 +495,17 @@ export function RunHistoryContainer({
         />
       ) : null}
       {exportRecord ? (
-        <ExportStubDialog
-          record={exportRecord}
-          mode={exportMode}
-          onClose={() => setExportRecord(null)}
-        />
+        <ExportDialog record={exportRecord} onClose={() => setExportRecord(null)} />
       ) : null}
       {rerunRequest ? (
         <RerunDialog request={rerunRequest} onClose={() => setRerunRequest(null)} />
       ) : null}
-      {isComparisonExportOpen ? (
-        <ComparisonExportStubDialog
+      {comparisonExportHiddenKeys ? (
+        <ComparisonExportDialog
           records={comparisonRecords}
           selectedRowByRunId={selectedRowByRunId}
-          mode={exportMode}
-          onClose={() => setIsComparisonExportOpen(false)}
+          hiddenKeys={comparisonExportHiddenKeys}
+          onClose={() => setComparisonExportHiddenKeys(null)}
         />
       ) : null}
     </div>

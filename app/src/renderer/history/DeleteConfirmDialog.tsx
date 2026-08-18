@@ -1,5 +1,5 @@
 import type { RunRecord } from "../../shared/types";
-import { Modal } from "./Modal";
+import { Modal } from "../Modal";
 
 /**
  * The confirm gate before a destructive Delete. The container owns the actual

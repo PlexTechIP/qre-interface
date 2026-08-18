@@ -2,11 +2,20 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
-import type { CredentialConfigureResult, ProviderId } from "../shared/agentTypes.js";
+import {
+  PROVIDER_IDS,
+  type CredentialClearResult,
+  type CredentialConfigureResult,
+  type ProviderId,
+} from "../shared/agentTypes.js";
 import { registerCredentialHandlers } from "./credentialHandler.js";
 import type { CredentialBackendCheck } from "./credentialStore.js";
 import type { CredentialValidationResult } from "./credentialValidator.js";
-import { CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL } from "./ipcChannels.js";
+import {
+  CREDENTIAL_CLEAR_CHANNEL,
+  CREDENTIAL_CONFIGURE_CHANNEL,
+  CREDENTIAL_STATUS_CHANNEL,
+} from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
@@ -20,6 +29,7 @@ function makeStore() {
     hasCredential: vi.fn((): boolean => false),
     checkBackend: vi.fn((): CredentialBackendCheck => ({ ok: true })),
     write: vi.fn((): void => {}),
+    clear: vi.fn((): void => {}),
   };
 }
 
@@ -34,8 +44,12 @@ function setup() {
       handlers.set(channel, listener as Listener);
     },
   };
-  const vault = { anthropic: makeStore(), openai: makeStore() };
-  const validators = { anthropic: makeValidator(), openai: makeValidator() };
+  const vault = { anthropic: makeStore(), openai: makeStore(), openrouter: makeStore() };
+  const validators = {
+    anthropic: makeValidator(),
+    openai: makeValidator(),
+    openrouter: makeValidator(),
+  };
 
   registerCredentialHandlers(ipcMain, vault, validators);
 
@@ -56,8 +70,20 @@ function setup() {
         undefined as unknown as IpcMainInvokeEvent,
       ) as Record<ProviderId, boolean>,
     );
+  const invokeClear = (provider: unknown): Promise<CredentialClearResult> => {
+    try {
+      return Promise.resolve(
+        handlers.get(CREDENTIAL_CLEAR_CHANNEL)!(
+          undefined as unknown as IpcMainInvokeEvent,
+          provider,
+        ) as CredentialClearResult,
+      );
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
 
-  return { handlers, invoke, invokeStatus, vault, validators };
+  return { handlers, invoke, invokeStatus, invokeClear, vault, validators };
 }
 
 describe("registerCredentialHandlers", () => {
@@ -90,20 +116,74 @@ describe("registerCredentialHandlers", () => {
     await expect(invoke("anthropic", 12345)).rejects.toThrow(/non-empty API key/);
   });
 
-  // The channel set IS the no-getter guarantee: a third channel is where a
-  // "read the key back" would appear, so it is asserted exactly.
-  it("registers exactly the status and configure channels — no getter", () => {
+  // The channel set IS the no-getter guarantee: an unlisted channel is where a
+  // "read the key back" would appear, so it is asserted exactly. `clear` joined
+  // it deliberately — it only ever DESTROYS the stored key and returns whether
+  // it is gone, so it takes nothing away from the guarantee this pins.
+  it("registers exactly the status, configure and clear channels — no getter", () => {
     const { handlers } = setup();
     expect([...handlers.keys()].sort()).toEqual(
-      [CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL].sort(),
+      [CREDENTIAL_CLEAR_CHANNEL, CREDENTIAL_CONFIGURE_CHANNEL, CREDENTIAL_STATUS_CHANNEL].sort(),
     );
+  });
+
+  describe("credential:clear", () => {
+    it("deletes only the named provider's key", async () => {
+      const { invokeClear, vault } = setup();
+
+      await expect(invokeClear("anthropic")).resolves.toEqual({ ok: true });
+
+      expect(vault.anthropic.clear).toHaveBeenCalledOnce();
+      expect(vault.openai.clear).not.toHaveBeenCalled();
+    });
+
+    it("treats clearing an absent key as success", async () => {
+      // `clear()` is a no-op on a missing file. Reporting a failure would push
+      // callers into checking status first and racing it, for a case where the
+      // analyst already has what they asked for.
+      const { invokeClear } = setup();
+      await expect(invokeClear("openai")).resolves.toEqual({ ok: true });
+    });
+
+    it("resolves a failed deletion as data rather than claiming the key is gone", async () => {
+      const { invokeClear, vault } = setup();
+      vault.anthropic.clear.mockImplementation(() => {
+        throw new Error("EPERM: operation not permitted");
+      });
+
+      await expect(invokeClear("anthropic")).resolves.toMatchObject({
+        ok: false,
+        code: "CLEAR_FAILED",
+        message: expect.stringContaining("EPERM"),
+      });
+    });
+
+    it("rejects an unsupported provider id", async () => {
+      await expect(setup().invokeClear("other")).rejects.toThrow(/provider id/);
+    });
   });
 
   it("status reports plain per-provider booleans, never a key", async () => {
     const { invokeStatus, vault } = setup();
     vault.anthropic.hasCredential.mockReturnValue(true);
 
-    await expect(invokeStatus()).resolves.toEqual({ anthropic: true, openai: false });
+    await expect(invokeStatus()).resolves.toEqual({
+      anthropic: true,
+      openai: false,
+      openrouter: false,
+    });
+  });
+
+  /**
+   * Asserted against `PROVIDER_IDS` rather than a literal, because the literal
+   * version of this handler silently reported on two of three when OpenRouter
+   * was added — a provider could go missing from status while every existing
+   * assertion still passed.
+   */
+  it("reports on every provider the app supports", async () => {
+    const status = await setup().invokeStatus();
+
+    expect(Object.keys(status).sort()).toEqual([...PROVIDER_IDS].sort());
   });
 
   it("refuses the plaintext-fallback backend as data, without validating or writing", async () => {

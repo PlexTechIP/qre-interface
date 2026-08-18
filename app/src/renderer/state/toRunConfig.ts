@@ -18,8 +18,10 @@ import {
   type MajoranaArchitecture,
   type NeutralAtomArchitecture,
   type RunConfig,
+  type RunProvenance,
   type SecondaryFactoryId,
 } from "../../shared/types";
+import { withAgentPrefix } from "./runNaming";
 import { ARCHITECTURE_LABELS, QEC_LABELS } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
@@ -30,21 +32,37 @@ import type {
   FormState,
 } from "./formState";
  
-/** id + createdAt are stamped at Run-click and passed in (keeps this pure). */
+/**
+ * id + createdAt are stamped at Run-click and passed in (keeps this pure).
+ *
+ * `provenance` rides along for the same reason the other two do: it is
+ * app-controlled metadata about the run rather than something the form edits,
+ * and the model can never mint it. Putting it here rather than letting the
+ * caller assign it afterwards is what keeps the object the Run gate validates
+ * and the object the engine executes the SAME object — see the note on
+ * `isConfigValid`.
+ */
 export interface RunStamp {
   id: string;
   createdAt: string;
+  /** Omitted, never `undefined`: absence is the contract's "human-authored". */
+  provenance?: RunProvenance;
 }
- 
+
 /**
  * A schema-valid placeholder stamp for validation/preview only — id/createdAt
  * are real only at Run-click, and neither affects whether a config validates.
+ *
+ * Provenance is different: it IS part of what validates, so the gate and the
+ * preview both have to pass the draft's real provenance through.
  */
-export function schemaValidationStamp(): RunStamp {
-  return {
+export function schemaValidationStamp(provenance?: RunProvenance): RunStamp {
+  const stamp: RunStamp = {
     id: "00000000-0000-4000-8000-000000000000",
     createdAt: "2000-01-01T00:00:00.000Z",
   };
+  if (provenance !== undefined) stamp.provenance = provenance;
+  return stamp;
 }
  
 function buildApplication(app: ApplicationForm): Application | null {
@@ -295,8 +313,22 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
     return null;
   }
  
-  const name =
+  /*
+   * The "(agent)" marker is applied HERE rather than when a draft is carried
+   * into the form, because this is the one place both naming paths meet: a name
+   * the analyst typed and a name `generateName` derived. Prefixing at the
+   * handoff would have tagged only the drafts the model happened to name, and
+   * left every auto-named model run looking like a human's.
+   *
+   * It reads off provenance, so a configuration the analyst authored is never
+   * tagged, and a model-authored one stays tagged through a Rerun.
+   */
+  const authored =
     state.name.trim().length > 0 ? state.name.trim() : generateName(state);
+  const name =
+    stamp.provenance?.authoredBy === "model_assisted"
+      ? withAgentPrefix(authored)
+      : authored;
  
   const secondaryFactories = effectiveSecondaryFactories(
     state.secondaryFactories,
@@ -330,6 +362,9 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
   if (parameters !== null) {
     config.parameters = parameters;
   }
- 
+  if (stamp.provenance !== undefined) {
+    config.provenance = stamp.provenance;
+  }
+
   return config;
 }

@@ -21,6 +21,14 @@ interface ResultsAreaViewProps extends ResultsAreaProps {
   selectedIndex?: number;
   /** Persists a row choice in app-level session state when supplied. */
   onSelectedIndexChange?: (index: number) => void;
+  /**
+   * Back to the conversation that proposed this run, when one did.
+   *
+   * Lives here rather than in the page's action row because on a failure the
+   * error card is the only thing being read, and a control sitting beside
+   * Export and Rerun is one nobody connects to the thing that broke.
+   */
+  onAskAgent?: (() => void) | undefined;
 }
 
 export function ResultsArea({
@@ -30,6 +38,7 @@ export function ResultsArea({
   onConfigure,
   selectedIndex: controlledSelectedIndex,
   onSelectedIndexChange,
+  onAskAgent,
 }: ResultsAreaViewProps) {
   const [localSelectedIndex, setLocalSelectedIndex] = useState(0);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -104,6 +113,11 @@ export function ResultsArea({
             Try adjusting the run configuration, then rerun the estimate. Engine diagnostics, when the engine
             produced any, are available below in the raw output explorer.
           </p>
+          {onAskAgent ? (
+            <button type="button" className="alert-card__action" onClick={onAskAgent}>
+              Ask the agent what went wrong
+            </button>
+          ) : null}
         </div>
         <RawExplorer raw={result.raw} />
       </section>

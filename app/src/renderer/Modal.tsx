@@ -1,9 +1,15 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 /**
- * A small accessible dialog used by the Run History per-run actions (Delete
- * confirm, Export stub, Rerun preview). Pure presentation — it owns no store or
- * record knowledge; the caller renders it conditionally and handles `onClose`.
+ * A small accessible dialog, used by the Run History per-run actions (Delete
+ * confirm, Export, Rerun preview), the comparison export, and the conversation
+ * export. Pure presentation — it owns no store or record knowledge; the caller
+ * renders it conditionally and handles `onClose`.
+ *
+ * Hoisted out of `history/` when the chat export became its sixth caller and
+ * its first outside that folder, following the same rule `download.ts` and
+ * `CopyButton.tsx` did: a shared thing lives beside the surfaces that share it,
+ * not inside whichever one happened to need it first.
  *
  * Accessibility: role="dialog" + aria-modal, labelled by the caller's title id,
  * closes on Escape or backdrop click, moves focus into the dialog on open and

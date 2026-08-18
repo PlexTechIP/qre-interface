@@ -7,6 +7,7 @@
  * the authority at submit time. `isConfigValid` combines both for Run gating.
  */
  
+import type { RunProvenance } from "../../shared/types";
 import { validateHyperparams, type HyperparamError } from "../constants/hyperparameters";
 import type { FormState, ManualCountsForm, NeutralAtomForm } from "./formState";
 import { schemaValidationStamp, toRunConfig } from "./toRunConfig";
@@ -285,10 +286,20 @@ export function hasFieldErrors(errors: FieldErrors): boolean {
  * Run gating: valid only when there are no inline field errors AND the
  * serialized config passes the committed JSON Schema. Uses a placeholder stamp
  * because id/createdAt don't exist until Run-click and don't affect validity.
+ *
+ * `provenance` is NOT a placeholder and has to be the draft's real one. It is
+ * the only app-controlled field that the schema constrains (`authoredBy` is an
+ * enum, `model` is `minLength: 1`, and the object is closed), so validating
+ * without it means the gate approves one object and the engine receives
+ * another. Every caller that will pass provenance to Run must pass the same
+ * value here.
  */
-export function isConfigValid(state: FormState): boolean {
+export function isConfigValid(
+  state: FormState,
+  provenance?: RunProvenance,
+): boolean {
   if (hasFieldErrors(validateForm(state))) return false;
-  const config = toRunConfig(state, schemaValidationStamp());
+  const config = toRunConfig(state, schemaValidationStamp(provenance));
   if (config === null) return false;
   return validateRunConfigSchema(config).valid;
 }

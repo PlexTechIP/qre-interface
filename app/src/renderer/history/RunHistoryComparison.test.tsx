@@ -148,3 +148,42 @@ describe("Compare / Delete Selected popups", () => {
     expect(screen.getByRole("alert")).not.toBe(first);
   });
 });
+
+/**
+ * End to end for the field filter: the analyst narrows the comparison on
+ * screen, exports, and the Markdown is the comparison they narrowed.
+ */
+function ExportHarness() {
+  const [store] = useState(() => new InMemoryRunStore(MOCK_RUN_RECORDS));
+  return <RunHistoryContainer store={store} />;
+}
+
+describe("Comparison export ← field filter", () => {
+  it("exports the comparison the analyst narrowed, not every reported field", async () => {
+    render(<ExportHarness />);
+
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("tab", { name: /comparison \(2\)/i }));
+
+    await userEvent.click(screen.getByRole("button", { name: /filter fields/i }));
+    await userEvent.click(screen.getByRole("button", { name: /defaults only/i }));
+    await userEvent.click(screen.getByRole("button", { name: /export comparison/i }));
+
+    const preview = await screen.findByLabelText("Comparison export preview");
+    expect(preview.textContent).toContain("Physical Qubits");
+    expect(preview.textContent).not.toContain("Phys. Factory Qubits");
+  });
+
+  it("exports every reported field when the analyst has hidden none", async () => {
+    render(<ExportHarness />);
+
+    await userEvent.click(within(await rowByName(RUN_A)).getByRole("checkbox"));
+    await userEvent.click(within(await rowByName(RUN_B)).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("tab", { name: /comparison \(2\)/i }));
+    await userEvent.click(screen.getByRole("button", { name: /export comparison/i }));
+
+    const preview = await screen.findByLabelText("Comparison export preview");
+    expect(preview.textContent).toContain("Phys. Factory Qubits");
+  });
+});

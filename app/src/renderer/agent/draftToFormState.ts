@@ -2,19 +2,76 @@ import type { GeneratedRunDraft } from "../../shared/agentTypes";
 import {
   BENCHMARK_IDS,
   type BenchmarkId,
+  type MagicStateFactoryId,
   type RunProvenance,
+  type SecondaryFactoryId,
 } from "../../shared/types";
+import {
+  FIELD_ANCHORS,
+  FIELD_LABELS,
+  hyperparamAnchor,
+  type FieldAnchorKey,
+} from "../components/fieldAnchors";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
 import type { HyperparamValues } from "../constants/hyperparameters";
+import {
+  ARCHITECTURE_LABELS,
+  MAGIC_STATE_FACTORY_LABELS,
+  MEMORY_OPTIMIZATION_LABELS,
+  SECONDARY_FACTORY_LABELS,
+} from "../constants/labels";
+import { findBenchmark } from "../constants/staticOptions";
 import {
   createInitialFormState,
   normalizeFormState,
   type FormState,
 } from "../state/formState";
 
+/**
+ * One value the model actually chose, ready to list next to the form.
+ *
+ * Carries its own anchors rather than a key the panel resolves, because the
+ * benchmark hyperparameters are not in `FieldAnchorKey` — their controls are
+ * generated per benchmark. One shape keeps the panel a plain presenter.
+ */
+export interface ProposedField {
+  /** Candidate element ids for the jump affordance. */
+  anchors: readonly string[];
+  /** The analyst-facing label, in the control's own words. */
+  label: string;
+  /** The model's choice, formatted the way the form shows it. */
+  value: string;
+}
+
 export interface DraftHandoff {
   state: FormState;
   provenance: RunProvenance;
+  /**
+   * The conversation this proposal came out of.
+   *
+   * Carried so the analyst can get back to it after running — to ask what went
+   * wrong, or what to change about what came back. Without it a model-authored
+   * run is a one-way street: the one participant who could explain the outcome
+   * never learns the run happened.
+   *
+   * Session-scoped by design. It is NOT written into `RunConfig`: the contract
+   * is closed and versioned, the two databases are deliberately separate, and a
+   * run record pointing at a conversation the analyst has since deleted would
+   * be a dangling reference the store cannot enforce.
+   */
+  conversationId: string;
+  /**
+   * Exactly the values the model chose. Everything else in `state` is a form
+   * default the model never mentioned.
+   *
+   * This is REPORTED by the mapping below as it writes each field, not derived
+   * by diffing `state` against `createInitialFormState()`. A diff cannot tell
+   * "the model asked for 20 T states per rotation" from "the model said nothing
+   * and 20 is the default" — the two produce identical state — so it would
+   * quietly drop the model's deliberate choices whenever they happen to agree
+   * with a default, which is most of them.
+   */
+  proposed: readonly ProposedField[];
 }
 
 export type DraftMappingResult =
@@ -48,10 +105,91 @@ function unsupportedFields(draft: GeneratedRunDraft): string[] {
   return unsupported;
 }
 
+/**
+ * Collects what the model chose, in form order, as the mapping writes it.
+ *
+ * The rule for "chose" is not "differs from the default" — see `proposed` on
+ * `DraftHandoff`. It is "expressed an opinion": a `null` in a required-nullable
+ * field is the generation schema's way of saying *no opinion*, and an empty
+ * factory set is replaced by the form's own default below, so neither is the
+ * model's decision and neither may be shown as one. A chosen value that happens
+ * to equal the default IS listed.
+ */
+class ProposalLog {
+  private readonly fields: ProposedField[] = [];
+
+  /** Record a value the model chose, under the form control that now holds it. */
+  add(key: FieldAnchorKey, value: string): void {
+    this.fields.push({
+      anchors: FIELD_ANCHORS[key],
+      label: FIELD_LABELS[key],
+      value,
+    });
+  }
+
+  /** Same, for a benchmark parameter — its control is generated per benchmark. */
+  addHyperparam(key: string, label: string, value: string): void {
+    this.fields.push({ anchors: [hyperparamAnchor(key)], label, value });
+  }
+
+  /** Skip `null`/`undefined` — the schema's "no opinion", not a choice. */
+  addOptional(key: FieldAnchorKey, value: number | string | null | undefined): void {
+    if (value === null || value === undefined) return;
+    this.add(key, String(value));
+  }
+
+  list(): readonly ProposedField[] {
+    return this.fields;
+  }
+}
+
+/**
+ * Log the chosen architecture and the fields that variant carries. Written as a
+ * switch over the same discriminant the mapping uses, so a fourth architecture
+ * cannot be mapped and left undescribed.
+ */
+function logArchitecture(
+  log: ProposalLog,
+  architecture: GeneratedRunDraft["architecture"],
+): void {
+  log.add("architectureType", ARCHITECTURE_LABELS[architecture.type]);
+  if (architecture.type === "gateBased") {
+    log.add("errorRate", String(architecture.errorRate));
+    log.add("gateTime", String(architecture.gateTime));
+    log.add("measurementTime", String(architecture.measurementTime));
+    log.addOptional("twoQubitGateTime", architecture.twoQubitGateTime);
+    return;
+  }
+  if (architecture.type === "majorana") {
+    log.add("errorRate", String(architecture.errorRate));
+    log.add("operationTime", String(architecture.operationTime));
+    return;
+  }
+  log.add("rydbergTime", String(architecture.rydbergTime));
+  log.add("rydbergError", String(architecture.rydbergError));
+  log.add("singleQubitTime", String(architecture.singleQubitTime));
+  log.add("singleQubitError", String(architecture.singleQubitError));
+  log.add("measurementTime", String(architecture.measurementTime));
+  log.add("measurementError", String(architecture.measurementError));
+  log.add("handoffTime", String(architecture.handoffTime));
+  log.add("atomSpacing", String(architecture.atomSpacing));
+  log.add("maxVelocity", String(architecture.maxVelocity));
+  log.add("maxAcceleration", String(architecture.maxAcceleration));
+  log.add(
+    "surfaceCodeOneQubitTimeFactor",
+    String(architecture.surfaceCodeOneQubitTimeFactor),
+  );
+  log.add(
+    "surfaceCodeTwoQubitTimeFactor",
+    String(architecture.surfaceCodeTwoQubitTimeFactor),
+  );
+}
+
 /** Map a strict model proposal into the existing, human-editable form draft. */
 export function draftToFormState(
   draft: GeneratedRunDraft,
   model: string,
+  conversationId: string,
 ): DraftMappingResult {
   const unsupported = unsupportedFields(draft);
   if (unsupported.length > 0) {
@@ -64,6 +202,8 @@ export function draftToFormState(
   }
 
   const initial = createInitialFormState();
+  const log = new ProposalLog();
+  log.addOptional("runName", draft.name);
   const proposedBenchmarkId =
     draft.application.type === "benchmark"
       ? draft.application.benchmarkId
@@ -80,7 +220,14 @@ export function draftToFormState(
     benchmarkId === null
       ? {}
       : { ...initial.application.hyperparams[benchmarkId] };
+  // Logged here rather than in the branch below so the list reads in form
+  // order: type, then benchmark, then that benchmark's parameters.
+  log.add(
+    "applicationType",
+    benchmarkId !== null ? "Benchmark" : "Manual Logical Counts",
+  );
   if (benchmarkId !== null) {
+    log.add("benchmarkId", findBenchmark(benchmarkId)?.name ?? benchmarkId);
     // Only the selected benchmark's keys are read, so a proposal carrying some
     // other benchmark's parameter variant contributes nothing rather than
     // wrong values — the same outcome the old all-null shape produced. The
@@ -90,6 +237,7 @@ export function draftToFormState(
       const value = draft.parameters[field.key];
       if (value !== undefined && value !== null && typeof value !== "boolean") {
         proposedParameters[field.key] = value;
+        log.addHyperparam(field.key, field.label, String(value));
       }
     }
   }
@@ -105,19 +253,27 @@ export function draftToFormState(
       },
     };
   } else if (draft.application.type === "manualCounts") {
+    const counts = draft.application;
     application = {
       ...initial.application,
       type: "manualCounts",
       manualCounts: {
-        numQubits: draft.application.numQubits,
-        tCount: draft.application.tCount,
-        rotationCount: draft.application.rotationCount,
-        rotationDepth: draft.application.rotationDepth,
-        cczCount: draft.application.cczCount,
-        ccixCount: draft.application.ccixCount,
-        measurementCount: draft.application.measurementCount,
+        numQubits: counts.numQubits,
+        tCount: counts.tCount,
+        rotationCount: counts.rotationCount,
+        rotationDepth: counts.rotationDepth,
+        cczCount: counts.cczCount,
+        ccixCount: counts.ccixCount,
+        measurementCount: counts.measurementCount,
       },
     };
+    log.add("numQubits", String(counts.numQubits));
+    log.add("tCount", String(counts.tCount));
+    log.add("rotationCount", String(counts.rotationCount));
+    log.add("rotationDepth", String(counts.rotationDepth));
+    log.add("cczCount", String(counts.cczCount));
+    log.add("ccixCount", String(counts.ccixCount));
+    log.add("measurementCount", String(counts.measurementCount));
   } else {
     return { ok: false, message: "The proposal named an unknown benchmark." };
   }
@@ -171,10 +327,40 @@ export function draftToFormState(
                 draft.architecture.surfaceCodeTwoQubitTimeFactor,
             },
           };
+  logArchitecture(log, draft.architecture);
+
+  // One control holds both factory sets — the analyst never sees the primary /
+  // secondary split — so they report as one line. An empty primary set is the
+  // form's round_based default below rather than the model's pick, so it is
+  // logged only when the model named something.
+  const namedFactories = [
+    ...draft.magicStateFactories.map(
+      (id: MagicStateFactoryId) => MAGIC_STATE_FACTORY_LABELS[id],
+    ),
+    ...draft.secondaryFactories.map(
+      (id: SecondaryFactoryId) => SECONDARY_FACTORY_LABELS[id],
+    ),
+  ];
+  if (namedFactories.length > 0) {
+    log.add("magicStateFactories", namedFactories.join(", "));
+  }
+  // Reachable only in principle: the generation schema pins this to "none" and
+  // `unsupportedFields` refuses anything else. Logged for the same reason the
+  // guard exists — the model's reply is not re-validated against that schema.
+  if (draft.memoryOptimization !== "none") {
+    log.add(
+      "memoryOptimization",
+      MEMORY_OPTIMIZATION_LABELS[draft.memoryOptimization],
+    );
+  }
+  log.add("tStatesPerRotation", String(draft.traceTransform.tStatesPerRotation));
+  log.add("ccxMagicStates", draft.traceTransform.ccxMagicStates ? "On" : "Off");
+  log.add("maxError", String(draft.maxError));
 
   return {
     ok: true,
     handoff: {
+      conversationId,
       state: normalizeFormState({
         ...initial,
         name: draft.name ?? "",
@@ -208,6 +394,7 @@ export function draftToFormState(
         maxError: draft.maxError,
       }),
       provenance: { authoredBy: "model_assisted", model },
+      proposed: log.list(),
     },
   };
 }

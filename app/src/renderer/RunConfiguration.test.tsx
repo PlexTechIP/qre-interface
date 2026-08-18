@@ -60,13 +60,13 @@ describe("Run-button validation gating", () => {
 
   it("shows an inline reason for each missing required time", () => {
     render(<RunConfiguration />);
-    // Each reason surfaces twice — at the field and in the validation summary.
+    // Queried as buttons, because that is what each summary entry is: the
+    // reason and the jump to the field it names are one control. The field
+    // name inside it is its own element, so a text query would miss the row.
+    expect(screen.getByRole("button", { name: /gate time is required/i })).toBeInTheDocument();
     expect(
-      screen.getAllByText(/gate time is required/i).length,
-    ).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText(/measurement time is required/i).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("button", { name: /measurement time is required/i }),
+    ).toBeInTheDocument();
   });
 
   it("enables Run once the required times are filled", async () => {
@@ -88,8 +88,8 @@ describe("Run-button validation gating", () => {
 
     expect(runButton()).toBeDisabled();
     expect(
-      screen.getAllByText(/error rate must be between 0 and 0\.01/i).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("button", { name: /error rate must be between 0 and 0\.01/i }),
+    ).toBeInTheDocument();
   });
 
   it("rejects non-numeric input with an inline message", async () => {
@@ -333,6 +333,91 @@ describe("Model-assisted provenance", () => {
     await waitFor(() => expect(completed).toHaveLength(2), { timeout: 3000 });
 
     expect(completed[1]?.provenance).toEqual(MODEL_PROVENANCE);
+  });
+
+  const PROPOSED = [
+    { anchors: ["architecture-label"], label: "Architecture", value: "Superconducting" },
+    { anchors: ["gb-gate-time"], label: "Gate time", value: "50" },
+  ];
+
+  it("shows what the model chose alongside the form it filled in", () => {
+    render(
+      <RunConfiguration
+        initialDraft={filledDraft()}
+        provenance={MODEL_PROVENANCE}
+        proposed={PROPOSED}
+      />,
+    );
+
+    const panel = screen
+      .getByRole("heading", { name: /drafted by provider\/model/i })
+      .closest("section");
+    if (!panel) throw new Error("Expected the model-proposal panel.");
+    expect(within(panel).getByText("Gate time")).toBeVisible();
+    expect(within(panel).getByText("Superconducting")).toBeVisible();
+  });
+
+  /**
+   * A Rerun replaces the model's draft with a saved configuration, so the list
+   * of what a model chose no longer describes what is on screen. It goes away
+   * for the same reason `draftProvenance` does.
+   */
+  it("drops the proposal panel when a saved config is loaded over the draft", async () => {
+    const user = userEvent.setup();
+    const completed: RunConfig[] = [];
+    const onRunComplete = (config: RunConfig): void => {
+      completed.push(config);
+    };
+
+    const { rerender } = render(
+      <RunConfiguration
+        onRunComplete={onRunComplete}
+        initialDraft={filledDraft()}
+        provenance={MODEL_PROVENANCE}
+        proposed={PROPOSED}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: /drafted by/i })).toBeVisible();
+
+    await user.click(runButton());
+    await waitFor(() => expect(completed).toHaveLength(1), { timeout: 3000 });
+    const firstConfig = completed[0];
+    if (!firstConfig) throw new Error("expected a completed run");
+
+    rerender(
+      <RunConfiguration onRunComplete={onRunComplete} initialConfig={firstConfig} />,
+    );
+    await user.click(screen.getByRole("button", { name: /edit configuration/i }));
+
+    expect(screen.queryByRole("heading", { name: /drafted by/i })).toBeNull();
+  });
+
+  /**
+   * The Run gate is the only thing between a draft and the engine, so it has to
+   * inspect the WHOLE object that will execute. Provenance used to be attached
+   * after serialization — `useRunFlow` mutating the config `toRunConfig` had
+   * just returned — which put it outside the gate entirely: the button enabled
+   * on one object and the engine received another.
+   */
+  it("gates a model-assisted draft on its provenance too", () => {
+    render(
+      <RunConfiguration
+        initialDraft={filledDraft()}
+        // `provenance.model` is minLength: 1 in runconfig.schema.json, so this
+        // config cannot legally run. Nothing on the Run path used to notice.
+        provenance={{ authoredBy: "model_assisted", model: "" }}
+      />,
+    );
+
+    expect(runButton()).toBeDisabled();
+  });
+
+  it("still enables Run for a model-assisted draft whose provenance validates", () => {
+    render(
+      <RunConfiguration initialDraft={filledDraft()} provenance={MODEL_PROVENANCE} />,
+    );
+
+    expect(runButton()).toBeEnabled();
   });
 
   it("does not attribute a hand-authored configuration to a model", async () => {

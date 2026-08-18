@@ -4,6 +4,7 @@ import {
   resolveSelectedFrontierRow,
   type SelectedRowByRunId,
 } from "../results/selectedRows";
+import { formatDateTime } from "../formatDateTime";
 import {
   ARCHITECTURE_LABELS,
   factorySetLabel,
@@ -48,22 +49,6 @@ export interface RunHistoryListProps {
   onDeleteSelected: () => void;
   /** Navigate to Run Configuration from the empty state. Optional. */
   onNavigateToConfig?: () => void;
-}
-
-function formatDateTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  // Compact numeric date (xx/xx/xx) + time keeps the column narrow.
-  const datePart = date.toLocaleDateString(undefined, {
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const timePart = date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${datePart} ${timePart}`;
 }
 
 export function RunHistoryList({

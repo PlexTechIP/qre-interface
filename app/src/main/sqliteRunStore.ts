@@ -1,8 +1,7 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { validateRunRecord } from "../shared/runRecordValidation.js";
+import { prepareDatabasePath } from "./databaseFile.js";
 import { RunRecordExistsError } from "../shared/runStore.js";
 import {
   applicationKey,
@@ -59,12 +58,6 @@ const INITIAL_SCHEMA = `
   CREATE INDEX IF NOT EXISTS run_records_newest_first_idx
     ON run_records(created_at DESC, saved_at DESC, id DESC);
 `;
-
-function prepareDatabasePath(databasePath: string): void {
-  if (databasePath !== ":memory:") {
-    mkdirSync(dirname(databasePath), { recursive: true });
-  }
-}
 
 /**
  * Rows are stored verbatim as saved, so a row written under v1.1.0 still carries
