@@ -94,18 +94,18 @@ The bar for **Tue Aug 18 EOD**. Demoed from `main`, not a branch.
 > Not a formality. You are the first people to build against this design, which
 > makes you the first who can find what it got wrong.
 
-- [ ] **The design's line anchors were checked against `b6a5091`** — they were
+- [x] **The design's line anchors were checked against `b6a5091`** — they were
       pinned to `ed52411` and the codebase has moved twice since
-- [ ] **Anywhere the design is wrong, stale, or insufficient is appended to it**,
+- [x] **Anywhere the design is wrong, stale, or insufficient is appended to it**,
       in the same section as the OPEN items, with the same labelling convention
-- [ ] **The four read-side risks were considered and written up** — the store in
+- [x] **The four read-side risks were considered and written up** — the store in
       an unexpected state, unbounded output from `qre_get_run`, errors as an
       egress path, and self-inflicted DoS against the shared SQLite file
-- [ ] **What was safe and in scope was implemented.** What was not was filed
-- [ ] **The write-tool line did not move**, whatever was found
-- [ ] **If the list is empty, it is argued** — what was checked and what was
-      concluded. Silence does not count
-- [ ] **The required deliverables were not sacrificed for it**
+- [x] **What was safe and in scope was implemented.** What was not was filed
+- [x] **The write-tool line did not move**, whatever was found
+- [x] **If the list is empty, it is argued** — not applicable; Part F recorded a
+      non-empty finding list and concrete conclusions
+- [x] **The required deliverables were not sacrificed for it**
 
 ## Reviews
 

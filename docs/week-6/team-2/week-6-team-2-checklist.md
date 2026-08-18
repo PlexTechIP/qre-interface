@@ -136,34 +136,33 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 **Where the design is wrong or stale:**
 
-- [ ] Check the design's line anchors against `b6a5091` — they were pinned to
+- [x] Check the design's line anchors against `b6a5091` — they were pinned to
       `ed52411` and the codebase has moved twice since
-- [ ] Note anywhere §6.1's seam does not survive contact with the actual types
-- [ ] Note anything a week-7 implementer would waste a day on
-- [ ] **Append these to the design document**, in the same section where you
+- [x] Note anywhere §6.1's seam does not survive contact with the actual types
+- [x] Note anything a week-7 implementer would waste a day on
+- [x] **Append these to the design document**, in the same section where you
       answer OPEN-1 through OPEN-3, with the same labelling convention
 
 **Risks in what you are building** — §7 is thorough on write tools and light on
 read ones, which is backwards from where you are:
 
-- [ ] **The store in an unexpected state** — a corrupt record, a `schemaVersion`
+- [x] **The store in an unexpected state** — a corrupt record, a `schemaVersion`
       from the future, a result JSON that does not parse. Does the server crash,
       return a protocol error, or leak a stack trace with a filesystem path?
-- [ ] **Unbounded output** — `qre_get_run` returns a whole `RunRecord` including
+- [x] **Unbounded output** — `qre_get_run` returns a whole `RunRecord` including
       `result.raw`. How big can that get, and what does it do to an agent's
       context?
-- [ ] **Errors as an egress path** — a message carrying a database path, a home
+- [x] **Errors as an egress path** — a message carrying a database path, a home
       directory, or a config fragment goes straight into the agent's context and
       off the machine (§7.4)
-- [ ] **Self-inflicted DoS** — no rate limiting exists (out of scope), but an
+- [x] **Self-inflicted DoS** — no rate limiting exists (out of scope), but an
       agent looping on `qre_list_runs` interacts with your own §4 findings. Worth
       a sentence even if the fix is next week's
-- [ ] **Implement what is safe and inside your boundaries. File the rest.** The
+- [x] **Implement what is safe and inside your boundaries. File the rest.** The
       write-tool line does not move because you found a good argument for one
-- [ ] **An empty list is acceptable if argued** — "we checked the anchors and they
-      hold, we considered these four failure modes, here is what we concluded."
-      Silence is not
-- [ ] **§B–§E come first.** If behind, cut the extra *implementation* — the list
+- [x] **An empty list is acceptable if argued** — not applicable: the audit found
+      and recorded concrete design, type, and security issues
+- [x] **§B–§E come first.** If behind, cut the extra *implementation* — the list
       of what you *found* still ships
 
 ## G. Reviews — on your own work, every merge

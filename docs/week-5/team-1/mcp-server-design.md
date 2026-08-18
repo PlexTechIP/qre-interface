@@ -2,7 +2,9 @@
 
 **Team 1 (Sun Min) · Week 5** — original draft
 **Revision pass:** PM (Davyn), 2026-08-06
-**Verified against commits:** `ed52411` (original claims) · `5cdf2b1` (revision-pass claims — current `main`)
+**Verified against commits:** `ed52411` (original claims) · `5cdf2b1`
+(revision pass) · `b6a5091` (Week 6 audit baseline) · `2310977` (Team 2
+concurrency spike)
 **Status:** **REVISED — accepted as the week-6 build input.** Open items in §14; reader
 sign-off still owed (App. B); Google Doc mirror still owed.
 
@@ -138,9 +140,9 @@ open on a second monitor, showing their run history.
    numbers — physical qubits, runtime, factory count.
 
 5. **On the second monitor, the dashboard does *not* update by itself.**
-   **[VERIFIED · `5cdf2b1`]** `RunHistoryContainer.tsx` loads runs on mount and
-   re-queries only when the filter changes (`refresh` at `:144`, `useEffect` at
-   `:164`) or after a local delete. There is no watcher, no poll, and no push, so
+   **[VERIFIED · `b6a5091`]** `RunHistoryContainer.tsx` loads runs on mount and
+   re-queries only when the filter changes (`refresh` at `:155`, `useEffect` at
+   `:174`) or after a local delete. There is no watcher, no poll, and no push, so
    an externally-written run stays invisible until the analyst changes a filter or
    reopens the tab. **In v1 the analyst must refresh the History tab to see an
    agent-created run.** Closing that gap is an app-side change, scoped in §14.
@@ -155,9 +157,13 @@ open on a second monitor, showing their run history.
    (both reads). It explains the deltas in plain English.
 
 7. **"Actually, re-run yesterday's with a looser error budget."** The agent calls
-   **`qre_draft_from_run`**, which returns yesterday's config as an editable draft
-   via the app's own `formStateFromRunConfig`. The agent changes one field and goes
-   back to step 3. It never edits a `RunConfig` directly.
+   **`qre_draft_from_run`**, which converts yesterday's losslessly representable
+   benchmark or manual-count config into the flattened `ConfigDraft`. The
+   conversion starts from the app's own `formStateFromRunConfig`, but requires
+   the inverse adapter recorded in the Week 6 audit below; uploaded programs are
+   not representable by `GeneratedRunDraft` and return a tool error. The agent
+   changes one field and goes back to step 3. It never edits a `RunConfig`
+   directly.
 
 8. **Under the hood, every call left an audit line.** The invocation log (§7.5)
    has one JSON-Lines entry per call, recording — among other things — that step 4
@@ -232,9 +238,9 @@ correctly counted four at that revision; `agent` landed afterwards. **Lesson:** 
 design doc written against a moving codebase rots quickly — hence the SHA stamps.
 
 > **Demonstration of exactly that.** `COMPARE_MIN_SELECTION` was at
-> `comparisonModel.ts:334` at `ed52411` and is at **`:425` at `5cdf2b1`** — four
-> days. Line anchors in that file are therefore cited by **name** below, not by
-> line.
+> `comparisonModel.ts:334` at `ed52411`, **`:425` at `5cdf2b1`**, and **`:511` at
+> `b6a5091`**. Line anchors in that file are therefore cited by **name** below,
+> not by line.
 
 **[VERIFIED · `ed52411`] The handler layer is already a thin adapter.**
 `storeHandler.ts` / `estimatorHandler.ts` each take an injected module and expose
@@ -289,7 +295,7 @@ An MCP stdio server is a **separate process the agent spawns** — not our app. 
 the dashboard is open **and** the agent has spawned the server, two processes hold
 `run-history.sqlite`.
 
-**[VERIFIED · `ed52411`] What the code does today:**
+**[VERIFIED · `ed52411`] What the code did at the original pass:**
 - `sqliteRunStore.ts:103` opens the DB as
   `new DatabaseSync(databasePath, { timeout: 5_000 })` → a **5-second busy
   timeout** is set. *(The original draft cited `:101`; the constructor opens at
@@ -297,6 +303,11 @@ the dashboard is open **and** the agent has spawned the server, two processes ho
 - The only pragma set anywhere in product code under `app/src/main/` is
   `PRAGMA user_version` (`sqliteRunStore.ts:237`, `:269`). **WAL is never
   enabled** → the DB runs in SQLite's default rollback-journal mode.
+
+**[VERIFIED · Week 6 Part E, 2026-08-18] Current state:** the five-second timeout
+remains. `SqliteRunStore` now enables WAL after migration, and the focused test
+confirms the mode persists on a file-backed database. `DATABASE_SCHEMA_VERSION`
+is exported for the MCP preflight so it need not duplicate the numeric version.
 
 **[EXTERNAL] Expected behaviour in default mode** (sources:
 [SQLite file locking](https://www.sqlite.org/lockingv3.html),
@@ -333,9 +344,8 @@ out and cannot rule out from reading code alone.
 2. If (1) is rejected, the migration must be wrapped in a transaction that takes
    the write lock before the version check, so the check and the DDL are atomic.
 
-**[OPEN-1]** (1) is a server-side rule and needs no app change, but it does mean
-the server has a hard version dependency on the database. Confirm nobody objects
-before week 6 builds on it.
+**[CLOSED-1 · 2026-08-18]** The server never migrates and refuses any
+`user_version` mismatch. See the Week 6 decision register.
 
 ### 4.2 WAL — recommended, but it is an app change owned by another team
 
@@ -352,8 +362,8 @@ What the original draft did not say, and week 6 needs to know:
 - It creates `-wal` and `-shm` sidecar files, which affects anything that copies,
   backs up, or ships the database, and it is local-disk only.
 
-**[OPEN-2]** Ask Team 2 to enable WAL in `SqliteRunStore`, or record a decision
-not to. Do not let the MCP server set it as a side effect.
+**[CLOSED-2 · 2026-08-18]** Team 2 enabled WAL in `SqliteRunStore`; PM review is
+required before merge. The MCP entry point does not carry a separate pragma.
 
 ### 4.3 Our position
 
@@ -363,29 +373,20 @@ hope. The failure mode when it does occur is a recoverable `SQLITE_BUSY` under t
 existing 5 s timeout. We recommend WAL (§4.2) and the no-migration rule (§4.1).
 **[INFERENCE — the frequency claim is reasoned, not measured; see §12.]**
 
-**Established / could not establish** (an honest boundary):
-- **Established (by reading code):** the store opens with a 5 s busy timeout; no
-  WAL pragma is set anywhere, so the DB is in default rollback-journal mode; the
-  only pragma in use is `user_version`; **the store runs schema DDL at open time.**
-- **Established (from vendor docs):** default-mode contention resolves as a
-  waiting-then-`SQLITE_BUSY` failure, and corruption is not the expected outcome
-  on a local disk.
-- **Could NOT establish (not tested):** we did **not** run two processes against
-  one `run-history.sqlite` and observe the behaviour empirically. The claims above
-  rest on SQLite / `node:sqlite` documentation, not a test we executed. **In
-  particular, the concurrent-migration case in §4.1 is unmeasured.**
-- **What it would take:** a short spike — two Node processes, one DB, one writing
-  in a loop while the other reads/writes, plus a deliberate concurrent-open test
-  against a database one version behind — measured under both default and WAL
-  modes. **This is the first task in week 6 and it is now costed in §10.**
+**Established in Week 6:** the two-process spike measured read/read,
+read/write, writer/writer, and concurrent migration under rollback and WAL.
+Integrity remained `ok`; WAL removed the controlled reader wait but did not
+remove the one-writer constraint or five-second busy failure. Both concurrent
+constructors migrated the current v1→v2 case safely in every trial. See
+`docs/week-6/team-2/concurrency-spike-results.md` for method, results, and limits.
 
 ---
 
 ## 5. Path resolution & lifecycle outside Electron
 
-**[VERIFIED · `ed52411`] `app.getPath` is used in exactly one place for the DB:**
-`main.ts:56` → `path.join(app.getPath("userData"), "run-history.sqlite")`, with a
-`QRE_DB_PATH` env override checked first (`main.ts:52`). A spawned non-Electron
+**[VERIFIED · `b6a5091`] `app.getPath` is used in exactly one place for the DB:**
+`main.ts:62` → `path.join(app.getPath("userData"), "run-history.sqlite")`, with a
+`QRE_DB_PATH` env override checked first (`main.ts:58`). A spawned non-Electron
 process cannot call `app.getPath`.
 
 **[VERIFIED · `ed52411`] The Python venv is already Electron-independent.**
@@ -397,7 +398,7 @@ effectively already solved** — subject to the bundle-layout constraint in §3.
 **[VERIFIED · `ed52411`] Gotcha: two default DB locations that disagree.**
 - `main.ts` (Electron) → `app.getPath("userData")/run-history.sqlite`
   (macOS: `~/Library/Application Support/<app>/…`).
-- `dataDir.ts:15` `resolveDefaultDatabasePath()` (non-Electron helper) →
+- `dataDir.ts:14` `resolveDefaultDatabasePath()` (non-Electron helper) →
   `~/.qre-dashboard/run-history.sqlite`. It is imported only by
   `app/src/main/harness.ts:30` and its own test — never by `main.ts`.
 
@@ -476,7 +477,7 @@ The server is a child process of the analyst's agent, not of our app:
 | `qre_validate_config` | `toRunConfig` + `schemaValidation.ts` (Ajv) | Read | **Yes** |
 | `qre_list_runs` | `SqliteRunStore.list` / `.query` | Read | **Yes** |
 | `qre_get_run` | `SqliteRunStore.get` | Read | **Yes** |
-| `qre_draft_from_run` | `formState.formStateFromRunConfig` | Read | **Yes** |
+| `qre_draft_from_run` | `formStateFromRunConfig` + a lossless `GeneratedRunDraft` projection | Read | **Yes** |
 | `qre_compare_runs` | `renderer/history/comparisonModel.ts` | Read | **Yes** |
 | `qre_run_estimate` | `QreEngine.run()` + `SqliteRunStore.save` | **Write** | **Yes — off by default, gated (§7.2)** |
 | `qre_delete_run` | `SqliteRunStore.delete` (`:181`) | **Write (destructive)** | **No — deferred (App. C)** |
@@ -549,16 +550,18 @@ engine a configuration the form would have refused.
 **The fix, built entirely from existing verified seams (§3):**
 
 ```
-agent supplies:   ConfigDraft   (a FormState-shaped object; NO id, NO createdAt)
+agent supplies:   ConfigDraft   (= flattened GeneratedRunDraft; NO id, NO createdAt)
                        │
                        ▼
-qre_validate_config:  normalizeFormState(draft)
-                      → toRunConfig(draft, schemaValidationStamp())   ← placeholder identity
+draft adapter:        generatedDraftToFormState(draft)                ← pure helper to extract
+                      → normalizeFormState(state)
+
+qre_validate_config:  validateForm(state)                             ← form-level rules
+                      → toRunConfig(state, schemaValidationStamp())   ← placeholder identity
                       → validateRunConfigSchema(config)               ← Ajv
                       → { valid, errors }                             ← nothing persisted
 
-qre_run_estimate:     normalizeFormState(draft)
-                      → toRunConfig(draft, { id: randomUUID(), createdAt: now() })
+qre_run_estimate:     toRunConfig(state, { id: randomUUID(), createdAt: now() })
                                                                       ← server mints, at execution
                       → QreEngine.run(config) → SqliteRunStore.save()
 ```
@@ -570,15 +573,15 @@ Consequences worth stating plainly:
 - **`qre_validate_config` and `qre_run_estimate` take the same input type**, so
   "validate then run" is the same object twice — the loop §1 step 3 describes
   actually converges.
-- **The coupling rules apply on both paths**, because both go through
-  `toRunConfig`.
+- **The coupling rules apply on both paths**, because the adapter normalizes and
+  validation runs both `validateForm` and `toRunConfig` before Ajv.
 - `toRunConfig` returns `RunConfig | null`; `null` means the draft is incomplete.
   The tool converts that to `isError: true` with the reason, not a crash.
-- **[OPEN-3]** `FormState` (`formState.ts:214`) is a renderer-shaped type with
-  nested per-architecture sub-forms. Whether the tool's `inputSchema` exposes it
-  as-is or as a flattened, agent-friendly projection is a week-6 call. Exposing it
-  raw is correct and cheap; a projection is friendlier and is more work. Start
-  raw, measure, then decide.
+- **[CLOSED-3 · 2026-08-18]** `ConfigDraft` uses the existing flattened
+  `GeneratedRunDraft`, not raw `FormState`. The live `draftToFormState` combines
+  conversion with provenance and requires a `model` argument, so Week 6 must
+  extract or wrap a provenance-free `generatedDraftToFormState` helper rather
+  than inventing a sentinel model during validation.
 
 ### 6.2 Tool contracts
 
@@ -604,10 +607,10 @@ Conventions across every tool:
 | Tool | Input | Returns |
 |---|---|---|
 | `qre_list_benchmarks` | `{}` (`{"type":"object","additionalProperties":false}`) | `{ benchmarks: { id, name, description, format }[] }` from `BENCHMARK_REGISTRY` (`benchmarkRegistry.ts:25`). **Omit `sourcePath`** — it is an internal filesystem path and leaking it serves nobody |
-| `qre_validate_config` | `{ draft: ConfigDraft }` | `{ valid: boolean, errors: string }` — `errors` is Ajv's human-readable newline-separated text straight from `validateRunConfigSchema` (`schemaValidation.ts:23`), plus any `toRunConfig` → `null` reason. Never persists anything (§6.1) |
-| `qre_list_runs` | `{ filter?: RunFilter, limit?: number, cursor?: string }` | `{ runs: RunSummary[], nextCursor?: string }`. **`limit` defaults to 25 and is capped at 100.** Omitting `filter` maps to `list()`, passing one maps to `query(filter)`; newest-first per the existing ordering rule (`types.ts:809`) |
-| `qre_get_run` | `{ id: string, includeFrontier?: boolean }` | `{ run: RunRecord }` — full record (`config` + `result` + `savedAt`). **`includeFrontier` defaults to `false`**, replacing the frontier with `{ rowCount, representativeRow }`; a full frontier is large enough to matter in a context window. `isError` if the id is unknown (`get()` returns `null`) |
-| `qre_draft_from_run` | `{ id: string }` | `{ draft: ConfigDraft }` via `formStateFromRunConfig(record.config)` (`formState.ts:361`). This is the supported way to modify a previous run — the agent edits a draft, never a `RunConfig` (§6.1) |
+| `qre_validate_config` | `{ draft: ConfigDraft }` | `{ valid: boolean, errors: string }` through the corrected §6.1 adapter, form validation, `toRunConfig`, and Ajv path. Expected validation text is capped and returned; internal exceptions are normalized, never forwarded. Nothing is persisted |
+| `qre_list_runs` | `{ filter?: McpRunFilter, limit?: number, cursor?: string }` | `{ runs: RunSummary[], nextCursor?: string }`. **`limit` defaults to 25 and is capped at 100.** `McpRunFilter` exposes safe fields and uses `applicationType` / `benchmarkId`, not `RunFilter.application`, whose uploaded form embeds an absolute path. Cursor order is the existing `(createdAt, savedAt, id)` newest-first tuple (`types.ts:807–816`) |
+| `qre_get_run` | `{ id: string }` | `{ run: RunDetail }`, a bounded MCP projection—not a `RunRecord`. It omits `result.raw`, returns `{ rowCount, representativeRow }` instead of the full frontier, redacts uploaded `filePath`, and normalizes stored error text. `representativeRow` is frontier index 0 because the dashboard's selected index is session-only and is not stored. Returning complete raw/frontier data requires a separately reviewed, byte-bounded or paginated future tool. `isError` if the id is unknown |
+| `qre_draft_from_run` | `{ id: string }` | `{ draft: ConfigDraft }` through a new tested inverse adapter: `formStateFromRunConfig(record.config)` → `generatedDraftFromFormState(state)`. The existing function alone returns `FormState`, not `GeneratedRunDraft`. Only losslessly representable benchmark/manual configs are supported. Uploaded programs and configs using omitted architecture options, optional trace stages, or non-`none` memory optimization return `DRAFT_UNSUPPORTED`; no field is silently dropped (§6.1) |
 | `qre_compare_runs` | `{ ids: string[] }` — **`minItems: 2`**, matching `COMPARE_MIN_SELECTION` (`comparisonModel.ts`) | `{ columns: […], rows: […] }` — the server fetches each `RunRecord`, maps through `toComparisonColumn`, then `buildComparisonRows`. **Chart builders are deliberately not used**: `buildCharts` / `buildFrontierSeries` emit `ChartSpec`, colors, and symbols, which are display concerns with no meaning to an agent. Unknown ids are reported per-id in the result, not as a whole-call failure |
 | `qre_run_estimate` | `{ draft: ConfigDraft, name?: string }` | On success `{ runId, result: RunResult }`; on a failed run `isError: true` carrying `result.status: "failed"` and `result.error`. **Server mints `{id, createdAt}` at execution** (§6.1), defaults `name` via `generateName` (`toRunConfig.ts:240`), sets `provenance.authoredBy = "model_assisted"` (§8), and **returns a task handle rather than blocking** (§6.3). Gated per §7.2 |
 
@@ -623,19 +626,27 @@ export interface RunSummary {
   name: string;          // config.name
   createdAt: string;     // config.createdAt   — NOT a record field
   savedAt: string;       // record.savedAt
-  status: RunStatus;     // result.status
+  status: RunResult["status"];
   architecture: ArchitectureType;
-  application: string;   // applicationKey(config)
+  application:
+    | { type: "benchmark"; benchmarkId: string }
+    | { type: "uploaded"; format: UploadedProgramFormat }
+    | { type: "manualCounts" };
 }
 ```
 
+`applicationKey(config)` remains the store's internal filter/index key. It must
+not cross the MCP boundary for uploaded runs because its value is
+`uploaded:<absolute filePath>`.
+
 **Notes that keep week 6 from having to ask:**
-- `qre_validate_config` returns Ajv's errors **unmodified** — the same text a user
-  would see, so an agent that fixes-and-revalidates converges the same way.
+- `qre_validate_config` returns expected validation messages, capped to the MCP
+  error budget. It never returns an exception message, stack, database path, or
+  serialized config fragment.
 - `qre_run_estimate` validates the draft through the same path first and refuses
   (`isError`) rather than spawning Python on a bad draft.
-- `qre_list_runs` returns summaries; the agent pulls a full record via
-  `qre_get_run` only when it needs one.
+- `qre_list_runs` returns summaries; `qre_get_run` returns a bounded detail
+  projection. Neither returns a complete stored record.
 - **[EXTERNAL]** Servers **MUST** "rate limit tool invocations"
   ([Tools › Security Considerations](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)).
   A per-session cap on `qre_run_estimate` (each one spawns Python) and a simple
@@ -811,9 +822,13 @@ values as data, not instructions.
 
 **What we do about it:**
 - Every user-originated string in a tool result (`name`, upload filenames, engine
-  error text) is emitted inside a delimited, clearly-labelled data envelope rather
-  than as bare prose, and is length-capped.
-- Control characters and prompt-injection-shaped markers are stripped or escaped.
+  error text) is emitted in a clearly-labelled structured field rather than as
+  handler-authored prose, and is length-capped.
+- Control characters are escaped. We do **not** claim to recognize and strip
+  "prompt-injection-shaped" text: that is not a reliable parser, mutates legitimate
+  user data, and attackers can trivially rephrase around it. Structured placement
+  and an "untrusted data" description help a well-behaved model but are not a
+  security boundary.
 - The tool `description` for every read tool states that returned names are
   untrusted user data. This is a hint to a well-behaved model, not a control.
 - **[OPEN-6]** Whether to go further — e.g. never returning `name` at all and
@@ -844,8 +859,8 @@ host promising, not us controlling.
 - **Can:** state the egress profile plainly in the server's own documentation and
   in the config block the app generates, so nobody deploys this without knowing.
 - **Can:** keep payloads minimal by default — this is a second, independent reason
-  for `qre_get_run`'s `includeFrontier: false` default (§6.2) and for summaries
-  over full records.
+  for §6.2's bounded `RunDetail`, which omits `raw` and summarizes the frontier,
+  and for summaries instead of full records.
 - **Can:** log what left, and when (§7.5). An egress question after the fact is
   answerable only if the log exists.
 - **Cannot:** control what the analyst's agent does with the data once returned.
@@ -990,8 +1005,8 @@ WAL change.
 | Path resolution (§5.1 server side) + **"Copy MCP config" action in the app** | **1–1.5** | The app-side half is what makes the two processes agree, and it is the §9 lever |
 | `qre_list_benchmarks` | **0.5** | Thin read over `benchmarkRegistry.ts` |
 | `qre_validate_config` + `ConfigDraft` plumbing (§6.1) | **1–1.5** | More than the original's 0.5: this is the `toRunConfig` + `schemaValidationStamp` path, not a bare Ajv call |
-| `qre_list_runs` / `qre_get_run` + `RunSummary` + pagination | **1** | Includes defining `RunSummary` in `shared/types.ts` |
-| `qre_draft_from_run` | **0.25** | Direct reuse of `formStateFromRunConfig` |
+| `qre_list_runs` / `qre_get_run` + safe projections + pagination | **1.5–2** | Includes `RunSummary`, `RunDetail`, path redaction, output budgets, and safe cursor parsing; DB-level pagination remains follow-up |
+| `qre_draft_from_run` | **0.5–1** | Requires a tested `FormState` → `GeneratedRunDraft` adapter; direct reuse returns the wrong type, and unrepresentable fields/runs must be refused |
 | `qre_compare_runs` (N-way, rows only) | **1** | Reuse `comparisonModel.ts`; skip the chart builders |
 | `qre_run_estimate` — gate + elicitation + identity stamping | **2–3** | §7.2 layers 1 and 2, plus §6.1 |
 | **Tasks extension for `qre_run_estimate`** (§6.3) | **1–2** | Handle, polling, `tasks/cancel` → kill the subprocess. Not in the original estimate at all |
@@ -1059,16 +1074,17 @@ The honest failure conditions for §0:
   substantially by §5.1 — the app writes the value it resolved — but if that
   mechanism fails, the server may silently read a *different* database than the
   app, which is a correctness failure worse than an error.
-- **The write-concurrency story turns out worse than the docs suggest** (§4),
-  particularly the concurrent-migration case in §4.1. Our claims rest on vendor
-  documentation, not a test we ran. If real behaviour is worse, `qre_run_estimate`
-  drops out until it is established.
-- **`FormState` proves too awkward for a model to author reliably** (§6.1).
-  *New in this pass.* The research doc established that the *schema* cannot be
-  constrained; if the form shape is also too complex for a model to fill in
-  without excessive round-trips, the write path degrades to something an analyst
-  would rather do in the UI, and this becomes a read-only history tool. Cheap to
-  measure early — do it during the spike week.
+- **The write-concurrency story is worse outside the measured boundary** (§4).
+  Week 6 established current behavior on local temporary files and the v1→v2
+  migration. A future non-idempotent migration, network filesystem, or packaging
+  arrangement that invalidates those conditions requires a new spike; hold
+  `qre_run_estimate` until it is established.
+- **The flattened `ConfigDraft` proves too awkward for a model to author
+  reliably** (§6.1). The research doc established that the canonical schema
+  cannot be constrained, and Week 6 rejected raw `FormState`. If the flattened
+  shape still needs excessive correction loops, the write path degrades to
+  something an analyst would rather do in the UI, and this becomes a read-only
+  history tool. Measure it before enabling writes.
 
 ---
 
@@ -1155,9 +1171,10 @@ and they should not evaporate when this document is filed.
   real page; the original draft's five *"verify current permalink"* placeholders
   are gone.
 
-**Still not verified by anyone:** no two-process test against a real
-`run-history.sqlite` has been run (§4). The OWASP and NSA/CISA pages are cited but
-were not read in the revision pass (OPEN-5).
+**Not verified in the revision pass:** no two-process test against a real
+`run-history.sqlite` had been run at `5cdf2b1`. Team 2 completed that measurement
+at `2310977`; §4 and the Week 6 register carry the results. The OWASP and NSA/CISA
+pages were cited but not read in the revision pass (OPEN-5).
 
 ## Appendix B — Reader sign-off
 
@@ -1260,7 +1277,7 @@ initialization after migration.
 ### OPEN-3 — `ConfigDraft` shape
 
 **[VERIFIED · `b6a5091`]** The live code has moved beyond the two choices as
-originally described. `app/src/shared/agentTypes.ts:86` already defines the
+originally described. `app/src/shared/agentTypes.ts:82` already defines the
 flattened, identity-free `GeneratedRunDraft`; it omits uploads/local file paths,
 derived QEC, QRE version, provenance, `id`, and `createdAt`.
 `app/src/renderer/agent/draftToFormState.ts:52` maps that boundary into a fresh
@@ -1308,3 +1325,183 @@ from the dashboard. Part E does not modify either owner-restricted file.
 > dashboard unless `QRE_DB_PATH` is explicitly set. Please choose one canonical
 > resolver/path and route both entry points through it. Team 2 documented but did
 > not fix this because `main.ts` is outside our Week 6 ownership.
+
+### Part F — design and read-side risk audit
+
+**[VERIFIED · `b6a5091`, 2026-08-18]**
+
+**Signed:** Rishabh, Team 2
+
+This audit checked the design's named source anchors against `b6a5091`, then
+exercised the current store against malformed and future-version record JSON. It
+does not widen v1's write surface. Part F changed the design and acceptance
+requirements only; the MCP scaffold and read handlers are owned by Parts C/D,
+and the optional validation handler by Part H.
+
+#### Anchor audit
+
+**[VERIFIED]** Most type and form anchors still hold exactly at `b6a5091`:
+`RunProvenance:413`, `RunConfig:419`, `RunResult:589`, `RunRecord:678`,
+`RunFilter:763`, `reconstructConfig:863`; `FormState:214`,
+`formStateFromRunConfig:361`, the coupling predicates at `:484`, `:550`, `:560`,
+`:570`, and `normalizeFormState:590`; `schemaValidationStamp:43`,
+`generateName:240`, `toRunConfig:285`; `BENCHMARK_REGISTRY:25`; and
+`QreEngine.run:20` with its timeout at `:12`.
+
+**[VERIFIED]** These anchors or claims were stale and are corrected above:
+
+- History refresh moved from `RunHistoryContainer.tsx:144/:164` to
+  `:155/:174`.
+- `COMPARE_MIN_SELECTION` moved from `comparisonModel.ts:425` at `5cdf2b1` to
+  `:511` at `b6a5091`.
+- The Electron database override/default moved from `main.ts:52/:56` to
+  `:58/:62`.
+- Preload has five surfaces at `preload.ts:101–105`, already corrected in Part E.
+- Store method line numbers held at `b6a5091` but Part E's constructor change
+  shifted later lines by one. Future references should cite method names rather
+  than treating those numbers as stable.
+- Part E cited `GeneratedRunDraft` at `agentTypes.ts:86`; the declaration starts
+  at `:82` (`:86` is its `name` field). The Part E entry is corrected in place.
+
+#### F-1 — unexpected store state
+
+**[VERIFIED]** `readStoredRecord` in `sqliteRunStore.ts:75–80` checks only that
+`record_json` is a string, then calls `JSON.parse` and `upgradeRunRecord`. It does
+not call `validateRunRecord` on read. A temporary-database probe established both
+failure modes requested by the checklist:
+
+- malformed JSON throws a `SyntaxError` through `get`; and
+- structurally valid JSON with record `schemaVersion: "99.0.0"` is returned as a
+  `RunRecord` instead of being rejected.
+
+`list` and `query` map every selected row through the same function, so one
+malformed row fails the entire call. The database-level `user_version` preflight
+does not catch this; SQLite schema version and record contract version are
+different layers.
+
+**[INFERENCE · v1 handler rule]** Every store call is caught at the MCP boundary.
+Returned records are checked with `validateRunRecord` before projection. An
+unknown id remains a specific `RUN_NOT_FOUND`; malformed JSON, a future record
+contract, or any other unexpected store state becomes `STORE_READ_FAILED` with
+generic actionable text. The tool result must not contain the original exception
+message, stack, SQL, record JSON, or database path. Do not silently skip a bad row
+and present an incomplete list as complete.
+
+**Filed follow-up F-1:** add validated/quarantined reads below the MCP layer so a
+single corrupt row can be identified without poisoning all list/query results.
+That changes dashboard store behavior and is not implemented in this Part F
+documentation pass.
+
+#### F-2 — output bounds and filesystem-path egress
+
+**[VERIFIED]** The RunResult contract deliberately preserves `result.raw` as the
+complete, schema-less engine object, and neither the result nor record schema has
+`maxItems`, `maxProperties`, or a serialized-size bound. The seven committed
+fixtures are only 1.2–1.5 KiB each; that is test-corpus size, not a maximum.
+`includeFrontier: false` therefore did not bound the old `qre_get_run` design:
+`raw` can carry the engine frontier a second time.
+
+**[VERIFIED]** Two proposed "safe" fields also exposed local paths:
+
+- `RunFilter.application` / `applicationKey(config)` represents an upload as
+  `uploaded:<absolute filePath>`; and
+- a full `RunRecord.config.application` returns the uploaded `filePath` directly.
+
+Omitting only `BENCHMARK_REGISTRY.sourcePath` was insufficient.
+
+**[INFERENCE · v1 handler rule]** The corrected contracts above return MCP-owned
+projections. `qre_get_run` excludes `raw`, returns one representative frontier row
+plus a count, redacts upload paths, and normalizes stored error messages.
+`qre_list_runs` uses a safe application discriminated union rather than the
+internal application key. No v1 flag re-enables full raw/frontier output.
+
+As a defense-in-depth guard, serialize `structuredContent` before returning it
+and enforce an initial **64 KiB per-result ceiling**. Cap run names at 200 Unicode
+code points and other user/engine-originated strings at 1,000. Exceeding the
+whole-result budget returns `OUTPUT_TOO_LARGE`, not a truncated object that
+silently violates its output schema. These are v1 engineering limits, not data
+contract changes; PM/security may tune them after measuring real records.
+
+**Filed follow-up F-2:** if analysts need complete `raw` or every frontier row,
+design a separately named, explicitly approved byte-bounded or paginated export
+tool. Do not grow `qre_get_run` back into an unbounded record dump.
+
+#### F-3 — errors as egress
+
+**[VERIFIED]** Existing app boundaries commonly interpolate `error.message`, and
+stored `RunResult.error.message` is open analyst-facing text. A future MCP handler
+that forwards either verbatim can place a home directory, database path, uploaded
+file path, config fragment, provider diagnostic, or engine stderr into the model's
+context. Structured output does not make those values safe; it only labels them.
+
+**[INFERENCE · v1 handler rule]** MCP errors use an allowlisted code and
+handler-authored generic message. Expected validation errors may be returned after
+field-name/value redaction and length capping. Unexpected exceptions are recorded
+only in local diagnostics and become generic tool errors; `String(error)`,
+`error.message`, and `error.stack` never cross the protocol boundary. Control
+characters are escaped. Semantic "prompt injection detection" is not claimed as
+a security control.
+
+#### F-4 — pagination and self-inflicted denial of service
+
+**[VERIFIED]** `SqliteRunStore.list` and `.query` select and parse every matching
+`record_json`; neither SQL statement has `LIMIT` or cursor predicates. Handler-side
+pagination caps what leaves the process but still performs a full database read,
+JSON parse, allocation, upgrade, and sort. Repeated calls can consume CPU and
+memory and compete with the dashboard even though WAL prevents reader/writer
+blocking in the controlled spike.
+
+**[INFERENCE · v1 handler rule]** Keep the 25 default / 100 maximum response page.
+Use a validated opaque cursor over the existing `(createdAt, savedAt, id)` total
+order, reject malformed cursors without passing their contents to SQLite, allow
+at most one in-flight store read per stdio session, and apply a token bucket with
+an initial 30 reads/minute and burst of 5. Reject excess work with a retryable
+`RATE_LIMITED`; do not build an unbounded queue.
+
+**Filed follow-up F-4:** add DB-level seek pagination that applies the ordering
+tuple and `LIMIT` in SQLite. The current `RunStore` interface cannot express it,
+so Part D may paginate in memory for v1 but must record that operational limit.
+
+#### F-5 — the §6.1 seam after OPEN-3
+
+**[VERIFIED]** `GeneratedRunDraft` and `FormState` are not interchangeable:
+
+- `draftToFormState(draft, model)` maps flattened input to normalized form state
+  but also creates provenance and requires a model string;
+- `formStateFromRunConfig` maps the other direction only as far as `FormState`;
+- no `FormState` → `GeneratedRunDraft` helper exists;
+- `GeneratedRunDraft` supports benchmark/manual applications only; `FormState`
+  also has session-only saved/uploaded variants and `RunConfig` can persist an
+  uploaded program with a local path; and
+- it omits Majorana `tErrorRate` / `targetYear`, Neutral Atom
+  `dataQubitSpacing` / `targetYear`, optional Dynamic Memory Compute and
+  Unmemory stages, and any effective non-`none` memory optimization.
+
+The former "direct reuse" claim for `qre_draft_from_run` therefore did not type
+check conceptually. It would cost a Week 7 implementer time and could tempt them
+to cast `FormState` to `ConfigDraft`, silently violating the tool schema.
+
+**[INFERENCE · implementation requirement]** Extract a provenance-free forward
+adapter (`generatedDraftToFormState`) for validation, and add one tested inverse
+adapter (`generatedDraftFromFormState`) for representable benchmark/manual
+reruns. The existing in-app `draftToFormState` can wrap the forward helper and
+add provenance. Before conversion, reject uploaded records and any non-default
+field the flattened type omits with `DRAFT_UNSUPPORTED`; never drop it and never
+copy a local path into `ConfigDraft`. Round-trip tests must cover every supported
+application and architecture variant plus every explicit refusal case.
+
+**Filed follow-up F-5:** Parts D/H own these adapters with their respective tools.
+They must reuse one shared projection rather than implementing two subtly
+different draft shapes.
+
+#### Scope conclusion
+
+**[VERIFIED]** No MCP handler files exist on this branch yet, so implementing the
+rules above here would overlap Parts C/D/H and manufacture a parallel scaffold.
+The safe in-scope work was to correct the authoritative design before those
+handlers land and provide testable acceptance rules. The existing read store's
+validation/pagination limitations are recorded as follow-ups because changing
+dashboard behavior exceeds Part F ownership.
+
+**[VERIFIED]** The write-tool line did not move: no delete tool is added, no read
+tool calls `SqliteRunStore.save`, and Part F adds no call to `QreEngine.run`.
