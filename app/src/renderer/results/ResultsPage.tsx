@@ -113,6 +113,7 @@ export function ResultsPage({
 
   const record =
     recordResolution.status === "ready" ? recordResolution.record : null;
+  const failed = latestRun.result.status === "failed";
 
   return (
     <div className="results-page-frame">
@@ -138,15 +139,18 @@ export function ResultsPage({
           </button>
           {/*
             Only for a run a model proposed, and only while the shell still
-            knows which conversation proposed it. A failed run is where this
-            earns its place: the one participant who could explain the error is
-            the one who never learns the run happened.
+            knows which conversation proposed it.
+
+            The failed variant is NOT here — it renders inside the error card
+            below instead. A failure is the case where this control earns its
+            place, and the toolbar is the wrong place to earn it: the analyst is
+            reading the error, not scanning for actions beside Export. What is
+            left here is the success variant, which has no error card to live in
+            and belongs with the other things you can do with a finished run.
           */}
-          {onAskAgent === undefined ? null : (
+          {onAskAgent === undefined || failed ? null : (
             <button type="button" onClick={onAskAgent}>
-              {latestRun.result.status === "failed"
-                ? "Ask the agent what went wrong"
-                : "Ask the agent about this run"}
+              Ask the agent about this run
             </button>
           )}
         </div>
@@ -175,6 +179,7 @@ export function ResultsPage({
         config={latestRun.config}
         {...(selectedIndex !== undefined ? { selectedIndex } : {})}
         {...(onSelectedIndexChange ? { onSelectedIndexChange } : {})}
+        {...(failed && onAskAgent ? { onAskAgent } : {})}
       />
 
       {isExportOpen && record ? (
