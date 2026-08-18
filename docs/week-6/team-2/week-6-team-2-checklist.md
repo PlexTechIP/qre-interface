@@ -14,9 +14,9 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 **Work split — fill this in at kickoff and commit it:**
 
-- Melody: _______________________
-- Rishabh: _______________________
-- Shared / pairing on: _______________________
+- Melody: §C (scaffold), §D (four read tools), §H (`qre_validate_config` if time permits)
+- Rishabh: §B (concurrency spike), §E (open items), §F (design and risk audit)
+- Shared / pairing on: §G's required teammate reviews and final merge verification only; no shared implementation ownership
 
 > §B (the spike) and §C (the scaffold) are genuinely independent and both are
 > day-one work. Splitting them one each is the obvious move and it is the right
@@ -24,9 +24,9 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 ## A. Day 0
 
-- [ ] `git fetch && git switch week-6/team-2` — **the PMs created it off `main`
+- [x] `git fetch && git switch week-6/team-2` — **the PMs created it off `main`
       at kickoff.** Do not create your own team branch; do not branch off week 5
-- [ ] **Do not commit directly to the team branch.** Every piece of work gets its
+- [x] **Do not commit directly to the team branch.** Every piece of work gets its
       own branch off it, named `week-6/team-2-<thing>`, which PRs back in. For this
       track that is roughly:
       `week-6/team-2-concurrency-spike` · `week-6/team-2-mcp-scaffold` ·
@@ -37,9 +37,13 @@ Your mission in one line: **prove the design runs, then build its read half.**
 - [ ] `nvm use` (Node **24.18.0**), `npm ci` in `app/`, then
       `npm run typecheck && npm test` — **green before you change anything.**
       654 tests across 58 files is the number you should see
-- [ ] Read the design sections above. **§10's cost table twice** — v1 is ~15–20
+      **Local exception:** Node 24.18.0, `npm ci`, and typecheck are green; 646/654
+      tests pass. Eight real-engine tests cannot load PyQIR 0.12.5 on macOS 13.0
+      because the OS libc++ lacks `__libcpp_verbose_abort`. Recorded in the spike
+      write-up; full acceptance requires CI or a supported OS.
+- [x] Read the design sections above. **§10's cost table twice** — v1 is ~15–20
       dev-days and you have ~4.5–6. The scope here is already cut to fit
-- [ ] Confirm the feasibility claim yourself before building on it:
+- [x] Confirm the feasibility claim yourself before building on it:
       `grep -rln 'from "electron"' app/src/main/` — `QreEngine`, `SqliteRunStore`,
       and `benchmarkRegistry` should not appear
 - [ ] Note in the channel that you need `app/package.json` for the SDK dependency
@@ -48,19 +52,19 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 ## B. The concurrency spike — first
 
-- [ ] Two Node processes, one temp `run-history.sqlite`, one writing in a loop
+- [x] Two Node processes, one temp `run-history.sqlite`, one writing in a loop
       while the other reads and writes. No MCP, no SDK, no Electron
-- [ ] Measure **concurrent reads**
-- [ ] Measure **a read during a write**
-- [ ] Measure **two writers** — what actually happens at the 5 s busy timeout
-- [ ] Measure **§4.1's case: two processes opening a database one `user_version`
+- [x] Measure **concurrent reads**
+- [x] Measure **a read during a write**
+- [x] Measure **two writers** — what actually happens at the 5 s busy timeout
+- [x] Measure **§4.1's case: two processes opening a database one `user_version`
       behind, at the same time.** The store runs schema DDL at open, so this is the
       one nobody has looked at
-- [ ] Run all four **under default rollback-journal mode and under WAL**
-- [ ] Write up what you observed — numbers you measured, not numbers you reasoned
+- [x] Run all four **under default rollback-journal mode and under WAL**
+- [x] Write up what you observed — numbers you measured, not numbers you reasoned
       to. **A result that says "this corrupts" is the best outcome of the month**
       and changes the design; say so plainly if you see it
-- [ ] Commit the spike scripts. They are evidence, and the next person to ask this
+- [x] Commit the spike scripts. They are evidence, and the next person to ask this
       question should not start from zero
 - [ ] **Land this on `main` on its own**, before the scaffold is finished. It is
       independently valuable and there is no reason it should wait
