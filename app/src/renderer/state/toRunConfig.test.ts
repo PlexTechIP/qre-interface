@@ -11,7 +11,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createInitialFormState, type FormState } from "./formState";
-import { schemaValidationStamp, toRunConfig } from "./toRunConfig";
+import { schemaValidationStamp, toRunConfig, type RunStamp } from "./toRunConfig";
+import type { RunProvenance } from "../../shared/types";
 import { validateRunConfigSchema } from "./schemaValidation";
 
 const STAMP = schemaValidationStamp();
@@ -361,5 +362,58 @@ describe("toRunConfig — invalid states never serialize", () => {
     const config = serialize(s);
     expect(config).not.toBeNull();
     expect(validateRunConfigSchema(config!).valid).toBe(false);
+  });
+});
+
+/**
+ * `RunProvenance.authoredBy` has recorded model-assisted runs since v1.4.0, but
+ * provenance is not on screen in Run History, the comparison table, or an
+ * exported report. The name is, everywhere.
+ */
+describe("toRunConfig — marking a model-authored run", () => {
+  const stampWith = (provenance?: RunProvenance): RunStamp => {
+    const stamp: RunStamp = { id: "run-1", createdAt: "2026-01-01T00:00:00.000Z" };
+    if (provenance !== undefined) stamp.provenance = provenance;
+    return stamp;
+  };
+
+  it("tags a name the model chose", () => {
+    const state = { ...validGateBasedDraft(), name: "Grover search" };
+
+    const config = toRunConfig(state, stampWith({ authoredBy: "model_assisted" }));
+
+    expect(config?.name).toBe("(agent) Grover search");
+  });
+
+  /**
+   * The half a handoff-time prefix would have missed: the model proposes a
+   * draft with a null name, so the form is blank and `generateName` derives one
+   * at Run-click. Those runs would have looked like a human's.
+   */
+  it("tags a name the app derived", () => {
+    const state = { ...validGateBasedDraft(), name: "" };
+
+    const config = toRunConfig(state, stampWith({ authoredBy: "model_assisted" }));
+
+    expect(config?.name.startsWith("(agent) ")).toBe(true);
+    expect(config?.name.length).toBeGreaterThan("(agent) ".length);
+  });
+
+  it("leaves a configuration the analyst authored alone", () => {
+    const state = { ...validGateBasedDraft(), name: "Grover search" };
+
+    expect(toRunConfig(state, stampWith())?.name).toBe("Grover search");
+    expect(toRunConfig(state, stampWith({ authoredBy: "human" }))?.name).toBe(
+      "Grover search",
+    );
+  });
+
+  /** A Rerun stamps provenance again over a name that already carries it. */
+  it("does not stack the marker across a rerun", () => {
+    const state = { ...validGateBasedDraft(), name: "(agent) Grover search" };
+
+    const config = toRunConfig(state, stampWith({ authoredBy: "model_assisted" }));
+
+    expect(config?.name).toBe("(agent) Grover search");
   });
 });

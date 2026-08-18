@@ -26,7 +26,7 @@ function gateBasedDraft(): GeneratedRunDraft {
 
 describe("draftToFormState", () => {
   it("maps model-owned values into an unstamped editable FormState", () => {
-    const result = draftToFormState(gateBasedDraft(), "provider/model");
+    const result = draftToFormState(gateBasedDraft(), "provider/model", "c-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -59,7 +59,7 @@ describe("draftToFormState", () => {
     // guarantee at this boundary.
     (proposal as { memoryOptimization: string }).memoryOptimization = "yoked_2d";
 
-    const result = draftToFormState(proposal, "provider/model");
+    const result = draftToFormState(proposal, "provider/model", "c-1");
     expect(result).toEqual({
       ok: false,
       message: expect.stringContaining("Memory Optimization"),
@@ -75,7 +75,7 @@ describe("draftToFormState", () => {
     const proposal = gateBasedDraft();
     proposal.parameters = { searchQubits: 42 };
 
-    const result = draftToFormState(proposal, "provider/model");
+    const result = draftToFormState(proposal, "provider/model", "c-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(
@@ -90,7 +90,7 @@ describe("draftToFormState", () => {
     // taking the wrong values would be far worse than taking none.
     proposal.parameters = { bitSize: 2048, generator: 7 };
 
-    const result = draftToFormState(proposal, "provider/model");
+    const result = draftToFormState(proposal, "provider/model", "c-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.handoff.state.application.hyperparams["grovers-search"]).toEqual(
@@ -103,7 +103,7 @@ describe("draftToFormState", () => {
     const proposal = gateBasedDraft();
     proposal.parameters = { none: true };
 
-    const result = draftToFormState(proposal, "provider/model");
+    const result = draftToFormState(proposal, "provider/model", "c-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const params = result.handoff.state.application.hyperparams["grovers-search"];
@@ -116,7 +116,7 @@ describe("draftToFormState", () => {
     // proposable, so a draft must land with exactly what the analyst would see
     // having never touched the pipeline.
     const initial = createInitialFormState();
-    const result = draftToFormState(gateBasedDraft(), "provider/model");
+    const result = draftToFormState(gateBasedDraft(), "provider/model", "c-1");
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -143,7 +143,7 @@ describe("draftToFormState", () => {
    */
   it("produces a form draft carrying every field the form requires", () => {
     const initial = createInitialFormState();
-    const result = draftToFormState(gateBasedDraft(), "provider/model");
+    const result = draftToFormState(gateBasedDraft(), "provider/model", "c-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const { state } = result.handoff;
@@ -167,7 +167,7 @@ describe("draftToFormState", () => {
 
   it("keeps the untouched architecture variants at their form defaults", () => {
     const initial = createInitialFormState();
-    const result = draftToFormState(gateBasedDraft(), "provider/model");
+    const result = draftToFormState(gateBasedDraft(), "provider/model", "c-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -199,7 +199,7 @@ describe("draftToFormState", () => {
       it(`refuses ${optimization}, which the form cannot unset`, () => {
         const proposal = gateBasedDraft();
         proposal.memoryOptimization = optimization;
-        expect(draftToFormState(proposal, "provider/model")).toEqual({
+        expect(draftToFormState(proposal, "provider/model", "c-1")).toEqual({
           ok: false,
           message: expect.stringContaining("Memory Optimization"),
         });
@@ -207,7 +207,7 @@ describe("draftToFormState", () => {
     }
 
     it('accepts the "none" every well-behaved draft sends', () => {
-      const result = draftToFormState(gateBasedDraft(), "provider/model");
+      const result = draftToFormState(gateBasedDraft(), "provider/model", "c-1");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.handoff.state.memoryOptimization).toBe("none");
@@ -223,7 +223,7 @@ describe("draftToFormState", () => {
     it("normalizes an empty factory set rather than showing none selected", () => {
       const proposal = gateBasedDraft();
       proposal.magicStateFactories = [];
-      const result = draftToFormState(proposal, "provider/model");
+      const result = draftToFormState(proposal, "provider/model", "c-1");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.handoff.state.magicStateFactories).toEqual(["round_based"]);
@@ -240,7 +240,7 @@ describe("draftToFormState", () => {
         twoQubitGateTime: null,
       };
       proposal.magicStateFactories = ["litinski19"];
-      const result = draftToFormState(proposal, "provider/model");
+      const result = draftToFormState(proposal, "provider/model", "c-1");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.handoff.state.magicStateFactories).toEqual(["round_based"]);
@@ -249,7 +249,7 @@ describe("draftToFormState", () => {
     it("carries a proposed secondary factory through to the form", () => {
       const proposal = gateBasedDraft();
       proposal.secondaryFactories = ["gsj24_ccx"];
-      const result = draftToFormState(proposal, "provider/model");
+      const result = draftToFormState(proposal, "provider/model", "c-1");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.handoff.state.secondaryFactories).toEqual(["gsj24_ccx"]);
@@ -263,7 +263,7 @@ describe("draftToFormState", () => {
         operationTime: 1000,
       };
       proposal.secondaryFactories = ["magic_up_to_clifford"];
-      const result = draftToFormState(proposal, "provider/model");
+      const result = draftToFormState(proposal, "provider/model", "c-1");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.handoff.state.secondaryFactories).toEqual([]);
@@ -283,7 +283,7 @@ describe("draftToFormState", () => {
  */
 describe("draftToFormState reports what the model actually chose", () => {
   const proposalOf = (draft: GeneratedRunDraft) => {
-    const result = draftToFormState(draft, "provider/model");
+    const result = draftToFormState(draft, "provider/model", "c-1");
     if (!result.ok) throw new Error(result.message);
     return result.handoff.proposed;
   };

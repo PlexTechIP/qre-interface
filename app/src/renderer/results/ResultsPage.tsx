@@ -25,6 +25,14 @@ interface ResultsPageProps {
   store: Pick<RunStore, "get">;
   /** Reuse the shell handoff that History uses for Rerun. */
   onRerunRequest: (request: RerunRequest) => void;
+  /**
+   * Take this run's outcome back to the conversation that proposed it.
+   *
+   * Absent when there is nowhere to go back to — a configuration the analyst
+   * wrote themselves, or a run opened from History in a later session, where
+   * the thread is no longer something the shell can point at.
+   */
+  onAskAgent?: (() => void) | undefined;
 }
 
 type RecordResolution =
@@ -43,6 +51,7 @@ export function ResultsPage({
   onSelectedIndexChange,
   store,
   onRerunRequest,
+  onAskAgent,
 }: ResultsPageProps): React.JSX.Element {
   const [recordResolution, setRecordResolution] =
     useState<RecordResolution>({ status: "loading" });
@@ -127,6 +136,19 @@ export function ResultsPage({
           >
             Rerun
           </button>
+          {/*
+            Only for a run a model proposed, and only while the shell still
+            knows which conversation proposed it. A failed run is where this
+            earns its place: the one participant who could explain the error is
+            the one who never learns the run happened.
+          */}
+          {onAskAgent === undefined ? null : (
+            <button type="button" onClick={onAskAgent}>
+              {latestRun.result.status === "failed"
+                ? "Ask the agent what went wrong"
+                : "Ask the agent about this run"}
+            </button>
+          )}
         </div>
         {recordResolution.status === "loading" ? (
           <p id="results-actions-status" className="muted" role="status">

@@ -34,7 +34,12 @@ import {
 interface RunConfigurationProps {
   /** Fired once when a run finishes, so the shell can persist it to History
    *  and surface it on the Results page. Optional — omitted in unit tests. */
-  onRunComplete?: (config: RunConfig, result: RunResult) => void;
+  onRunComplete?: (
+    config: RunConfig,
+    result: RunResult,
+    /** The conversation that authored it, when a model did. */
+    conversationId?: string,
+  ) => void;
   /** Saved configuration to load into the editable form for a Rerun. */
   initialConfig?: RunConfig | null;
   /** Model proposal already mapped into Team 3's existing editable form shape. */
@@ -49,6 +54,12 @@ interface RunConfigurationProps {
    * is read once alongside it, for the same reason `provenance` is.
    */
   proposed?: readonly ProposedField[] | undefined;
+  /**
+   * The conversation `initialDraft` came out of, so a finished run can lead
+   * back to it. Same lifetime as `provenance`: it belongs to the configuration
+   * in the form, not to the props that delivered it.
+   */
+  conversationId?: string | undefined;
   /**
    * The form as it stood when this page was last open.
    *
@@ -80,6 +91,7 @@ export function RunConfiguration({
   initialDraft,
   provenance,
   proposed,
+  conversationId,
   restoredState,
   onStateChange,
 }: RunConfigurationProps = {}): React.JSX.Element {
@@ -110,6 +122,17 @@ export function RunConfiguration({
   const [draftProposal, setDraftProposal] = useState<readonly ProposedField[]>(
     () => (initialDraft ? (proposed ?? []) : []),
   );
+  /**
+   * Which conversation authored what is NOW IN THE FORM.
+   *
+   * Held here rather than read off the prop at run time, for exactly the reason
+   * `draftProvenance` is: this component stays mounted through the run panel,
+   * and "Edit configuration" returns to the same state. Reading the prop would
+   * lose the thread on the second run of one configuration.
+   */
+  const [draftConversationId, setDraftConversationId] = useState<string | undefined>(
+    () => (initialDraft ? conversationId : undefined),
+  );
   const { runState, start, retry, edit } = useRunFlow();
 
   // A Rerun hands a reconstructed config down as `initialConfig`; load it into
@@ -119,6 +142,7 @@ export function RunConfiguration({
       setState(initialDraft);
       setDraftProvenance(provenance);
       setDraftProposal(proposed ?? []);
+      setDraftConversationId(conversationId);
     } else if (initialConfig) {
       setState(formStateFromRunConfig(initialConfig));
       // A Rerun replaces the model's draft with a saved config, so whatever
@@ -126,6 +150,9 @@ export function RunConfiguration({
       // does the list of what that model chose.
       setDraftProvenance(undefined);
       setDraftProposal([]);
+      // A Rerun replaces the model's draft, so the thread that produced the
+      // draft no longer describes what is on screen either.
+      setDraftConversationId(undefined);
     }
     // `provenance` and `proposed` are deliberately not dependencies: they travel
     // WITH a draft, and re-running this effect when only they changed would
@@ -152,8 +179,8 @@ export function RunConfiguration({
     if (runState.phase !== "done") return;
     if (reportedIdRef.current === runState.config.id) return;
     reportedIdRef.current = runState.config.id;
-    onRunComplete?.(runState.config, runState.result);
-  }, [runState, onRunComplete]);
+    onRunComplete?.(runState.config, runState.result, draftConversationId);
+  }, [runState, onRunComplete, draftConversationId]);
  
   // Every update is normalized so cross-field coupling (Litinski19 fallback)
   // can never leave the draft internally inconsistent.

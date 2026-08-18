@@ -15,6 +15,7 @@ import { RunHistoryContainer } from "./history/RunHistoryContainer";
 import type { RerunRequest } from "./history/rerun";
 import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
+import { describeRunForAgent } from "./agent/agentRunReport";
 import { formContextFromState } from "./agent/formContext";
 import type { FormState } from "./state/formState";
 import { RunConfiguration } from "./RunConfiguration";
@@ -416,12 +417,47 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     setAgentSelection({ provider: active.provider, model: active.defaultModel });
   }, [agentStatus, agentSelection]);
 
-  const handleRunComplete = useCallback((config: RunConfig, result: RunResult): void => {
-    setDraftHandoff(null);
-    setLatestRun({ config, result });
-    // Surface the finished run on the Results page (and move the sidebar there).
-    setActivePage("results");
-  }, []);
+  /**
+   * Which conversation authored the run now on the Results page.
+   *
+   * Keyed by run id rather than held as a bare conversation id, because opening
+   * an older run from Run History replaces `latestRun` without replacing this —
+   * so the control that leads back to a conversation has to be able to tell
+   * whether it belongs to the run actually on screen.
+   */
+  const [runOrigin, setRunOrigin] = useState<
+    { runId: string; conversationId: string } | null
+  >(null);
+
+  const handleRunComplete = useCallback(
+    (config: RunConfig, result: RunResult, conversationId?: string): void => {
+      setDraftHandoff(null);
+      setLatestRun({ config, result });
+      setRunOrigin(
+        conversationId === undefined ? null : { runId: config.id, conversationId },
+      );
+      // Surface the finished run on the Results page (and move the sidebar there).
+      setActivePage("results");
+    },
+    [],
+  );
+
+  /**
+   * Take the outcome back to the conversation that proposed it.
+   *
+   * The message lands in the composer rather than being sent. The analyst owns
+   * this conversation — they may want to add what they were actually trying to
+   * do, or ask something else entirely — and a message that sent itself would
+   * spend a provider request on every failed run whether or not anyone wanted
+   * the diagnosis.
+   */
+  const askAgentAboutRun = useCallback((): void => {
+    if (latestRun === null || runOrigin === null) return;
+    if (runOrigin.runId !== latestRun.config.id) return;
+    setActiveConversationId(runOrigin.conversationId);
+    setChatComposer(describeRunForAgent(latestRun.config, latestRun.result));
+    setActivePage("agent");
+  }, [latestRun, runOrigin]);
 
   // Opening a saved run from History shows it on the Results page too, so the
   // sidebar always reflects where the run detail is displayed.
@@ -545,6 +581,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
                 ref is written only by a child effect, never during a render,
                 and the value is consumed only by a mount-time initialiser.
               */
+              conversationId={draftHandoff?.conversationId}
               restoredState={formStateRef.current ?? undefined}
               onStateChange={rememberFormState}
             />
@@ -586,6 +623,17 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               }}
               store={window.store}
               onRerunRequest={handleRerunRequest}
+              /*
+                Offered only for the run actually on screen. Opening an older
+                run from History replaces `latestRun` without replacing the
+                origin, so without the id check the control would carry the
+                wrong run's outcome into a conversation.
+              */
+              onAskAgent={
+                runOrigin !== null && runOrigin.runId === latestRun?.config.id
+                  ? askAgentAboutRun
+                  : undefined
+              }
             />
           ) : null}
           {activePage === "settings" ? (

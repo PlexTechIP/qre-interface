@@ -18,6 +18,7 @@ import {
   SAMPLE_RUN_RECORDS,
   buildFrontierRow,
   buildRunRecord,
+  buildFailedResult,
   buildSuccessResult,
   fakeAgentService,
   fakeAppInfoService,
@@ -1034,5 +1035,156 @@ describe("App shell — the run form across navigation", () => {
 
     await waitFor(() => expect(seen).toHaveLength(1));
     expect(seen[0]).not.toHaveProperty("formContext");
+  });
+});
+
+/**
+ * The round trip: a proposal becomes a run, and the run leads back to the
+ * conversation that proposed it.
+ *
+ * Before this, a model-authored configuration was a one-way street. The analyst
+ * carried a draft into the form, ran it, and whatever came back — a frontier or
+ * an engine crash — stayed on the Results page. The one participant who could
+ * explain a failure never learned the run had happened.
+ */
+describe("App shell — the agent round trip", () => {
+  beforeEach(() => {
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.agent = fakeAgentService();
+    window.localStorage.clear();
+  });
+
+  /** Chat → proposal → form. Leaves the analyst on Run Configuration. */
+  async function carryProposalIntoForm(): Promise<void> {
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(await screen.findByLabelText("Your message"), "Grover, 20 qubits");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /use this configuration/i }),
+    );
+  }
+
+  const runIt = async (): Promise<void> => {
+    await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+  };
+
+  /** The default form needs its two required times before it will serialize. */
+  const fillRequiredTimes = async (): Promise<void> => {
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /single-qubit gate time/i }),
+      "50",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /^measurement time/i }),
+      "100",
+    );
+  };
+
+  it("names a model-authored run so the list says where it came from", async () => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    render(<App />);
+    await carryProposalIntoForm();
+
+    await runIt();
+
+    // Results is where the shell lands after a run. The marker rides the name,
+    // which is what Run History, the comparison table and an export all show.
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("(agent) "),
+    );
+  });
+
+  it("leads a failed run back to the conversation that proposed it", async () => {
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 0 });
+    render(<App />);
+    await carryProposalIntoForm();
+    await runIt();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /what went wrong/i }),
+    );
+
+    // Back on the chat page, in the same thread, with the error waiting to be
+    // read and edited rather than already sent.
+    const composer = (await screen.findByLabelText(
+      "Your message",
+    )) as HTMLTextAreaElement;
+    expect(composer.value).toContain("failed");
+    // …and in the thread that proposed it, not a fresh one. The proposal card
+    // only exists on a turn carrying a draft, so its presence is proof the
+    // original conversation was reopened rather than a new one started.
+    expect(
+      screen.getByRole("button", { name: /use this configuration/i }),
+    ).toBeVisible();
+  });
+
+  it("hands the model the error text it has no other way to see", async () => {
+    const failure = buildFailedResult();
+    window.estimator = fakeEstimator(failure, { delayMs: 0 });
+    render(<App />);
+    await carryProposalIntoForm();
+    await runIt();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /what went wrong/i }),
+    );
+
+    const composer = await screen.findByLabelText("Your message");
+    expect((composer as HTMLTextAreaElement).value).toContain(failure.error?.code ?? "");
+  });
+
+  /** The message waits in the composer — sending is the analyst's call. */
+  it("does not send the diagnosis on the analyst's behalf", async () => {
+    const seen: unknown[] = [];
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 0 });
+    window.agent = {
+      ...fakeAgentService(),
+      async requestReply(request) {
+        seen.push(request);
+        return fakeAgentService().requestReply(request);
+      },
+    };
+    render(<App />);
+    await carryProposalIntoForm();
+    await runIt();
+    const before = seen.length;
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /what went wrong/i }),
+    );
+
+    expect(seen).toHaveLength(before);
+  });
+
+  it("leads a successful run back too, to ask about the outcome", async () => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    render(<App />);
+    await carryProposalIntoForm();
+    await runIt();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /about this run/i }),
+    );
+
+    const composer = await screen.findByLabelText("Your message");
+    expect((composer as HTMLTextAreaElement).value).toContain("successfully");
+  });
+
+  /**
+   * A configuration the analyst wrote themselves has no conversation behind it,
+   * so there is nowhere for the control to lead.
+   */
+  it("offers nothing to go back to for a run the analyst authored", async () => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    render(<App />);
+    await fillRequiredTimes();
+
+    await runIt();
+
+    // The Results page is up — Rerun proves it — and offers no way back to a
+    // conversation, because there was never one behind this configuration.
+    expect(await screen.findByRole("button", { name: "Rerun" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /ask the agent/i })).toBeNull();
   });
 });

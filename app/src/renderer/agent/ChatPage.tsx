@@ -571,6 +571,13 @@ export function ChatPage({
 
   const useDraft = (message: ChatMessage): void => {
     if (message.draft === null) return;
+    /*
+     * A proposal can only be opened from the conversation showing it, so this
+     * is never null here — but the handoff has to name a real conversation for
+     * the analyst to get back to after the run, and a silent "" would send them
+     * to a thread that does not exist.
+     */
+    if (activeConversationId === null) return;
     /**
      * No attribution, no handoff. This read `message.model ?? "model"`, and
      * that fallback went straight into `RunProvenance.model` — which the
@@ -587,7 +594,7 @@ export function ChatPage({
       });
       return;
     }
-    const mapped = draftToFormState(message.draft, message.model);
+    const mapped = draftToFormState(message.draft, message.model, activeConversationId);
     if (!mapped.ok) {
       // On the card it belongs to, not in the page-level note: the analyst is
       // being told this proposal cannot be opened, and which one matters.
