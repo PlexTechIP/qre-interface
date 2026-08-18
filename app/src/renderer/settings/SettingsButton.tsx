@@ -74,11 +74,15 @@ export function SettingsButton({
       <GearIcon />
       {/*
         The same dot the provider cards use, so "configured" means one thing
-        across the app. `aria-hidden` because the state is already in the name
-        above — announcing it twice is worse than once.
+        across the app — but the DOT's own modifier, not the pill's. The pill
+        rule is a descendant selector, and putting `--on` on the dot itself left
+        it matching nothing and rendering grey whatever the network state was.
+
+        `aria-hidden` because the state is already in the name above —
+        announcing it twice is worse than once.
       */}
       <span
-        className={`agent-status__dot agent-status--${on ? "on" : "off"}`}
+        className={`agent-status__dot${on ? " agent-status__dot--on" : ""}`}
         aria-hidden="true"
       />
     </button>

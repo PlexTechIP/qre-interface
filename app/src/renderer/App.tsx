@@ -17,8 +17,7 @@ import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
 import { describeRunForAgent } from "./agent/agentRunReport";
 import { formContextFromState } from "./agent/formContext";
-import type { FormState } from "./state/formState";
-import { RunConfiguration } from "./RunConfiguration";
+import { RunConfiguration, type FormSnapshot } from "./RunConfiguration";
 import { SettingsButton } from "./settings/SettingsButton";
 import { SettingsPage } from "./settings/SettingsPage";
 import {
@@ -177,9 +176,19 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
    * the state machinery. Normalisation, provenance and the run flow all stay
    * where they were.
    */
-  const formStateRef = useRef<FormState | null>(null);
-  const rememberFormState = useCallback((state: FormState): void => {
-    formStateRef.current = state;
+  const formSnapshotRef = useRef<FormSnapshot | null>(null);
+  /**
+   * Mirror the form up, and retire a handoff once it has been taken up.
+   *
+   * The retirement is what stops a remount re-seeding the original proposal
+   * over the analyst's edits to it: while `draftHandoff` is set, it outranks
+   * the restored snapshot, so a round trip to the chat and back used to reset
+   * the form. The snapshot carries the draft's provenance forward, so retiring
+   * the handoff costs nothing.
+   */
+  const rememberFormState = useCallback((snapshot: FormSnapshot): void => {
+    formSnapshotRef.current = snapshot;
+    setDraftHandoff((current) => (current === null ? current : null));
   }, []);
 
   /**
@@ -191,7 +200,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
    */
   const getFormContext = useCallback(
     (): readonly FormContextEntry[] =>
-      formStateRef.current === null ? [] : formContextFromState(formStateRef.current),
+      formSnapshotRef.current === null
+        ? []
+        : formContextFromState(formSnapshotRef.current.state),
     [],
   );
   const [agentStatus, setAgentStatus] = useState<AgentProviderStatus>(
@@ -217,6 +228,8 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatComposer, setChatComposer] = useState("");
   const [chatView, setChatView] = useState<ChatView>("conversation");
+  /** Which Settings section is open. Outlives that page's unmounting. */
+  const [settingsTab, setSettingsTab] = useState(0);
 
   /**
    * Following the system is a subscription, not a reading.
@@ -443,6 +456,16 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   );
 
   /**
+   * The conversation this run can lead back to, or null.
+   *
+   * Derived once. The same rule was written twice — in the callback and in the
+   * prop that decides whether to pass it — so a change to when the control is
+   * valid had to be remembered in both places.
+   */
+  const askAgentTarget =
+    runOrigin !== null && runOrigin.runId === latestRun?.config.id ? runOrigin : null;
+
+  /**
    * Take the outcome back to the conversation that proposed it.
    *
    * The message lands in the composer rather than being sent. The analyst owns
@@ -451,13 +474,39 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
    * spend a provider request on every failed run whether or not anyone wanted
    * the diagnosis.
    */
-  const askAgentAboutRun = useCallback((): void => {
-    if (latestRun === null || runOrigin === null) return;
-    if (runOrigin.runId !== latestRun.config.id) return;
-    setActiveConversationId(runOrigin.conversationId);
-    setChatComposer(describeRunForAgent(latestRun.config, latestRun.result));
+  const askAgentAboutRun = useCallback(async (): Promise<void> => {
+    if (askAgentTarget === null || latestRun === null) return;
+
+    /*
+     * Confirmed present before navigating, rather than trusted.
+     *
+     * A conversation can be deleted from the rail one at a time, and that path
+     * tells the shell only that the ACTIVE conversation changed — never which
+     * id went. Checking here covers every deletion route, including ones added
+     * later, instead of chasing each one. If the thread is gone the origin goes
+     * with it, which takes the control off the Results page rather than leaving
+     * it pointing at nothing.
+     */
+    const conversation = await window.chats.get(askAgentTarget.conversationId);
+    if (conversation === null) {
+      setRunOrigin(null);
+      return;
+    }
+
+    setActiveConversationId(askAgentTarget.conversationId);
+    /*
+     * Appended, never substituted. The composer holds the one piece of
+     * user-authored prose in this app that is not yet on disk, and the shell
+     * keeps it across navigation precisely so a half-typed thought survives a
+     * trip to the form. Overwriting it here would destroy that thought with no
+     * warning and no undo.
+     */
+    const report = describeRunForAgent(latestRun.config, latestRun.result);
+    setChatComposer((current) =>
+      current.trim().length === 0 ? report : `${current.trimEnd()}\n\n${report}`,
+    );
     setActivePage("agent");
-  }, [latestRun, runOrigin]);
+  }, [askAgentTarget, latestRun]);
 
   // Opening a saved run from History shows it on the Results page too, so the
   // sidebar always reflects where the run detail is displayed.
@@ -582,7 +631,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
                 and the value is consumed only by a mount-time initialiser.
               */
               conversationId={draftHandoff?.conversationId}
-              restoredState={formStateRef.current ?? undefined}
+              restoredState={formSnapshotRef.current ?? undefined}
               onStateChange={rememberFormState}
             />
           ) : null}
@@ -630,9 +679,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
                 wrong run's outcome into a conversation.
               */
               onAskAgent={
-                runOrigin !== null && runOrigin.runId === latestRun?.config.id
-                  ? askAgentAboutRun
-                  : undefined
+                askAgentTarget === null ? undefined : () => void askAgentAboutRun()
               }
             />
           ) : null}
@@ -654,9 +701,18 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
                 longer has, which it rejects — so the next message, and every
                 one after it, fails to save.
               */
-              onConversationsCleared={() => setActiveConversationId(null)}
+              onConversationsCleared={() => {
+                setActiveConversationId(null);
+                // The origin points at a conversation that no longer exists.
+                // Left standing, Results keeps offering a way back to it and
+                // the analyst lands in a blank thread whose id the store has
+                // already forgotten — the next send then fails on append.
+                setRunOrigin(null);
+              }}
               themePreference={themePreference}
               onThemePreferenceChange={setThemePreference}
+              activeTab={settingsTab}
+              onActiveTabChange={setSettingsTab}
             />
           ) : null}
           {showHistorySurface ? (

@@ -1,10 +1,13 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SAMPLE_RUN_RECORDS } from "../../shared/testing";
+import { buildRunConfig, buildRunRecord, SAMPLE_RUN_RECORDS } from "../../shared/testing";
 import { withClipboard } from "../test/clipboard";
-import { ComparisonExportDialog } from "./ComparisonExportDialog";
-import { ExportDialog } from "./ExportDialog";
+import {
+  buildComparisonExportMarkdown,
+  ComparisonExportDialog,
+} from "./ComparisonExportDialog";
+import { buildRunExportMarkdown, ExportDialog } from "./ExportDialog";
 
 const noop = () => {};
 
@@ -249,5 +252,29 @@ describe("export dialogs — CSV", () => {
     expect(screen.getByRole("button", { name: "Download .md" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download .csv" })).toBeInTheDocument();
     expect(screen.getByLabelText(/export preview/i)).not.toHaveTextContent(/placeholder/i);
+  });
+});
+
+/**
+ * The "(agent)" marker exists because `RunProvenance` is invisible on the
+ * surfaces an analyst actually reads — and an export is the one that leaves the
+ * app entirely. These run the real builders rather than asserting string
+ * interpolation, so a future change that derived a title instead of using the
+ * stored name would be caught here.
+ */
+describe("a model-authored run, exported", () => {
+  const marked = buildRunRecord({
+    config: buildRunConfig({
+      name: "(agent) Grover search",
+      provenance: { authoredBy: "model_assisted", model: "Anthropic/claude-sonnet-5" },
+    }),
+  });
+
+  it("titles the Markdown with the marked name", () => {
+    expect(buildRunExportMarkdown(marked)).toContain("# (agent) Grover search");
+  });
+
+  it("carries the marked name into a comparison export", () => {
+    expect(buildComparisonExportMarkdown([marked])).toContain("(agent) Grover search");
   });
 });

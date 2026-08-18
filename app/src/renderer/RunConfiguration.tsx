@@ -31,6 +31,23 @@ import {
   useUploadPreflight,
 } from "./state/useUploadPreflight";
  
+/**
+ * The configuration this page currently holds, and where it came from.
+ *
+ * Mirrored to the shell so it survives this page unmounting — every page here
+ * is a conditional render, so navigating away used to discard the form
+ * entirely, and later discarded only its provenance.
+ */
+export interface FormSnapshot {
+  readonly state: FormState;
+  /** Absent for a configuration the analyst authored. */
+  readonly provenance?: RunProvenance;
+  /** What the model chose, for the summary shown above the form. */
+  readonly proposed: readonly ProposedField[];
+  /** The conversation that proposed it, so a finished run can lead back. */
+  readonly conversationId?: string;
+}
+
 interface RunConfigurationProps {
   /** Fired once when a run finishes, so the shell can persist it to History
    *  and surface it on the Results page. Optional — omitted in unit tests. */
@@ -72,16 +89,21 @@ interface RunConfigurationProps {
    * rerun is something the analyst just asked for, and restoring over it would
    * undo the navigation they made to get it.
    */
-  restoredState?: FormState | undefined;
+  restoredState?: FormSnapshot | undefined;
   /**
    * Report the form upward on every change.
    *
-   * The shell needs it for two things it cannot get any other way: seeding
-   * `restoredState` on the next mount, and telling the model what the analyst
-   * has already decided (see `formContextFromState`). This component stays
-   * authoritative while it is mounted — the shell only mirrors.
+   * The shell needs it for three things it cannot get any other way: seeding
+   * the next mount, telling the model what the analyst has already decided (see
+   * `formContextFromState`), and knowing that a draft handed down has been
+   * taken up and can be retired.
+   *
+   * It carries the configuration's PROVENANCE as well as its values, because
+   * both have the same lifetime and both die when this component unmounts. A
+   * mirror of the values alone restored a model-authored configuration as an
+   * anonymous one.
    */
-  onStateChange?: (state: FormState) => void;
+  onStateChange?: (snapshot: FormSnapshot) => void;
 }
 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
@@ -95,12 +117,22 @@ export function RunConfiguration({
   restoredState,
   onStateChange,
 }: RunConfigurationProps = {}): React.JSX.Element {
+  /*
+   * Seed order: a draft the analyst just accepted, then a rerun they just
+   * asked for, then whatever this page held last time, then a fresh form.
+   *
+   * `restoredState` ranks below the two ARRIVALS and above nothing else. The
+   * shell retires a handoff as soon as this component reports having taken it
+   * up, so a draft still present here is one that has not been seen yet — which
+   * is what stops a remount re-seeding the original proposal over the analyst's
+   * edits to it.
+   */
   const [state, setState] = useState<FormState>(
     () =>
       initialDraft ??
       (initialConfig
         ? formStateFromRunConfig(initialConfig)
-        : (restoredState ?? createInitialFormState())),
+        : (restoredState?.state ?? createInitialFormState())),
   );
   /**
    * Who authored the configuration NOW IN THE FORM — held here rather than read
@@ -115,12 +147,12 @@ export function RunConfiguration({
    * configuration does, and is replaced only when a different source loads one.
    */
   const [draftProvenance, setDraftProvenance] = useState<RunProvenance | undefined>(
-    () => (initialDraft ? provenance : undefined),
+    () => (initialDraft ? provenance : restoredState?.provenance),
   );
   /** What the model chose in the configuration now in the form. Same lifetime
    *  as `draftProvenance`, and replaced by the same three writes. */
   const [draftProposal, setDraftProposal] = useState<readonly ProposedField[]>(
-    () => (initialDraft ? (proposed ?? []) : []),
+    () => (initialDraft ? (proposed ?? []) : (restoredState?.proposed ?? [])),
   );
   /**
    * Which conversation authored what is NOW IN THE FORM.
@@ -131,7 +163,7 @@ export function RunConfiguration({
    * lose the thread on the second run of one configuration.
    */
   const [draftConversationId, setDraftConversationId] = useState<string | undefined>(
-    () => (initialDraft ? conversationId : undefined),
+    () => (initialDraft ? conversationId : restoredState?.conversationId),
   );
   const { runState, start, retry, edit } = useRunFlow();
 
@@ -169,8 +201,13 @@ export function RunConfiguration({
    * shell would restore a form the analyst had already moved on from.
    */
   useEffect(() => {
-    onStateChange?.(state);
-  }, [state, onStateChange]);
+    onStateChange?.({
+      state,
+      ...(draftProvenance === undefined ? {} : { provenance: draftProvenance }),
+      proposed: draftProposal,
+      ...(draftConversationId === undefined ? {} : { conversationId: draftConversationId }),
+    });
+  }, [state, draftProvenance, draftProposal, draftConversationId, onStateChange]);
 
   // Notify the shell exactly once per finished run (keyed on the stamped id, so
   // Retry — which mints a fresh id — reports as a distinct run).

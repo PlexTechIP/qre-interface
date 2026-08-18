@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -77,23 +78,30 @@ function setup(
   const onConversationsCleared = vi.fn();
   const onThemePreferenceChange = vi.fn();
 
-  render(
-    <SettingsPage
-      service={service}
-      status={overrides.status ?? CONFIGURED}
-      chats={chats}
-      appInfo={appInfo ?? undefined}
-      provider={overrides.provider ?? "anthropic"}
-      model={overrides.model ?? "claude-sonnet-5"}
-      onSelectionChange={onSelectionChange}
-      onCredentialConfigured={onCredentialConfigured}
-      onCredentialCleared={onCredentialCleared}
-      onCatalogRefreshed={onCatalogRefreshed}
-      onConversationsCleared={onConversationsCleared}
-      themePreference={overrides.themePreference ?? "light"}
-      onThemePreferenceChange={onThemePreferenceChange}
-    />,
-  );
+  function Harness(): React.JSX.Element {
+    const [activeTab, setActiveTab] = useState(0);
+    return (
+      <SettingsPage
+        service={service}
+        status={overrides.status ?? CONFIGURED}
+        chats={chats}
+        appInfo={appInfo ?? undefined}
+        provider={overrides.provider ?? "anthropic"}
+        model={overrides.model ?? "claude-sonnet-5"}
+        onSelectionChange={onSelectionChange}
+        onCredentialConfigured={onCredentialConfigured}
+        onCredentialCleared={onCredentialCleared}
+        onCatalogRefreshed={onCatalogRefreshed}
+        onConversationsCleared={onConversationsCleared}
+        themePreference={overrides.themePreference ?? "light"}
+        onThemePreferenceChange={onThemePreferenceChange}
+        activeTab={activeTab}
+        onActiveTabChange={setActiveTab}
+      />
+    );
+  }
+
+  render(<Harness />);
 
   // `fireEvent` rather than `userEvent`: this runs inside a synchronous
   // `setup()` that every existing test calls without awaiting.

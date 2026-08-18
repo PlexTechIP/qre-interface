@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProviderStatus, ProviderId } from "../../shared/agentTypes";
@@ -108,8 +110,29 @@ describe("SettingsButton — the networked-features indicator", () => {
     expect(button().getAttribute("title")).toBe(button().getAttribute("aria-label"));
   });
 
-  /** The dot is what a sighted analyst reads at a glance. */
-  it("paints the dot to match", () => {
+  /**
+   * The dot is what a sighted analyst reads at a glance, and asserting a class
+   * name alone proves nothing about it: this test previously checked for
+   * `.agent-status--on` and stayed green while the stylesheet's rule for that
+   * class was a DESCENDANT selector the standalone dot could never satisfy, so
+   * the dot rendered grey in every state.
+   *
+   * So it reads the real stylesheet and requires that whatever class the
+   * component emits is reachable as a selector in its own right. jsdom computes
+   * no styles, which is exactly why the check has to be made against the source.
+   */
+  const stylesheet = readFileSync(
+    path.join(process.cwd(), "src/renderer/styles.css"),
+    "utf8",
+  );
+
+  const dotOf = (container: HTMLElement): HTMLElement => {
+    const dot = container.querySelector(".agent-status__dot");
+    if (!(dot instanceof HTMLElement)) throw new Error("no status dot rendered");
+    return dot;
+  };
+
+  it("marks the dot with a class the stylesheet can reach on its own", () => {
     const { container } = render(
       <SettingsButton
         status={statusWith(["anthropic"])}
@@ -120,6 +143,25 @@ describe("SettingsButton — the networked-features indicator", () => {
       />,
     );
 
-    expect(container.querySelector(".agent-status--on")).not.toBeNull();
+    const classes = [...dotOf(container).classList].filter((name) => name.endsWith("--on"));
+    expect(classes).not.toHaveLength(0);
+    for (const name of classes) {
+      // A selector for the class with no ancestor required before it.
+      expect(stylesheet).toMatch(new RegExp(`(^|[,\\s])\\.${name}\\s*[,{]`, "m"));
+    }
+  });
+
+  it("leaves the dot unmarked when nothing is reachable", () => {
+    const { container } = render(
+      <SettingsButton
+        status={statusWith([])}
+        provider="anthropic"
+        model="claude-sonnet-5"
+        active={false}
+        onOpen={vi.fn()}
+      />,
+    );
+
+    expect([...dotOf(container).classList]).toEqual(["agent-status__dot"]);
   });
 });

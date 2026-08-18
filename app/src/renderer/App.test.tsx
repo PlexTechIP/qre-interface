@@ -1188,3 +1188,103 @@ describe("App shell — the agent round trip", () => {
     expect(screen.queryByRole("button", { name: /ask the agent/i })).toBeNull();
   });
 });
+
+/**
+ * The form-state lift added in M3 has to work for MODEL-authored configurations
+ * too — they are the ones the round trip sends the analyst away from and back.
+ */
+describe("App shell — editing a proposal across navigation", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.agent = fakeAgentService();
+    window.localStorage.clear();
+  });
+
+  const acceptProposal = async (): Promise<void> => {
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.type(await screen.findByLabelText("Your message"), "Grover, 20 qubits");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /use this configuration/i }),
+    );
+  };
+
+  it("keeps an edit to a proposal after a trip back to the chat", async () => {
+    render(<App />);
+    await acceptProposal();
+
+    const name = screen.getByRole("textbox", { name: /Run Name.*optional/i });
+    await userEvent.clear(name);
+    await userEvent.type(name, "My own name");
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+
+    expect(
+      screen.getByRole("textbox", { name: /Run Name.*optional/i }),
+    ).toHaveValue("My own name");
+  });
+
+  /**
+   * The edit has to survive without costing the provenance that rides with the
+   * draft — a run the model authored is still model-authored after a rename.
+   */
+  it("still marks the run as model-authored after that edit", async () => {
+    render(<App />);
+    await acceptProposal();
+
+    const name = screen.getByRole("textbox", { name: /Run Name.*optional/i });
+    await userEvent.clear(name);
+    await userEvent.type(name, "My own name");
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+
+    await waitFor(() => expect(document.body.textContent).toContain("(agent) My own name"));
+  });
+
+  /** …and the thread it came from is still reachable from the outcome. */
+  it("still leads back to the conversation after that edit", async () => {
+    render(<App />);
+    await acceptProposal();
+
+    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+
+    expect(
+      await screen.findByRole("button", { name: /ask the agent/i }),
+    ).toBeVisible();
+  });
+});
+
+describe("App shell — Settings remembers where you were", () => {
+  beforeEach(() => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.store = new InMemoryRunStore();
+    window.chats = new InMemoryChatStore();
+    window.agent = fakeAgentService();
+    window.localStorage.clear();
+  });
+
+  /**
+   * Every page here is a conditional render, so a tab selection kept inside the
+   * Settings page sent the analyst back to General each time they looked at
+   * something else and came back.
+   */
+  it("returns to the tab that was open, not to the first one", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "Data & storage" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+
+    expect(screen.getByRole("tab", { name: "Data & storage" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+});

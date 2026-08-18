@@ -8,38 +8,7 @@ import {
   buildRunResult,
   buildSuccessResult,
 } from "../../shared/testing/builders";
-import {
-  AGENT_NAME_PREFIX,
-  describeRunForAgent,
-  withAgentPrefix,
-} from "./agentRunReport";
-
-describe("withAgentPrefix", () => {
-  it("marks a name as model-authored", () => {
-    expect(withAgentPrefix("Grover search")).toBe("(agent) Grover search");
-  });
-
-  /**
-   * A Rerun loads a saved name that already carries the prefix and stamps
-   * provenance again, so a naive prefix would name the third run of one
-   * configuration "(agent) (agent) (agent) Grover search".
-   */
-  it("does not stack on a name that already carries it", () => {
-    expect(withAgentPrefix("(agent) Grover search")).toBe("(agent) Grover search");
-    expect(withAgentPrefix(withAgentPrefix(withAgentPrefix("Grover")))).toBe(
-      "(agent) Grover",
-    );
-  });
-
-  it("trims, so a padded name does not read as un-prefixed", () => {
-    expect(withAgentPrefix("  Grover  ")).toBe("(agent) Grover");
-    expect(withAgentPrefix("  (agent) Grover")).toBe("(agent) Grover");
-  });
-
-  it("degrades to the marker alone rather than to a dangling space", () => {
-    expect(withAgentPrefix("   ")).toBe(AGENT_NAME_PREFIX);
-  });
-});
+import { describeRunForAgent } from "./agentRunReport";
 
 describe("describeRunForAgent — a run that failed", () => {
   const config = buildRunConfig({ name: "(agent) Grover search" });

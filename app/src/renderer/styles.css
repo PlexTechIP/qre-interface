@@ -387,7 +387,12 @@ select {
   background: var(--color-muted);
 }
 
-.agent-status--on .agent-status__dot {
+/* Two ways to reach one colour, because the dot appears in two shapes: inside
+   a labelled pill (the provider cards), and standalone on an icon button (the
+   header's Settings control). The standalone form cannot satisfy a descendant
+   selector, and when it only carried `--on` it silently rendered grey. */
+.agent-status--on .agent-status__dot,
+.agent-status__dot--on {
   background: var(--color-status-online);
   /* Derived from the same token rather than a second one, so the halo can
      never drift away from the dot it surrounds. */

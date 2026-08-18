@@ -573,11 +573,21 @@ export function ChatPage({
     if (message.draft === null) return;
     /*
      * A proposal can only be opened from the conversation showing it, so this
-     * is never null here — but the handoff has to name a real conversation for
-     * the analyst to get back to after the run, and a silent "" would send them
-     * to a thread that does not exist.
+     * is not expected — but the handoff has to name a real conversation for the
+     * analyst to get back to after the run.
+     *
+     * Reported rather than returned silently, like the attribution guard below
+     * it. A bare return leaves "Use this configuration" doing nothing at all:
+     * no navigation, no message, nothing to distinguish it from a dead button.
      */
-    if (activeConversationId === null) return;
+    if (activeConversationId === null) {
+      setDraftError({
+        messageId: message.id,
+        message:
+          "This proposal is not attached to an open conversation, so there would be no thread to return to after the run. Reopen the conversation and try again.",
+      });
+      return;
+    }
     /**
      * No attribution, no handoff. This read `message.model ?? "model"`, and
      * that fallback went straight into `RunProvenance.model` — which the

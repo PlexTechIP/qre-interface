@@ -58,6 +58,15 @@ interface SettingsPageProps {
   onConversationsCleared: () => void;
   themePreference: ThemePreference;
   onThemePreferenceChange: (preference: ThemePreference) => void;
+  /**
+   * Which section is open, and how to change it.
+   *
+   * Held by the shell because this page unmounts on every sidebar click — a
+   * selection kept here sent the analyst back to General each time they looked
+   * at something else and came back.
+   */
+  activeTab: number;
+  onActiveTabChange: (index: number) => void;
 }
 
 /** Labels, in the order they are offered. */
@@ -114,6 +123,8 @@ export function SettingsPage({
   onConversationsCleared,
   themePreference,
   onThemePreferenceChange,
+  activeTab,
+  onActiveTabChange,
 }: SettingsPageProps): React.JSX.Element {
   const themeName = useId();
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -467,7 +478,7 @@ export function SettingsPage({
         </p>
       </header>
 
-      <SettingsTabs tabs={TABS} />
+      <SettingsTabs tabs={TABS} active={activeTab} onActiveChange={onActiveTabChange} />
     </div>
   );
 }

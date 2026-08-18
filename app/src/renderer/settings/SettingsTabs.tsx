@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 
 export interface SettingsTab {
   readonly id: string;
@@ -20,8 +20,23 @@ export interface SettingsTab {
  * four stops in the order and leave a screen reader with no idea they were
  * alternatives to each other.
  */
-export function SettingsTabs({ tabs }: { tabs: readonly SettingsTab[] }): React.JSX.Element {
-  const [active, setActive] = useState(0);
+export function SettingsTabs({
+  tabs,
+  active,
+  onActiveChange,
+}: {
+  tabs: readonly SettingsTab[];
+  /**
+   * Which tab is open, held by the shell.
+   *
+   * Not local state: this page unmounts on every sidebar click, so a local
+   * selection sent the analyst back to the first tab every time they looked at
+   * something else and returned.
+   */
+  active: number;
+  onActiveChange: (index: number) => void;
+}): React.JSX.Element {
+  const setActive = onActiveChange;
   const baseId = useId();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -89,24 +104,30 @@ export function SettingsTabs({ tabs }: { tabs: readonly SettingsTab[] }): React.
       </div>
 
       {/*
-        Only the selected panel is rendered. Rendering all four and hiding three
-        would leave the hidden ones' effects running — the catalogue panel would
-        fetch, the storage panel would query main — for subjects nobody has
-        opened.
+        Every panel is mounted; the inactive ones are `hidden`.
+        
+        Unmounting them threw away their state — the catalogue panel's fetched
+        balance and any error it was showing vanished the moment the analyst
+        looked at another tab, and had to be fetched again. The original reason
+        for unmounting was that hidden panels would keep running effects, and
+        that reason went away when the catalogue's first fetch moved to the
+        shell: no panel here fetches on mount any more.
+
+        `hidden` rather than CSS, so the accessibility tree agrees with the
+        screen and a query for a control on another tab finds nothing.
       */}
-      {tabs.map((tab, index) =>
-        index === active ? (
-          <div
-            key={tab.id}
-            role="tabpanel"
-            id={panelId(index)}
-            aria-labelledby={tabId(index)}
-            className="settings-tabs__panel"
-          >
-            {tab.panel}
-          </div>
-        ) : null,
-      )}
+      {tabs.map((tab, index) => (
+        <div
+          key={tab.id}
+          role="tabpanel"
+          id={panelId(index)}
+          aria-labelledby={tabId(index)}
+          className="settings-tabs__panel"
+          hidden={index !== active}
+        >
+          {tab.panel}
+        </div>
+      ))}
     </div>
   );
 }

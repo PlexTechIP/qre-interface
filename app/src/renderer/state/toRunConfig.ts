@@ -21,7 +21,7 @@ import {
   type RunProvenance,
   type SecondaryFactoryId,
 } from "../../shared/types";
-import { withAgentPrefix } from "../agent/agentRunReport";
+import { withAgentPrefix } from "./runNaming";
 import { ARCHITECTURE_LABELS, QEC_LABELS } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
