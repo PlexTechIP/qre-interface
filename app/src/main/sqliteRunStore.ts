@@ -13,7 +13,7 @@ import {
   type RunStore,
 } from "../shared/types.js";
 
-const DATABASE_SCHEMA_VERSION = 2;
+export const DATABASE_SCHEMA_VERSION = 2;
 
 /**
  * The factory column holds a SET as of contract v1.2.0, encoded as the members
@@ -97,6 +97,7 @@ export class SqliteRunStore implements RunStore {
 
     try {
       this.migrate();
+      this.database.exec("PRAGMA journal_mode = WAL");
     } catch (error) {
       this.database.close();
       throw error;
