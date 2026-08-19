@@ -6,7 +6,9 @@
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "npm run typecheck && vite build && vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts",
+    "build": "npm run typecheck && vite build && vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && npm run build:mcp",
+    "build:mcp": "vite build --config vite.mcp.config.ts",
+    "mcp": "tsx src/mcp/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint .",
     "test": "vitest run --config vitest.workspace.ts",
@@ -22,13 +24,15 @@
   },
   "packageManager": "npm@11.16.0",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
     "recharts": "^3.10.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

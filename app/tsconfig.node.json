@@ -22,6 +22,7 @@
   },
   "include": [
     "src/main",
-    "src/shared"
+    "src/shared",
+    "src/mcp"
   ]
 }
