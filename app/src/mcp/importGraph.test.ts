@@ -83,18 +83,37 @@ describe("MCP import graph validation", () => {
     }
   });
 
-  it("should only import files from src/mcp or src/shared", () => {
+  it("should only import allowlisted files outside src/mcp and src/shared", () => {
     const appDir = cwd();
     const entryPoint = resolve(appDir, "src/mcp/server.ts");
     const visited = walkImportGraph(entryPoint);
 
+    // Allowlist of specific files from outside src/mcp/ and src/shared/ that are needed for read tools
+    const allowlist = new Set<string>([
+      // Benchmark registry
+      resolve(appDir, "src/main/engine/benchmarkRegistry.ts"),
+      // SQLite store and its dependencies
+      resolve(appDir, "src/main/sqliteRunStore.ts"),
+      resolve(appDir, "src/main/databaseFile.ts"),
+      resolve(appDir, "src/shared/runRecordValidation.ts"),
+      resolve(appDir, "src/shared/runStore.ts"),
+      // FormState and its dependencies
+      resolve(appDir, "src/renderer/state/formState.ts"),
+      resolve(appDir, "src/renderer/constants/hyperparameters.ts"),
+    ]);
+
     for (const filePath of visited) {
-      // All files should be under src/mcp or src/shared
       const relativePath = filePath.replace(appDir + "/", "");
-      expect(
+      const isInMcpOrShared =
         relativePath.startsWith("src/mcp/") ||
-          relativePath.startsWith("src/shared/")
-      ).toBe(true);
+        relativePath.startsWith("src/shared/");
+      const isAllowlisted = allowlist.has(filePath);
+
+      if (!isInMcpOrShared && !isAllowlisted) {
+        throw new Error(
+          `Unexpected import outside src/mcp/ and src/shared/: ${relativePath}`
+        );
+      }
     }
   });
 

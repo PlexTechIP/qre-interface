@@ -754,6 +754,32 @@ export function upgradeRunRecord(record: RunRecord): RunRecord {
 }
 
 /**
+ * Application type for RunSummary — exposed to the MCP server and agents.
+ * Uploaded applications deliberately omit the filePath (data-egress risk).
+ * The type is discriminated by the "type" field matching the Application type.
+ */
+export type RunSummaryApplication =
+  | { type: "benchmark"; benchmarkId: string }
+  | { type: "uploaded"; format: UploadedProgramFormat }
+  | { type: "manualCounts" };
+
+/**
+ * Summarized run for MCP exposure — a stripped-down view of RunRecord.
+ * This type deliberately excludes most fields from the full RunRecord to keep
+ * the agent's context bounded and avoid flooding it with full configs, results,
+ * and raw engine output.
+ */
+export interface RunSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  savedAt: string;
+  status: "succeeded" | "failed";
+  architecture: ArchitectureType;
+  application: RunSummaryApplication;
+}
+
+/**
  * The filter set the Run History surface exposes (SOW Part 2). Every field is
  * optional; an omitted field does not constrain. `nameSearch` is a
  * case-insensitive substring over the run name; the rest are exact matches,
