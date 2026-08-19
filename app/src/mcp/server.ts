@@ -39,23 +39,15 @@ process.stdin.once("end", () => {
 // Handle process signals
 process.on("SIGINT", () => {
   logInfo("received SIGINT");
-  if (transportInstance) {
-    (transportInstance as any).close?.();
-  }
-  if (serverInstance) {
-    (serverInstance as any).close?.();
-  }
+  void transportInstance?.close();
+  void serverInstance?.close();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
   logInfo("received SIGTERM");
-  if (transportInstance) {
-    (transportInstance as any).close?.();
-  }
-  if (serverInstance) {
-    (serverInstance as any).close?.();
-  }
+  void transportInstance?.close();
+  void serverInstance?.close();
   process.exit(0);
 });
 

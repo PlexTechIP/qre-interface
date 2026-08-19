@@ -59,7 +59,7 @@ describe("MCP import graph validation", () => {
             }
           }
         }
-      } catch (error) {
+      } catch {
         // Silently skip files we can't read
       }
     }

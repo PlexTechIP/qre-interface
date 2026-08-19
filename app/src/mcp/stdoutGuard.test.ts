@@ -13,7 +13,7 @@ describe("installStdoutGuard", () => {
     installStdoutGuard({
       stdout: fakeStdout,
       stderr: stderrSink,
-      console: global.console as any,
+      console: global.console,
     });
 
     // Write directly to fakeStdout (simulating a stray write)
@@ -38,7 +38,7 @@ describe("installStdoutGuard", () => {
     const { protocolStream } = installStdoutGuard({
       stdout: realStdout,
       stderr: fakeStderr,
-      console: global.console as any,
+      console: global.console,
     });
 
     // Write to protocolStream
@@ -67,7 +67,7 @@ describe("installStdoutGuard", () => {
     const { protocolStream } = installStdoutGuard({
       stdout: realStdout,
       stderr: fakeStderr,
-      console: global.console as any,
+      console: global.console,
     });
 
     // Pause the underlying stream to trigger backpressure

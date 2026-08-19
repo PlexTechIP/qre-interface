@@ -49,27 +49,29 @@ export function installStdoutGuard(streams: StdoutGuardStreams): StdoutGuard {
   });
 
   // Replace stdout.write with a shim that forwards to stderr
-  (streams.stdout as any).write = function (
-    chunk: unknown,
-    encodingOrCb?: unknown,
-    cb?: unknown
-  ): boolean {
+  streams.stdout.write = ((
+    chunk: Uint8Array | string,
+    encodingOrCb?: BufferEncoding | ((error?: Error | null) => void),
+    cb?: (error?: Error | null) => void
+  ): boolean => {
     // Normalize arguments like the real write does
     let encoding: BufferEncoding = "utf8";
     let callback: ((error?: Error | null) => void) | undefined;
 
     if (typeof encodingOrCb === "function") {
-      callback = encodingOrCb as (error?: Error | null) => void;
+      callback = encodingOrCb;
     } else if (typeof encodingOrCb === "string") {
-      encoding = encodingOrCb as BufferEncoding;
-      if (typeof cb === "function") {
-        callback = cb as (error?: Error | null) => void;
-      }
+      encoding = encodingOrCb;
+      callback = cb;
     }
 
-    // Forward to stderr
-    return (streams.stderr as any).write(chunk, encoding, callback);
-  } as typeof process.stdout.write;
+    // Forward to stderr. Narrow on chunk type: the string overload takes an
+    // encoding, the Uint8Array overload does not.
+    if (typeof chunk === "string") {
+      return streams.stderr.write(chunk, encoding, callback);
+    }
+    return streams.stderr.write(chunk, callback);
+  }) as typeof streams.stdout.write;
 
   // Replace console methods that write to stdout with stderr equivalents
   const consoleMethodsToRedirect = [
@@ -89,10 +91,14 @@ export function installStdoutGuard(streams: StdoutGuardStreams): StdoutGuard {
   // Create a console that writes to stderr
   const stderrConsole = new Console(streams.stderr, streams.stderr);
 
+  function redirectMethod<K extends (typeof consoleMethodsToRedirect)[number]>(
+    key: K
+  ): void {
+    streams.console[key] = stderrConsole[key].bind(stderrConsole) as Console[K];
+  }
+
   for (const method of consoleMethodsToRedirect) {
-    (streams.console as any)[method] = (stderrConsole as any)[method].bind(
-      stderrConsole
-    );
+    redirectMethod(method);
   }
 
   return { protocolStream };
