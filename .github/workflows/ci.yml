@@ -2,11 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [week-2/team-3, main]
   push:
-    branches: [week-2/team-3, main]
 
 jobs:
+  # Ubuntu-only: repo is private, so Actions minutes are metered, and
+  # macOS/Windows cost far more per minute. Revisit once repo is public.
   node-checks:
     name: typecheck + fast unit tests
     runs-on: ubuntu-latest
@@ -34,8 +34,58 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Build
+        run: npm run build
+
+  # Only run on a PR or push to main, not every feature-branch push —
+  # keeps push cheap; node-checks still gives fast feedback either way.
+  lint:
+    name: lint
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+  dependency-audit:
+    name: dependency audit
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit (fails on new high/critical advisories)
+        run: npm audit --audit-level=high
+
   real-engine-checks:
     name: real QDK engine tests
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
