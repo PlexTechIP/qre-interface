@@ -14,7 +14,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { toolFailure, toolSuccess } from "../toolResult.js";
+import { storeAccessFailure, toolFailure, toolSuccess } from "../toolResult.js";
 import { generatedDraftFromFormState } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
 import { validateRunRecord } from "../../shared/runRecordValidation.js";
@@ -90,16 +90,8 @@ export async function handleDraftFromRun(
     return toolSuccess({ draft });
   } catch (error) {
     logError("draftFromRun handler error", error);
-    if (error && typeof error === "object" && "code" in error) {
-      const errCode = (error as { code?: string }).code;
-      if (
-        errCode === "DB_NOT_CONFIGURED" ||
-        errCode === "DB_NOT_FOUND" ||
-        errCode === "DB_SCHEMA_MISMATCH"
-      ) {
-        return toolFailure(errCode as "DB_NOT_CONFIGURED" | "DB_NOT_FOUND" | "DB_SCHEMA_MISMATCH", (error as { message?: string }).message || "Database error");
-      }
-    }
+    const storeFailure = storeAccessFailure(error);
+    if (storeFailure) return storeFailure;
     return toolFailure("DRAFT_UNSUPPORTED", "Failed to generate a draft from the run.");
   }
 }

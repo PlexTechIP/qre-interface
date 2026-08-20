@@ -92,9 +92,12 @@ describe("MCP import graph validation", () => {
     const allowlist = new Set<string>([
       // Benchmark registry
       resolve(appDir, "src/main/engine/benchmarkRegistry.ts"),
-      // SQLite store and its dependencies
-      resolve(appDir, "src/main/sqliteRunStore.ts"),
-      resolve(appDir, "src/main/databaseFile.ts"),
+      // The READ path of the SQLite store, and only the read path. The
+      // read-write `sqliteRunStore.ts` is deliberately absent: the MCP server
+      // may not migrate or write, so its module must not be reachable from
+      // this entry point at all.
+      resolve(appDir, "src/main/sqliteReadOnlyRunStore.ts"),
+      resolve(appDir, "src/main/sqliteRunStoreReader.ts"),
       resolve(appDir, "src/shared/runRecordValidation.ts"),
       resolve(appDir, "src/shared/runStore.ts"),
       // FormState and its dependencies

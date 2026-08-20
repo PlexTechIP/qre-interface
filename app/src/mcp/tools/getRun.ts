@@ -7,7 +7,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { toolFailure, toolSuccess } from "../toolResult.js";
+import { storeAccessFailure, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunDetail, type RunDetail } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
 import { validateRunRecord } from "../../shared/runRecordValidation.js";
@@ -70,16 +70,8 @@ export async function handleGetRun(input: GetRunInput): Promise<CallToolResult> 
     return toolSuccess(output);
   } catch (error) {
     logError("getRun handler error", error);
-    if (error && typeof error === "object" && "code" in error) {
-      const errCode = (error as { code?: string }).code;
-      if (
-        errCode === "DB_NOT_CONFIGURED" ||
-        errCode === "DB_NOT_FOUND" ||
-        errCode === "DB_SCHEMA_MISMATCH"
-      ) {
-        return toolFailure(errCode as "DB_NOT_CONFIGURED" | "DB_NOT_FOUND" | "DB_SCHEMA_MISMATCH", (error as { message?: string }).message || "Database error");
-      }
-    }
+    const storeFailure = storeAccessFailure(error);
+    if (storeFailure) return storeFailure;
     return toolFailure("STORE_READ_FAILED", "Failed to retrieve the run.");
   }
 }

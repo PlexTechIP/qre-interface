@@ -55,15 +55,19 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
-// Handle uncaught exceptions
+// Handle uncaught exceptions. The store is closed on the way out for the same
+// reason as on the ordinary paths: an abandoned handle leaves the database's
+// -wal file hot, and the next reader has to recover it.
 process.on("uncaughtException", (error: Error) => {
   logError("uncaught exception", error);
+  closeRunStore();
   process.exit(1);
 });
 
 // Handle unhandled rejections
 process.on("unhandledRejection", (reason: unknown) => {
   logError("unhandled rejection", reason);
+  closeRunStore();
   process.exit(1);
 });
 

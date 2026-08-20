@@ -866,12 +866,22 @@ export function queryRunRecords(records: readonly RunRecord[], filter: RunFilter
  * return newest-first; `get`/`query`/`list` hand back copies so callers can
  * never mutate stored state.
  */
-export interface RunStore {
-  save(record: RunRecord): Promise<void>;
+/**
+ * The read half of the store boundary.
+ *
+ * A consumer that must not change the run history takes this rather than
+ * `RunStore`, so "it only reads" is checked by the compiler instead of being
+ * asserted in a comment. The MCP server is the first such consumer.
+ */
+export interface ReadableRunStore {
   list(): Promise<RunRecord[]>;
   get(id: string): Promise<RunRecord | null>;
-  delete(id: string): Promise<void>;
   query(filter: RunFilter): Promise<RunRecord[]>;
+}
+
+export interface RunStore extends ReadableRunStore {
+  save(record: RunRecord): Promise<void>;
+  delete(id: string): Promise<void>;
 }
  
 /**

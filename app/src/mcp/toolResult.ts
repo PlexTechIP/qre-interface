@@ -12,12 +12,11 @@
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { isStoreAccessError, type StoreAccessErrorCode } from "./runStoreAccess.js";
 
 /** Allowlisted error codes for MCP tool failures. */
 export type ToolErrorCode =
-  | "DB_NOT_CONFIGURED"
-  | "DB_NOT_FOUND"
-  | "DB_SCHEMA_MISMATCH"
+  | StoreAccessErrorCode
   | "STORE_READ_FAILED"
   | "RUN_NOT_FOUND"
   | "INVALID_CURSOR"
@@ -34,6 +33,24 @@ export function toolFailure(code: ToolErrorCode, message: string): CallToolResul
     isError: true,
     structuredContent: { code, message },
   };
+}
+
+/**
+ * Turn a store-access failure into a tool result, or return null if this was
+ * not one.
+ *
+ * Every handler that touches the store ends its catch with this, so the set of
+ * store error codes lives in one place and a new one reaches clients without
+ * three separate edits.
+ *
+ * Forwarding `error.message` is safe here and only here: `runStoreAccess`
+ * authors all six of these messages itself and none of them names a path. Keep
+ * it that way — a message built from a resolved path would leak the analyst's
+ * filesystem layout to an external client.
+ */
+export function storeAccessFailure(error: unknown): CallToolResult | null {
+  if (!isStoreAccessError(error)) return null;
+  return toolFailure(error.code, error.message);
 }
 
 /**

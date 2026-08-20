@@ -4,29 +4,21 @@ import { validateRunRecord } from "../shared/runRecordValidation.js";
 import { prepareDatabasePath } from "./databaseFile.js";
 import { RunRecordExistsError } from "../shared/runStore.js";
 import {
+  DATABASE_SCHEMA_VERSION,
+  FACTORY_SET_DELIMITER,
+  encodeFactorySet,
+  selectAllRecords,
+  selectRecordById,
+  selectRecordsByFilter,
+} from "./sqliteRunStoreReader.js";
+import {
   applicationKey,
-  queryRunRecords,
-  upgradeRunRecord,
-  type MagicStateFactoryId,
   type RunFilter,
   type RunRecord,
   type RunStore,
 } from "../shared/types.js";
 
-export const DATABASE_SCHEMA_VERSION = 2;
-
-/**
- * The factory column holds a SET as of contract v1.2.0, encoded as the members
- * wrapped and joined by a delimiter: ["round_based","gsj24"] becomes
- * "|round_based|gsj24|". The leading/trailing bars make a containment test an
- * unambiguous substring match — "|gsj24|" cannot collide with a longer id the
- * way a bare "gsj24" could.
- */
-const FACTORY_SET_DELIMITER = "|";
-
-function encodeFactorySet(factories: readonly MagicStateFactoryId[]): string {
-  return `${FACTORY_SET_DELIMITER}${factories.join(FACTORY_SET_DELIMITER)}${FACTORY_SET_DELIMITER}`;
-}
+export { DATABASE_SCHEMA_VERSION };
 
 const INITIAL_SCHEMA = `
   CREATE TABLE IF NOT EXISTS run_records (
@@ -58,20 +50,6 @@ const INITIAL_SCHEMA = `
   CREATE INDEX IF NOT EXISTS run_records_newest_first_idx
     ON run_records(created_at DESC, saved_at DESC, id DESC);
 `;
-
-/**
- * Rows are stored verbatim as saved, so a row written under v1.1.0 still carries
- * the singular `magicStateFactory`. The upgrade happens HERE, at the read
- * boundary, so every consumer above sees exactly one shape and the stored JSON
- * is never rewritten in place.
- */
-function readStoredRecord(row: Record<string, unknown>): RunRecord {
-  const recordJson = row.record_json;
-  if (typeof recordJson !== "string") {
-    throw new Error("SQLite run record is missing its JSON payload.");
-  }
-  return upgradeRunRecord(JSON.parse(recordJson) as RunRecord);
-}
 
 function isPrimaryKeyConstraint(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("errcode" in error))
@@ -153,23 +131,11 @@ export class SqliteRunStore implements RunStore {
   }
 
   async list(): Promise<RunRecord[]> {
-    const rows = this.database
-      .prepare(
-        `
-        SELECT record_json
-        FROM run_records
-        ORDER BY created_at DESC, saved_at DESC, id DESC
-      `,
-      )
-      .all();
-    return rows.map(readStoredRecord);
+    return selectAllRecords(this.database);
   }
 
   async get(id: string): Promise<RunRecord | null> {
-    const row = this.database
-      .prepare("SELECT record_json FROM run_records WHERE id = ?")
-      .get(id);
-    return row === undefined ? null : readStoredRecord(row);
+    return selectRecordById(this.database, id);
   }
 
   async delete(id: string): Promise<void> {
@@ -177,47 +143,7 @@ export class SqliteRunStore implements RunStore {
   }
 
   async query(filter: RunFilter): Promise<RunRecord[]> {
-    const predicates: string[] = [];
-    const parameters: string[] = [];
-
-    const addExactFilter = (
-      column: string,
-      value: string | undefined,
-    ): void => {
-      if (value === undefined) return;
-      predicates.push(`${column} = ?`);
-      parameters.push(value);
-    };
-
-    addExactFilter("application", filter.application);
-    addExactFilter("architecture", filter.architecture);
-    addExactFilter("qec_code", filter.qecCode);
-    addExactFilter("qre_version", filter.qreVersion);
-
-    // The factory column is a set, so this narrows by CONTAINMENT rather than
-    // equality: a run that selected several factories matches on any of them.
-    if (filter.magicStateFactory !== undefined) {
-      predicates.push("magic_state_factory LIKE ?");
-      parameters.push(`%${encodeFactorySet([filter.magicStateFactory])}%`);
-    }
-
-    const whereClause =
-      predicates.length === 0 ? "" : `WHERE ${predicates.join(" AND ")}`;
-    const rows = this.database
-      .prepare(
-        `
-        SELECT record_json
-        FROM run_records
-        ${whereClause}
-        ORDER BY created_at DESC, saved_at DESC, id DESC
-      `,
-      )
-      .all(...parameters)
-      .map(readStoredRecord);
-
-    // Keep the committed helper as the final authority for name-search and
-    // ordering semantics after SQLite narrows the indexed exact-match fields.
-    return queryRunRecords(rows, filter);
+    return selectRecordsByFilter(this.database, filter);
   }
 
   /** Close the underlying connection during application shutdown or test cleanup. */
