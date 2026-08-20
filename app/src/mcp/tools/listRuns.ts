@@ -8,7 +8,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { storeAccessFailure, toolFailure, toolSuccess } from "../toolResult.js";
+import { runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunSummary } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
 import { validateRunRecord } from "../../shared/runRecordValidation.js";
@@ -133,7 +133,10 @@ function matchesFilter(record: RunRecord, filter: ListRunsInput["filter"]): bool
 export async function handleListRuns(
   input: ListRunsInput,
 ): Promise<CallToolResult> {
-  try {
+  return runTool(
+    "listRuns",
+    { code: "STORE_READ_FAILED", message: "Failed to list runs." },
+    async () => {
     const limit = Math.min(input.limit ?? 25, 100);
     if (limit < 1) {
       return toolFailure("STORE_READ_FAILED", "limit must be at least 1");
@@ -203,12 +206,8 @@ export async function handleListRuns(
       }
     }
 
-    return toolSuccess(output);
-  } catch (error) {
-    logError("listRuns handler error", error);
-    const storeFailure = storeAccessFailure(error);
-    if (storeFailure) return storeFailure;
-    return toolFailure("STORE_READ_FAILED", "Failed to list runs.");
-  }
+    return toolSuccess(output satisfies ListRunsOutput);
+    },
+  );
 }
 

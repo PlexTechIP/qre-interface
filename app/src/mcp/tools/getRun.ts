@@ -7,7 +7,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { storeAccessFailure, toolFailure, toolSuccess } from "../toolResult.js";
+import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunDetail, type RunDetail } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
 import { validateRunRecord } from "../../shared/runRecordValidation.js";
@@ -33,32 +33,36 @@ const MAX_OUTPUT_SIZE = 65536; // ~64 KiB
  * Tool handler for qre_get_run.
  */
 export async function handleGetRun(input: GetRunInput): Promise<CallToolResult> {
-  try {
+  return runTool("getRun", { code: "STORE_READ_FAILED", message: "Failed to retrieve the run." }, async () => {
     if (!input.id || input.id.trim() === "") {
       return toolFailure("STORE_READ_FAILED", "Run ID is required and must not be empty");
     }
 
-    const store = getRunStore();
-    const record = await store.get(input.id);
-
+    const record = await getRunStore().get(input.id);
     if (!record) {
-      return toolFailure("RUN_NOT_FOUND", `No run found with ID: ${input.id}`);
+      // The id is the one string the caller fully controls, so it is bounded
+      // before being echoed. `boundedText` also escapes it.
+      return toolFailure(
+        "RUN_NOT_FOUND",
+        `No run found with ID: ${boundedText(input.id, 100)}`,
+      );
     }
 
-    // Validate the record
     const validation = validateRunRecord(record);
     if (!validation.valid) {
-      logError("Invalid run record in store", { id: record.id, errors: validation.errors });
+      logError("Invalid run record in store", {
+        id: record.id,
+        errors: validation.errors,
+      });
       return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
     }
 
-    // Project to RunDetail
-    const detail = toRunDetail(record);
+    const output: GetRunOutput = { run: toRunDetail(record) };
 
-    // Check output size
-    const output: GetRunOutput = { run: detail };
+    // NOTE: rejecting an oversized run rather than bounding the projection is
+    // a known defect (the message claims a truncation that did not happen).
+    // Left as-is deliberately: replacing it is its own change.
     const jsonSize = estimateJsonSize(output);
-
     if (jsonSize > MAX_OUTPUT_SIZE) {
       logError("RunDetail output too large", { id: input.id, size: jsonSize });
       return toolFailure(
@@ -68,11 +72,5 @@ export async function handleGetRun(input: GetRunInput): Promise<CallToolResult> 
     }
 
     return toolSuccess(output);
-  } catch (error) {
-    logError("getRun handler error", error);
-    const storeFailure = storeAccessFailure(error);
-    if (storeFailure) return storeFailure;
-    return toolFailure("STORE_READ_FAILED", "Failed to retrieve the run.");
-  }
+  });
 }
-

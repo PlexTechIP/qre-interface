@@ -5,8 +5,8 @@ import { BENCHMARK_REGISTRY } from "../../main/engine/benchmarkRegistry.js";
 import type { ListBenchmarksOutput } from "./listBenchmarks.js";
 
 describe("qre_list_benchmarks tool", () => {
-  it("returns all benchmarks from the registry", () => {
-    const result = handleListBenchmarks();
+  it("returns all benchmarks from the registry", async () => {
+    const result = await handleListBenchmarks();
 
     expect(result.isError).toBeFalsy();
     const data = result.structuredContent as unknown as ListBenchmarksOutput;
@@ -22,8 +22,8 @@ describe("qre_list_benchmarks tool", () => {
     }
   });
 
-  it("includes only safe fields (no sourcePath)", () => {
-    const result = handleListBenchmarks();
+  it("includes only safe fields (no sourcePath)", async () => {
+    const result = await handleListBenchmarks();
 
     expect(result.isError).toBeFalsy();
     const data = result.structuredContent as unknown as ListBenchmarksOutput;
@@ -42,8 +42,8 @@ describe("qre_list_benchmarks tool", () => {
     }
   });
 
-  it("benchmark fields have correct types", () => {
-    const result = handleListBenchmarks();
+  it("benchmark fields have correct types", async () => {
+    const result = await handleListBenchmarks();
 
     expect(result.isError).toBeFalsy();
     const data = result.structuredContent as unknown as ListBenchmarksOutput;
@@ -56,8 +56,8 @@ describe("qre_list_benchmarks tool", () => {
     }
   });
 
-  it("returns text content mirroring structuredContent (protocol-shape check)", () => {
-    const result = handleListBenchmarks();
+  it("returns text content mirroring structuredContent (protocol-shape check)", async () => {
+    const result = await handleListBenchmarks();
 
     expect(result.content).toBeDefined();
     expect(Array.isArray(result.content)).toBe(true);

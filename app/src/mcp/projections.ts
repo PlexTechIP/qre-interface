@@ -5,7 +5,7 @@
  * properly-escaped user-authored text and no sensitive internal fields.
  */
 
-import { capText, escapeControlChars } from "./toolResult.js";
+import { boundedText } from "./toolResult.js";
 import type {
   RunRecord,
   RunSummary,
@@ -47,14 +47,11 @@ export interface RunDetail {
  * - Returns only the 6 key fields for agent understanding
  */
 export function toRunSummary(record: RunRecord): RunSummary {
-  const cappedName = capText(record.config.name, 200);
-  const escapedName = escapeControlChars(cappedName);
-
   const application = buildRunSummaryApplication(record.config.application);
 
   return {
     id: record.id,
-    name: escapedName,
+    name: boundedText(record.config.name, 200),
     createdAt: record.config.createdAt,
     savedAt: record.savedAt,
     status: record.result.status,
@@ -72,8 +69,6 @@ export function toRunSummary(record: RunRecord): RunSummary {
  * - Returns error details capped and escaped, with no stack trace or path
  */
 export function toRunDetail(record: RunRecord): RunDetail {
-  const cappedName = capText(record.config.name, 200);
-  const escapedName = escapeControlChars(cappedName);
 
   const application = buildRunSummaryApplication(record.config.application);
 
@@ -85,17 +80,17 @@ export function toRunDetail(record: RunRecord): RunDetail {
   // Escape error message if present
   let error = record.result.error;
   if (error !== null) {
-    const cappedMessage = capText(error.message, 1000);
-    const escapedMessage = escapeControlChars(cappedMessage);
     error = {
       code: error.code,
-      message: escapedMessage,
+      // Engine failures carry up to 2000 characters of Python stderr, so this
+      // is the field that most needs path redaction, not just capping.
+      message: boundedText(error.message, 1000),
     };
   }
 
   return {
     id: record.id,
-    name: escapedName,
+    name: boundedText(record.config.name, 200),
     createdAt: record.config.createdAt,
     savedAt: record.savedAt,
     startedAt: record.result.startedAt,

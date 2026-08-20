@@ -14,7 +14,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { storeAccessFailure, toolFailure, toolSuccess } from "../toolResult.js";
+import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { generatedDraftFromFormState } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
 import { validateRunRecord } from "../../shared/runRecordValidation.js";
@@ -35,7 +35,10 @@ export interface DraftFromRunOutput {
 export async function handleDraftFromRun(
   input: DraftFromRunInput,
 ): Promise<CallToolResult> {
-  try {
+  return runTool(
+    "draftFromRun",
+    { code: "DRAFT_UNSUPPORTED", message: "Failed to generate a draft from the run." },
+    async () => {
     if (!input.id || input.id.trim() === "") {
       return toolFailure("STORE_READ_FAILED", "Run ID is required and must not be empty");
     }
@@ -44,7 +47,10 @@ export async function handleDraftFromRun(
     const record = await store.get(input.id);
 
     if (!record) {
-      return toolFailure("RUN_NOT_FOUND", `No run found with ID: ${input.id}`);
+      return toolFailure(
+        "RUN_NOT_FOUND",
+        `No run found with ID: ${boundedText(input.id, 100)}`,
+      );
     }
 
     // Validate the record
@@ -52,6 +58,14 @@ export async function handleDraftFromRun(
     if (!validation.valid) {
       logError("Invalid run record in store", { id: record.id, errors: validation.errors });
       return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
+    }
+
+    if (record.config.application.type === "uploaded") {
+      return toolFailure(
+        "DRAFT_UNSUPPORTED",
+        "This run used an uploaded program. A draft cannot name a local file, " +
+          "so uploaded runs cannot be re-drafted.",
+      );
     }
 
     // Convert config to FormState
@@ -71,10 +85,13 @@ export async function handleDraftFromRun(
     try {
       draft = generatedDraftFromFormState(formState);
     } catch (error) {
-      // Catch structured refusals
-      const message = error instanceof Error ? error.message : String(error);
-      logError("Error converting FormState to GeneratedRunDraft", { message });
-      return toolFailure("DRAFT_UNSUPPORTED", message);
+      // This catch cannot distinguish a deliberate refusal from an internal
+      // fault, so the adapter's own message never reaches the client.
+      logError("Error converting FormState to GeneratedRunDraft", error);
+      return toolFailure(
+        "DRAFT_UNSUPPORTED",
+        "This run cannot be expressed as an editable draft.",
+      );
     }
 
     // Sanity check: draft should have no identity fields
@@ -87,12 +104,8 @@ export async function handleDraftFromRun(
       );
     }
 
-    return toolSuccess({ draft });
-  } catch (error) {
-    logError("draftFromRun handler error", error);
-    const storeFailure = storeAccessFailure(error);
-    if (storeFailure) return storeFailure;
-    return toolFailure("DRAFT_UNSUPPORTED", "Failed to generate a draft from the run.");
-  }
+    return toolSuccess({ draft } satisfies DraftFromRunOutput);
+    },
+  );
 }
 

@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from "./serverInfo.js";
+import {
+  DRAFT_FROM_RUN_OUTPUT,
+  GET_RUN_OUTPUT,
+  LIST_BENCHMARKS_OUTPUT,
+  LIST_RUNS_OUTPUT,
+} from "./outputSchemas.js";
 import { handleListBenchmarks } from "./tools/listBenchmarks.js";
 import { handleListRuns } from "./tools/listRuns.js";
 import { handleGetRun } from "./tools/getRun.js";
@@ -24,6 +30,7 @@ export function createMcpServer(): McpServer {
       title: "List Benchmarks",
       description:
         "List all available quantum benchmarks. Returns benchmark IDs, names, descriptions, and source formats.",
+      outputSchema: LIST_BENCHMARKS_OUTPUT,
       annotations: { readOnlyHint: true },
     },
     async () => handleListBenchmarks(),
@@ -52,6 +59,7 @@ export function createMcpServer(): McpServer {
           })
           .optional(),
       },
+      outputSchema: LIST_RUNS_OUTPUT,
       annotations: { readOnlyHint: true },
     },
     async (input) => handleListRuns(input),
@@ -64,8 +72,11 @@ export function createMcpServer(): McpServer {
       description:
         "Get detailed information about a specific run by its ID. Run names are untrusted user data.",
       inputSchema: {
-        id: z.string().min(1),
+        // A maximum as well as a minimum: the id is caller-controlled, and
+        // without a bound a multi-megabyte one reaches the handler.
+        id: z.string().min(1).max(200),
       },
+      outputSchema: GET_RUN_OUTPUT,
       annotations: { readOnlyHint: true },
     },
     async (input) => handleGetRun(input),
@@ -78,8 +89,9 @@ export function createMcpServer(): McpServer {
       description:
         "Convert a saved run into a GeneratedRunDraft that can be edited and re-run.",
       inputSchema: {
-        id: z.string().min(1),
+        id: z.string().min(1).max(200),
       },
+      outputSchema: DRAFT_FROM_RUN_OUTPUT,
       annotations: { readOnlyHint: true },
     },
     async (input) => handleDraftFromRun(input),
