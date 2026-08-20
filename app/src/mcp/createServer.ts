@@ -5,10 +5,14 @@ import { handleListBenchmarks } from "./tools/listBenchmarks.js";
 import { handleListRuns } from "./tools/listRuns.js";
 import { handleGetRun } from "./tools/getRun.js";
 import { handleDraftFromRun } from "./tools/draftFromRun.js";
+import { handleValidateConfig } from "./tools/validateConfig.js";
 import {
   ARCHITECTURE_TYPES,
   QEC_CODE_IDS,
   MAGIC_STATE_FACTORY_IDS,
+  SECONDARY_FACTORY_IDS,
+  MEMORY_OPTIMIZATION_IDS,
+  BENCHMARK_IDS,
 } from "../shared/types.js";
 
 export function createMcpServer(): McpServer {
@@ -83,6 +87,80 @@ export function createMcpServer(): McpServer {
       annotations: { readOnlyHint: true },
     },
     async (input) => handleDraftFromRun(input),
+  );
+
+  server.registerTool(
+    "qre_validate_config",
+    {
+      title: "Validate Config",
+      description:
+        "Validate a GeneratedRunDraft against the full pipeline requirements. Reports coupling violations, form errors, and schema violations without silently repairing them.",
+      inputSchema: {
+        draft: z.strictObject({
+          name: z.string().nullable(),
+          application: z.union([
+            z.strictObject({
+              type: z.literal("benchmark"),
+              benchmarkId: z.enum(BENCHMARK_IDS),
+            }),
+            z.strictObject({
+              type: z.literal("manualCounts"),
+              numQubits: z.number(),
+              tCount: z.number(),
+              rotationCount: z.number(),
+              rotationDepth: z.number(),
+              cczCount: z.number(),
+              ccixCount: z.number(),
+              measurementCount: z.number(),
+            }),
+          ]),
+          architecture: z.union([
+            z.strictObject({
+              type: z.literal("gateBased"),
+              errorRate: z.number(),
+              gateTime: z.number(),
+              measurementTime: z.number(),
+              twoQubitGateTime: z.number().nullable(),
+            }),
+            z.strictObject({
+              type: z.literal("majorana"),
+              errorRate: z.union([
+                z.literal(0.0001),
+                z.literal(0.00001),
+                z.literal(0.000001),
+              ]),
+              operationTime: z.number(),
+            }),
+            z.strictObject({
+              type: z.literal("neutralAtom"),
+              rydbergTime: z.number(),
+              rydbergError: z.number(),
+              singleQubitTime: z.number(),
+              singleQubitError: z.number(),
+              measurementTime: z.number(),
+              measurementError: z.number(),
+              handoffTime: z.number(),
+              atomSpacing: z.number(),
+              maxVelocity: z.number(),
+              maxAcceleration: z.number(),
+              surfaceCodeOneQubitTimeFactor: z.number(),
+              surfaceCodeTwoQubitTimeFactor: z.number(),
+            }),
+          ]),
+          magicStateFactories: z.array(z.enum(MAGIC_STATE_FACTORY_IDS)),
+          secondaryFactories: z.array(z.enum(SECONDARY_FACTORY_IDS)),
+          memoryOptimization: z.enum(MEMORY_OPTIMIZATION_IDS),
+          traceTransform: z.strictObject({
+            tStatesPerRotation: z.number(),
+            ccxMagicStates: z.boolean(),
+          }),
+          maxError: z.number(),
+          parameters: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])),
+        }),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async (input) => handleValidateConfig(input),
   );
 
   return server;

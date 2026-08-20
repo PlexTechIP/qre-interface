@@ -21,7 +21,8 @@ export type ToolErrorCode =
   | "STORE_READ_FAILED"
   | "RUN_NOT_FOUND"
   | "INVALID_CURSOR"
-  | "DRAFT_UNSUPPORTED";
+  | "DRAFT_UNSUPPORTED"
+  | "VALIDATION_FAILED";
 
 /**
  * Build an MCP error result for a tool. Takes an allowlisted error code and

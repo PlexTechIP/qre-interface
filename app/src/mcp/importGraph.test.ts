@@ -100,6 +100,12 @@ describe("MCP import graph validation", () => {
       // FormState and its dependencies
       resolve(appDir, "src/renderer/state/formState.ts"),
       resolve(appDir, "src/renderer/constants/hyperparameters.ts"),
+      // Validation tools
+      resolve(appDir, "src/main/draftValidation.ts"),
+      resolve(appDir, "src/renderer/state/validation.ts"),
+      resolve(appDir, "src/renderer/state/toRunConfig.ts"),
+      resolve(appDir, "src/renderer/state/schemaValidation.ts"),
+      resolve(appDir, "src/renderer/constants/benchmarkParams.ts"),
     ]);
 
     for (const filePath of visited) {
