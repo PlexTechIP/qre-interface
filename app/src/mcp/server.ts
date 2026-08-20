@@ -10,6 +10,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createMcpServer } from "./createServer.js";
 import { logInfo, logError } from "./logger.js";
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from "./serverInfo.js";
+import { closeRunStore } from "./runStoreAccess.js";
 
 let serverInstance: ReturnType<typeof createMcpServer> | null = null;
 let transportInstance: StdioServerTransport | null = null;
@@ -33,12 +34,14 @@ async function main(): Promise<void> {
 // Handle stdin end
 process.stdin.once("end", () => {
   logInfo("stdin ended");
+  closeRunStore();
   process.exit(0);
 });
 
 // Handle process signals
 process.on("SIGINT", () => {
   logInfo("received SIGINT");
+  closeRunStore();
   void transportInstance?.close();
   void serverInstance?.close();
   process.exit(0);
@@ -46,6 +49,7 @@ process.on("SIGINT", () => {
 
 process.on("SIGTERM", () => {
   logInfo("received SIGTERM");
+  closeRunStore();
   void transportInstance?.close();
   void serverInstance?.close();
   process.exit(0);

@@ -1514,3 +1514,40 @@ dashboard behavior exceeds Part F ownership.
 
 **[VERIFIED]** The write-tool line did not move: no delete tool is added, no read
 tool calls `SqliteRunStore.save`, and Part F adds no call to `QreEngine.run`.
+
+#### Part D verification log (2026-08-19)
+
+**[VERIFIED · 2026-08-19]** §7.3 (store as an injection path) — partially handled,
+remainder ticketed. Run names are user-authored free text and `qre_list_runs`/`qre_get_run`
+return them into the agent's context, so we handled the parts that are cheap and honest:
+every user-originated string (run `name`, engine error text) is returned in a labelled
+structured field rather than in handler-authored prose, capped at 200 Unicode code points
+for names and 1,000 for other user/engine text, with control characters escaped; and each
+read tool's description states that returned names are untrusted user data. We deliberately
+did not attempt to detect or strip "injection-shaped" text — that is not a reliable parser,
+it mutates legitimate analyst data, and an attacker rephrases around it in one edit. The
+general output-sanitization framework, an invocation log, and dropping `name` entirely in
+favor of ids are ticketed for a future security pass, not built here. The mitigation that
+matters most in v1 is structural and already holds: this server has no write tools, so an
+injected instruction has nothing to act on.
+
+**[VERIFIED · 2026-08-19]** §7.4 (read tools move data off the machine) — noted for
+analyst setup docs, no code change. Every one of these four tools moves QRE data — run
+names, configurations, benchmark choices, results — into the agent's context, and for a
+hosted model that means off the analyst's machine and into a third-party provider. The
+dashboard is otherwise a local, offline app with a local unencrypted SQLite file, so
+enabling this server changes its data-egress profile fundamentally. The analyst-facing
+setup documentation should state this plainly next to the `QRE_DB_PATH` configuration
+instructions. The bounded projections (`RunSummary` over full `RunRecord`, `RunDetail`
+without `raw`) exist partly to limit the blast radius of this egress, not just for
+context-window reasons.
+
+**[VERIFIED · 2026-08-19]** Pagination for `qre_list_runs` is done in-memory over the
+full result set, not in SQL. The store's `list()` and `query()` methods return all matching
+records in a single call; the tool handler filters and paginates in memory using a keyset-based
+(not offset-based) cursor over `(createdAt, savedAt, id)` composite key, base64url-encoded.
+This trades query efficiency for simplicity and correctness: every model session sees the
+same total row count and identical iteration order regardless of concurrent writes from other
+sessions, because the cursor is stable once the working set is fetched. A future optimization
+can push pagination into SQL once row counts are measured under realistic workloads and
+concurrent-write interference is profiled.
