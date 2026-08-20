@@ -15,6 +15,8 @@ import type {
   ArchitectureType,
 } from "../shared/types.js";
 import type { FormState } from "../renderer/state/formState.js";
+import { createInitialFormState } from "../renderer/state/formState.js";
+import { defaultHyperparams } from "../renderer/constants/hyperparameters.js";
 import type { GeneratedRunDraft } from "../shared/agentTypes.js";
 
 /**
@@ -296,4 +298,116 @@ export function generatedDraftFromFormState(state: FormState): GeneratedRunDraft
     maxError: state.maxError ?? 1.0,
     parameters,
   };
+}
+
+/**
+ * Convert a GeneratedRunDraft into an editable FormState.
+ *
+ * Deliberately does NOT call normalizeFormState — that would silently repair
+ * coupling violations (e.g. drop a disallowed factory) that a validation tool
+ * needs to catch and report instead.
+ */
+export function generatedDraftToFormState(draft: GeneratedRunDraft): FormState {
+  // Start from defaults
+  const state = createInitialFormState();
+
+  // name: copy directly, leave empty string if null
+  const next: FormState = {
+    ...state,
+    name: draft.name ?? "",
+  };
+
+  // application: overlay type and benchmark/manual-counts fields
+  if (draft.application.type === "benchmark") {
+    const defaults = defaultHyperparams(draft.application.benchmarkId);
+    // Overlay draft parameters on top of defaults
+    // Note: draft.parameters can have boolean but HyperparamValue doesn't, so we cast
+    const overlaid = { ...defaults };
+    for (const [key, value] of Object.entries(draft.parameters)) {
+      // Store as-is; the form will handle any type mismatches during validation
+      overlaid[key] = value as never;
+    }
+    next.application = {
+      ...state.application,
+      type: "benchmark",
+      benchmarkId: draft.application.benchmarkId,
+      // Overlay hyperparameters for the selected benchmark on top of defaults
+      hyperparams: {
+        ...state.application.hyperparams,
+        [draft.application.benchmarkId]: overlaid,
+      },
+    };
+  } else if (draft.application.type === "manualCounts") {
+    next.application = {
+      ...state.application,
+      type: "manualCounts",
+      manualCounts: {
+        numQubits: draft.application.numQubits,
+        tCount: draft.application.tCount,
+        rotationCount: draft.application.rotationCount,
+        rotationDepth: draft.application.rotationDepth,
+        cczCount: draft.application.cczCount,
+        ccixCount: draft.application.ccixCount,
+        measurementCount: draft.application.measurementCount,
+      },
+    };
+  }
+
+  // architecture: overlay the draft's architecture variant onto the matching sub-object
+  const arch = { ...state.architecture };
+  if (draft.architecture.type === "gateBased") {
+    arch.type = "gateBased";
+    arch.gateBased = {
+      errorRate: draft.architecture.errorRate,
+      gateTime: draft.architecture.gateTime,
+      measurementTime: draft.architecture.measurementTime,
+      twoQubitGateTime: draft.architecture.twoQubitGateTime,
+    };
+  } else if (draft.architecture.type === "majorana") {
+    arch.type = "majorana";
+    arch.majorana = {
+      ...state.architecture.majorana,
+      errorRate: draft.architecture.errorRate,
+      operationTime: draft.architecture.operationTime,
+      // tErrorRate and targetYear are left at their defaults (null)
+      // — the draft cannot carry them
+    };
+  } else if (draft.architecture.type === "neutralAtom") {
+    arch.type = "neutralAtom";
+    arch.neutralAtom = {
+      ...state.architecture.neutralAtom,
+      rydbergTime: draft.architecture.rydbergTime,
+      rydbergError: draft.architecture.rydbergError,
+      singleQubitTime: draft.architecture.singleQubitTime,
+      singleQubitError: draft.architecture.singleQubitError,
+      measurementTime: draft.architecture.measurementTime,
+      measurementError: draft.architecture.measurementError,
+      handoffTime: draft.architecture.handoffTime,
+      atomSpacing: draft.architecture.atomSpacing,
+      maxVelocity: draft.architecture.maxVelocity,
+      maxAcceleration: draft.architecture.maxAcceleration,
+      surfaceCodeOneQubitTimeFactor: draft.architecture.surfaceCodeOneQubitTimeFactor,
+      surfaceCodeTwoQubitTimeFactor: draft.architecture.surfaceCodeTwoQubitTimeFactor,
+      // dataQubitSpacing and targetYear are left at their defaults (null)
+      // — the draft cannot carry them
+    };
+  }
+  next.architecture = arch;
+
+  // magic state factories, secondary factories, memory optimization, maxError: copy directly
+  next.magicStateFactories = draft.magicStateFactories;
+  next.secondaryFactories = draft.secondaryFactories;
+  next.memoryOptimization = draft.memoryOptimization;
+  next.maxError = draft.maxError;
+
+  // trace transform: overlay only tStatesPerRotation and ccxMagicStates
+  next.traceTransform = {
+    ...state.traceTransform,
+    tStatesPerRotation: draft.traceTransform.tStatesPerRotation,
+    ccxMagicStates: draft.traceTransform.ccxMagicStates,
+    // dynamicMemoryCompute and unmemory are left at their defaults
+    // — the draft cannot carry them
+  };
+
+  return next;
 }
