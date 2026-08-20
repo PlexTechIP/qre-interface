@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 describe("SqliteRunStore schema", () => {
-  it("creates a file-backed database, schema, and every required index", () => {
+  it("creates a WAL-backed database, schema, and every required index", () => {
     const databasePath = makeDatabasePath();
     const store = new SqliteRunStore(databasePath);
     store.close();
@@ -115,6 +115,7 @@ describe("SqliteRunStore schema", () => {
 
     const database = new DatabaseSync(databasePath, { readOnly: true });
     const version = database.prepare("PRAGMA user_version").get();
+    const journalMode = database.prepare("PRAGMA journal_mode").get();
     const indexes = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'run_records_%_idx'",
@@ -124,6 +125,7 @@ describe("SqliteRunStore schema", () => {
     database.close();
 
     expect(version?.user_version).toBe(2);
+    expect(journalMode?.journal_mode).toBe("wal");
     expect(indexes).toEqual(
       expect.arrayContaining([
         "run_records_name_idx",

@@ -14,9 +14,9 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 **Work split — fill this in at kickoff and commit it:**
 
-- Melody: _______________________
-- Rishabh: _______________________
-- Shared / pairing on: _______________________
+- Melody: §C (scaffold), §D (four read tools), §H (`qre_validate_config` if time permits)
+- Rishabh: §B (concurrency spike), §E (open items), §F (design and risk audit)
+- Shared / pairing on: §G's required teammate reviews and final merge verification only; no shared implementation ownership
 
 > §B (the spike) and §C (the scaffold) are genuinely independent and both are
 > day-one work. Splitting them one each is the obvious move and it is the right
@@ -24,9 +24,9 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 ## A. Day 0
 
-- [ ] `git fetch && git switch week-6/team-2` — **the PMs created it off `main`
+- [x] `git fetch && git switch week-6/team-2` — **the PMs created it off `main`
       at kickoff.** Do not create your own team branch; do not branch off week 5
-- [ ] **Do not commit directly to the team branch.** Every piece of work gets its
+- [x] **Do not commit directly to the team branch.** Every piece of work gets its
       own branch off it, named `week-6/team-2-<thing>`, which PRs back in. For this
       track that is roughly:
       `week-6/team-2-concurrency-spike` · `week-6/team-2-mcp-scaffold` ·
@@ -37,9 +37,13 @@ Your mission in one line: **prove the design runs, then build its read half.**
 - [ ] `nvm use` (Node **24.18.0**), `npm ci` in `app/`, then
       `npm run typecheck && npm test` — **green before you change anything.**
       654 tests across 58 files is the number you should see
-- [ ] Read the design sections above. **§10's cost table twice** — v1 is ~15–20
+      **Local exception:** Node 24.18.0, `npm ci`, and typecheck are green; 646/654
+      tests pass. Eight real-engine tests cannot load PyQIR 0.12.5 on macOS 13.0
+      because the OS libc++ lacks `__libcpp_verbose_abort`. Recorded in the spike
+      write-up; full acceptance requires CI or a supported OS.
+- [x] Read the design sections above. **§10's cost table twice** — v1 is ~15–20
       dev-days and you have ~4.5–6. The scope here is already cut to fit
-- [ ] Confirm the feasibility claim yourself before building on it:
+- [x] Confirm the feasibility claim yourself before building on it:
       `grep -rln 'from "electron"' app/src/main/` — `QreEngine`, `SqliteRunStore`,
       and `benchmarkRegistry` should not appear
 - [ ] Note in the channel that you need `app/package.json` for the SDK dependency
@@ -48,19 +52,19 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 ## B. The concurrency spike — first
 
-- [ ] Two Node processes, one temp `run-history.sqlite`, one writing in a loop
+- [x] Two Node processes, one temp `run-history.sqlite`, one writing in a loop
       while the other reads and writes. No MCP, no SDK, no Electron
-- [ ] Measure **concurrent reads**
-- [ ] Measure **a read during a write**
-- [ ] Measure **two writers** — what actually happens at the 5 s busy timeout
-- [ ] Measure **§4.1's case: two processes opening a database one `user_version`
+- [x] Measure **concurrent reads**
+- [x] Measure **a read during a write**
+- [x] Measure **two writers** — what actually happens at the 5 s busy timeout
+- [x] Measure **§4.1's case: two processes opening a database one `user_version`
       behind, at the same time.** The store runs schema DDL at open, so this is the
       one nobody has looked at
-- [ ] Run all four **under default rollback-journal mode and under WAL**
-- [ ] Write up what you observed — numbers you measured, not numbers you reasoned
+- [x] Run all four **under default rollback-journal mode and under WAL**
+- [x] Write up what you observed — numbers you measured, not numbers you reasoned
       to. **A result that says "this corrupts" is the best outcome of the month**
       and changes the design; say so plainly if you see it
-- [ ] Commit the spike scripts. They are evidence, and the next person to ask this
+- [x] Commit the spike scripts. They are evidence, and the next person to ask this
       question should not start from zero
 - [ ] **Land this on `main` on its own**, before the scaffold is finished. It is
       independently valuable and there is no reason it should wait
@@ -101,21 +105,23 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 ## E. Close three open items, in writing
 
-- [ ] **OPEN-1** — the "never migrates; refuses on version mismatch" rule (§4.1),
+- [x] **OPEN-1** — the "never migrates; refuses on version mismatch" rule (§4.1),
       informed by your spike
-- [ ] **OPEN-2** — WAL: enable it in `SqliteRunStore`, or record the decision not
+- [x] **OPEN-2** — WAL: enable it in `SqliteRunStore`, or record the decision not
       to. **If the spike says enable it, the one-line change is yours** — say so in
-      the PR and get a PM on the review
-- [ ] **OPEN-3** — `ConfigDraft` shape: raw `FormState` or a flattened projection
+      the PR and get a PM on the review. Enabled after migration; PM review is
+      still required before merge
+- [x] **OPEN-3** — `ConfigDraft` shape: raw `FormState` or a flattened projection
       (§6.1). **Decide this even if §F gets cut**
-- [ ] Append the answers to `mcp-server-design.md` as a dated, signed section in
+- [x] Append the answers to `mcp-server-design.md` as a dated, signed section in
       its existing `[VERIFIED]` / `[INFERENCE]` register. **Do not start a second
       document**
-- [ ] **Correct §3's preload count while you are there.** It says four; there are
+- [x] **Correct §3's preload count while you are there.** It says four; there are
       now **five** — `estimator`, `uploads`, `store`, `agent`, `files`
       (`preload.ts:101-105`). `agent` landed after the document was written
 - [ ] **File, do not fix:** `main.ts:62` and `dataDir.ts:17` still resolve
-      different default DB paths. Post it in the channel as a ticket
+      different default DB paths. Post it in the channel as a ticket. Copy-ready
+      ticket text is in the design register; external channel post is outstanding
 
 ## F. What else did you find — required, and not a formality
 
@@ -130,34 +136,33 @@ Your mission in one line: **prove the design runs, then build its read half.**
 
 **Where the design is wrong or stale:**
 
-- [ ] Check the design's line anchors against `b6a5091` — they were pinned to
+- [x] Check the design's line anchors against `b6a5091` — they were pinned to
       `ed52411` and the codebase has moved twice since
-- [ ] Note anywhere §6.1's seam does not survive contact with the actual types
-- [ ] Note anything a week-7 implementer would waste a day on
-- [ ] **Append these to the design document**, in the same section where you
+- [x] Note anywhere §6.1's seam does not survive contact with the actual types
+- [x] Note anything a week-7 implementer would waste a day on
+- [x] **Append these to the design document**, in the same section where you
       answer OPEN-1 through OPEN-3, with the same labelling convention
 
 **Risks in what you are building** — §7 is thorough on write tools and light on
 read ones, which is backwards from where you are:
 
-- [ ] **The store in an unexpected state** — a corrupt record, a `schemaVersion`
+- [x] **The store in an unexpected state** — a corrupt record, a `schemaVersion`
       from the future, a result JSON that does not parse. Does the server crash,
       return a protocol error, or leak a stack trace with a filesystem path?
-- [ ] **Unbounded output** — `qre_get_run` returns a whole `RunRecord` including
+- [x] **Unbounded output** — `qre_get_run` returns a whole `RunRecord` including
       `result.raw`. How big can that get, and what does it do to an agent's
       context?
-- [ ] **Errors as an egress path** — a message carrying a database path, a home
+- [x] **Errors as an egress path** — a message carrying a database path, a home
       directory, or a config fragment goes straight into the agent's context and
       off the machine (§7.4)
-- [ ] **Self-inflicted DoS** — no rate limiting exists (out of scope), but an
+- [x] **Self-inflicted DoS** — no rate limiting exists (out of scope), but an
       agent looping on `qre_list_runs` interacts with your own §4 findings. Worth
       a sentence even if the fix is next week's
-- [ ] **Implement what is safe and inside your boundaries. File the rest.** The
+- [x] **Implement what is safe and inside your boundaries. File the rest.** The
       write-tool line does not move because you found a good argument for one
-- [ ] **An empty list is acceptable if argued** — "we checked the anchors and they
-      hold, we considered these four failure modes, here is what we concluded."
-      Silence is not
-- [ ] **§B–§E come first.** If behind, cut the extra *implementation* — the list
+- [x] **An empty list is acceptable if argued** — not applicable: the audit found
+      and recorded concrete design, type, and security issues
+- [x] **§B–§E come first.** If behind, cut the extra *implementation* — the list
       of what you *found* still ships
 
 ## G. Reviews — on your own work, every merge
@@ -192,23 +197,32 @@ read ones, which is backwards from where you are:
 > This section is last because it happens last. Week 5's branch for this track
 > did not typecheck and failed one of its own tests. Nothing below takes long.
 
-- [ ] `npm run typecheck` — clean. **If it is red, run both projects separately**
+- [x] `npm run typecheck` — clean on the current feature branch on 2026-08-18. **If it is red, run both projects separately**
       until Team 1's fix lands:
       `npx tsc --noEmit -p tsconfig.json ; npx tsc --noEmit -p tsconfig.node.json`
-- [ ] `npm test` — green, **on the commit you are merging**, not an earlier one
+- [ ] `npm test` — green, **on the commit you are merging**, not an earlier one.
+      Interim result on 2026-08-18: 646/654 pass; the same eight real-engine tests
+      hit the documented macOS 13 / PyQIR 0.12.5 libc++ incompatibility. No new
+      failure appeared; CI or a supported host and the final merge commit remain.
 - [ ] **Every tool has a test** that calls its handler and asserts it returns real
-      data — one that fails if the handler is pointed at a fixture
+      data — one that fails if the handler is pointed at a fixture. Pending:
+      Melody's §C/§D MCP implementation is not integrated into this branch yet.
 - [ ] **A test that the entry point imports no Electron**, if you can express one
-      cheaply. If not, the grep result goes in the PR instead
-- [ ] The spike scripts run and produce their output on a clean checkout
-- [ ] No test was skipped, `.only`'d, or deleted to make the suite pass
+      cheaply. If not, the grep result goes in the PR instead. Pending: there is
+      no MCP entry point on this branch until §C is integrated.
+- [x] The spike scripts run and produce their output on a clean checkout
+- [x] No test was skipped, `.only`'d, or deleted to make the suite pass. The
+      feature diff only renames one existing store test and adds its WAL assertion.
 - [ ] **Confirm no write path exists.** Grep your own diff for `.save(`,
       `.delete(`, and `QreEngine` — a read-only server that can write is the one
-      way this deliverable fails badly
-- [ ] Walk through `week-6-team-2-definition-of-done.md` line by line — every box
+      way this deliverable fails badly. Pending: the MCP server/tools are not on
+      this branch. The spike's intentional writes and the product store's WAL
+      setup are not MCP handler paths and cannot prove §D read-only by themselves.
+- [x] Walk through `week-6-team-2-definition-of-done.md` line by line — every box
       either ticked or annotated with one line saying why not
 - [ ] **Merged to `main` by Tue Aug 18 EOD** — acceptance from `main`, not a
-      branch. Teammate reviews first
+      branch. Teammate reviews first. Pending: this is still the shared feature PR;
+      rerun every integration-sensitive check after Melody's §C/§D/§H work lands.
 
 ## Blockers & escalation
 
