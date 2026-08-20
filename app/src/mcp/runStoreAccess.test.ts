@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { readdirSync as readdirRecursive } from "node:fs";
 
 import { SqliteRunStore } from "../main/sqliteRunStore.js";
+import { publishRunDatabaseLocation } from "../main/publishDataLocation.js";
 import { buildRunRecord } from "../shared/testing/builders.js";
 import {
   closeRunStore,
@@ -93,11 +94,14 @@ async function createDashboardDatabase(): Promise<{
 describe("getRunStore", () => {
   let directory: string;
   let dbPath: string;
+  let home: string;
   const savedDbPath = process.env.QRE_DB_PATH;
+  const savedHome = process.env.HOME;
 
   beforeEach(async () => {
     resetRunStoreForTests();
     ({ directory, dbPath } = await createDashboardDatabase());
+    home = mkdtempSync(join(tmpdir(), "qre-mcp-home-"));
     process.env.QRE_DB_PATH = dbPath;
   });
 
@@ -105,7 +109,10 @@ describe("getRunStore", () => {
     resetRunStoreForTests();
     if (savedDbPath === undefined) delete process.env.QRE_DB_PATH;
     else process.env.QRE_DB_PATH = savedDbPath;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
     rmSync(directory, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   });
 
   it("reads the records the dashboard saved", async () => {
@@ -175,13 +182,46 @@ describe("getRunStore", () => {
     expect(thrown?.message).not.toContain(directory);
   });
 
-  it("reports an unset QRE_DB_PATH as a configuration problem", () => {
+  it("finds the database the dashboard published, with no environment variable set", async () => {
     delete process.env.QRE_DB_PATH;
+    process.env.HOME = home;
+    publishRunDatabaseLocation(dbPath);
     resetRunStoreForTests();
 
-    expect(() => getRunStore()).toThrowError(
-      expect.objectContaining({ code: "DB_NOT_CONFIGURED" }),
-    );
+    const runs = await getRunStore().list();
+
+    expect(runs.map((run) => run.config.name).sort()).toEqual([
+      "grover search",
+      "shor 2048",
+    ]);
+  });
+
+  it("lets an explicit QRE_DB_PATH win over what the dashboard published", async () => {
+    process.env.HOME = home;
+    publishRunDatabaseLocation(join(home, "never-created.sqlite"));
+    process.env.QRE_DB_PATH = dbPath;
+    resetRunStoreForTests();
+
+    await expect(getRunStore().list()).resolves.toHaveLength(2);
+  });
+
+  it("tells an unconfigured caller how to fix it", () => {
+    delete process.env.QRE_DB_PATH;
+    process.env.HOME = home;
+    resetRunStoreForTests();
+
+    let thrown: StoreAccessError | undefined;
+    try {
+      getRunStore();
+    } catch (error) {
+      thrown = error as StoreAccessError;
+    }
+
+    expect(thrown?.code).toBe("DB_NOT_CONFIGURED");
+    // Naming the variable is not enough — a first-time user has no idea what
+    // to set it to. Point them at the two things that produce an answer.
+    expect(thrown?.message).toMatch(/QRE Dashboard/);
+    expect(thrown?.message).toMatch(/QRE_DB_PATH/);
   });
 
   it("reports a database it cannot open for reading as DB_READONLY", async () => {

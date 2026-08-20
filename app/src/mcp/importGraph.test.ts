@@ -96,6 +96,7 @@ describe("MCP import graph validation", () => {
       // read-write `sqliteRunStore.ts` is deliberately absent: the MCP server
       // may not migrate or write, so its module must not be reachable from
       // this entry point at all.
+      resolve(appDir, "src/main/dataDir.ts"),
       resolve(appDir, "src/main/sqliteReadOnlyRunStore.ts"),
       resolve(appDir, "src/main/sqliteRunStoreReader.ts"),
       resolve(appDir, "src/shared/runRecordValidation.ts"),

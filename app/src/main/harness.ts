@@ -10,7 +10,7 @@
  *
  * By default this runs against a throwaway temp directory so repeat runs
  * never collide with leftover state. Set `QRE_DB_PATH` to point it at a real
- * file instead (e.g. the default resolved by `resolveDefaultDatabasePath()`);
+ * file instead;
  * in that case the file is left in place afterwards.
  */
 
@@ -27,7 +27,6 @@ import {
 } from "../shared/testing/index.js";
 import { RunRecordExistsError } from "../shared/runStore.js";
 import { makeRunRecord, type RunConfig, type RunFilter } from "../shared/types.js";
-import { resolveDefaultDatabasePath } from "./dataDir.js";
 import { loadForRerun } from "./rerun.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
 
@@ -74,10 +73,14 @@ function fail(message: string): never {
 }
 
 async function main(): Promise<void> {
-  const usingExplicitPath = process.env.QRE_DB_PATH !== undefined && process.env.QRE_DB_PATH.length > 0;
+  // Deliberately NOT the location the dashboard publishes: this harness saves
+  // and deletes records, so it takes an explicit QRE_DB_PATH or a throwaway
+  // directory, and never discovers a real database on its own.
+  const explicitPath = process.env.QRE_DB_PATH;
+  const usingExplicitPath = explicitPath !== undefined && explicitPath.length > 0;
   const scratchDirectory = usingExplicitPath ? null : mkdtempSync(join(tmpdir(), "qre-run-store-harness-"));
   const databasePath = usingExplicitPath
-    ? resolveDefaultDatabasePath()
+    ? explicitPath
     : join(scratchDirectory as string, "run-history.sqlite");
 
   log(`Opening SQLite run store at: ${databasePath}`);

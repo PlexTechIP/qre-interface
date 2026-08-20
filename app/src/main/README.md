@@ -14,7 +14,8 @@ brief and `docs/architecture.md` for the current end-to-end architecture.
 | `sqliteRunStore.test.ts` | Schema/migration, round-trip fidelity, immutability, and query-parity tests against `InMemoryRunStore` |
 | `rerun.ts` | `loadForRerun(store, id, stamp)` — the Rerun load path: `get(id)` → the committed `reconstructConfig` |
 | `rerun.test.ts` | Proves the load path end to end, incl. one run captured through a fake estimator (`shared/testing`) |
-| `dataDir.ts` | `resolveDefaultDatabasePath()` — computes the DB file location at runtime; never a hardcoded absolute path |
+| `dataDir.ts` | Reads where the dashboard published its run history, for non-Electron processes that cannot call `app.getPath()` |
+| `publishDataLocation.ts` | The dashboard's side of that: records the path it resolved, best effort, on startup |
 | `harness.ts` | The runnable proof described below |
 
 The Electron main process also wires the QRE engine and the IPC surfaces that
@@ -105,9 +106,9 @@ exits non-zero if any check fails.
 By default it runs against a throwaway temp directory so repeat runs never
 collide with leftover state (records are write-once, so re-saving the same
 committed fixtures into a persisted file would fail on the second run). Set
-`QRE_DB_PATH` to point it at a real file instead — e.g. the location
-`resolveDefaultDatabasePath()` resolves to — and that file is left in place
-afterwards so you can inspect it with the `sqlite3` CLI or reopen it with
+`QRE_DB_PATH` to point it at a real file instead — the harness never discovers
+a database on its own, because it writes and deletes records — and that file is
+left in place afterwards so you can inspect it with the `sqlite3` CLI or reopen it with
 another `SqliteRunStore`.
 
 For clean-machine setup, Python venv provisioning, and common local failures,

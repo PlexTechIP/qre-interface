@@ -23,6 +23,7 @@ import { resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
 import { registerEstimatorHandler } from "./estimatorHandler.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
+import { publishRunDatabaseLocation } from "./publishDataLocation.js";
 import { registerStoreHandlers } from "./storeHandler.js";
 import { registerUploadHandler } from "./uploadHandler.js";
 import { hardenWebContents } from "./windowSecurity.js";
@@ -83,6 +84,12 @@ app.whenReady().then(() => {
       : path.join(app.getPath("userData"), "run-history.sqlite");
   runStore = new SqliteRunStore(dbPath);
   registerStoreHandlers(ipcMain, runStore);
+
+  // Tell non-Electron processes where that resolved to. The MCP server cannot
+  // call app.getPath(), and a second copy of Electron's per-platform rule would
+  // drift the first time packaging sets a productName — so the process that
+  // knows writes it down instead. Best effort; never fatal.
+  publishRunDatabaseLocation(dbPath);
 
   // A separate file from run history, deliberately: see sqliteChatStore.ts.
   // Run records are immutable forever; a transcript is the analyst's own prose

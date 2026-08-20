@@ -8,12 +8,18 @@
  * here constructs `SqliteRunStore`; migration stays the dashboard's job, per
  * the design's CLOSED-1 rule.
  *
+ * Where the database is comes from `dataDir.ts`: an explicit QRE_DB_PATH if one
+ * is set, otherwise the location the dashboard published. This process cannot
+ * ask Electron and must not guess — opening the wrong database would report an
+ * analyst's history as empty, which is worse than refusing to start.
+ *
  * Messages returned from this module name the environment variable, never the
  * resolved path — a path is the analyst's filesystem layout, and it has no
  * business crossing to an external MCP client.
  */
 
 import { existsSync } from "node:fs";
+import { resolveRunDatabasePath } from "../main/dataDir.js";
 import {
   RunStoreSchemaMismatchError,
   SqliteReadOnlyRunStore,
@@ -126,11 +132,13 @@ export function getRunStore(): SqliteReadOnlyRunStore {
     return cachedStore;
   }
 
-  const dbPath = process.env.QRE_DB_PATH;
+  const dbPath = resolveRunDatabasePath();
   if (!dbPath || dbPath.trim() === "") {
     throw createStoreAccessError(
       "DB_NOT_CONFIGURED",
-      "QRE_DB_PATH environment variable is not set.",
+      "No run history is configured. Launch the QRE Dashboard once so it can " +
+        "record where its database lives, or set QRE_DB_PATH to the path shown " +
+        "under Settings > Data & storage.",
     );
   }
 
