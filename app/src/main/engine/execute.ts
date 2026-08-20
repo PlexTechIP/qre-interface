@@ -21,7 +21,7 @@ const ALLOWED_ENV_KEYS = [
   "TMPDIR",
 ] as const;
 
-function buildEngineEnv(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function buildEngineEnv(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     MPLCONFIGDIR: MATPLOTLIB_CONFIG,
     PYTHONUTF8: "1",
