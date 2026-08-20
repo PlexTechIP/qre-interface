@@ -7,8 +7,12 @@ on:
 jobs:
   # Ubuntu-only: repo is private, so Actions minutes are metered, and
   # macOS/Windows cost far more per minute. Revisit once repo is public.
+  #
+  # All jobs run only on PRs or pushes to main, so pushing to an open
+  # PR branch triggers each job once instead of twice.
   node-checks:
     name: typecheck + fast unit tests
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,8 +41,6 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Only run on a PR or push to main, not every feature-branch push —
-  # keeps push cheap; node-checks still gives fast feedback either way.
   lint:
     name: lint
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
