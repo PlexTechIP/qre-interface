@@ -48,6 +48,14 @@ export default defineConfig({
           include: ["src/shared/**/*.test.ts"],
         },
       },
+      {
+        test: {
+          name: "mcp",
+          environment: "node",
+          globals: true,
+          include: ["src/mcp/**/*.test.ts"],
+        },
+      },
     ],
   },
 });
