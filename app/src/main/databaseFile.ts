@@ -11,6 +11,7 @@ import { dirname } from "node:path";
  */
 export function prepareDatabasePath(databasePath: string): void {
   if (databasePath !== ":memory:") {
-    mkdirSync(dirname(databasePath), { recursive: true });
+    // 0700: same defence-in-depth reasoning as credentialStore.ts's 0600.
+    mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 });
   }
 }
