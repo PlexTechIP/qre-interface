@@ -89,6 +89,7 @@ const runDetail = z.object({
   qreVersion: z.string(),
   frontierSample: frontierRow.nullable(),
   frontierRowCount: z.number().nullable(),
+  frontierSampleOmitted: z.number(),
 });
 
 export const LIST_BENCHMARKS_OUTPUT = {
@@ -110,6 +111,17 @@ export const LIST_RUNS_OUTPUT = {
 
 export const GET_RUN_OUTPUT = {
   run: runDetail,
+};
+
+export const VALIDATE_CONFIG_OUTPUT = {
+  valid: z.boolean(),
+  errors: z.array(
+    z.object({
+      field: z.string(),
+      source: z.enum(["structure", "coupling", "form", "schema"]),
+      message: z.string(),
+    }),
+  ),
 };
 
 /**

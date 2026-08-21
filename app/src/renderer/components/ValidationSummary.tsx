@@ -3,8 +3,8 @@ import {
   FIELD_ANCHORS,
   FIELD_LABELS,
   hyperparamAnchor,
-  jumpToField,
 } from "./fieldAnchors";
+import { jumpToField } from "./fieldNavigation";
 
 /**
  * The field name, emphasised once.

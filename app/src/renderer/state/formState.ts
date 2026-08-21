@@ -577,6 +577,26 @@ export function isPrimaryFactoryAllowed(
 }
  
 /**
+ * Whether a SECONDARY magic-state factory is allowed on an architecture.
+ *
+ * `runconfig.schema.json` forbids magic_up_to_clifford under Majorana, and
+ * before this existed each place that cared restated the pair: the normalizer
+ * filtered it out, `toRunConfig` skipped it while serialising, and the
+ * micro-architecture section disabled the checkbox. Three shapes of one rule,
+ * with nothing keeping them in step.
+ *
+ * Keyed on the architecture TYPE rather than a form or a config, because the
+ * callers hold different representations of the same choice.
+ */
+export function isSecondaryFactoryAllowed(
+  factory: SecondaryFactoryId,
+  architectureType: ArchitectureType,
+): boolean {
+  if (factory === "magic_up_to_clifford") return architectureType !== "majorana";
+  return true;
+}
+
+/**
  * Enforce cross-field coupling the schema requires, so the UI state is never
  * internally inconsistent:
  *  - primary factories no longer allowed on the current architecture (raised
@@ -617,16 +637,11 @@ export function normalizeFormState(state: FormState): FormState {
     next = { ...next, magicStateFactories: primaries };
   }
  
-  if (
-    state.architecture.type === "majorana" &&
-    next.secondaryFactories.includes("magic_up_to_clifford")
-  ) {
-    next = {
-      ...next,
-      secondaryFactories: next.secondaryFactories.filter(
-        (f) => f !== "magic_up_to_clifford",
-      ),
-    };
+  const allowedSecondaries = next.secondaryFactories.filter((factory) =>
+    isSecondaryFactoryAllowed(factory, state.architecture.type),
+  );
+  if (allowedSecondaries.length !== next.secondaryFactories.length) {
+    next = { ...next, secondaryFactories: allowedSecondaries };
   }
 
   // Unmemory reverses Dynamic Memory Compute, so it cannot run without it. The

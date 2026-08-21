@@ -149,7 +149,7 @@ describe("qre_draft_from_run tool", () => {
     expect(data.draft.parameters.latticeN1).toBe(3);
   });
 
-  it("returns empty parameters for manual counts runs", async () => {
+  it("marks a manual counts run as carrying no benchmark parameters", async () => {
     resetRunStoreForTests();
 
     const { dbPath: testDbPath, store } = await createTempRunStore();
@@ -173,7 +173,9 @@ describe("qre_draft_from_run tool", () => {
 
     process.env.QRE_DB_PATH = testDbPath;
     const data = asData(await handleDraftFromRun({ id: record.id }));
-    expect(data.draft.parameters).toEqual({});
+    // The contract models `parameters` as one variant per benchmark plus a
+    // `none` variant; an empty object matches no variant at all.
+    expect(data.draft.parameters).toEqual({ none: true });
   });
 
   it("ensures draft has no identity fields", async () => {

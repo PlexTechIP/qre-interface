@@ -1,5 +1,5 @@
 import type { ProposedField } from "../agent/draftToFormState";
-import { jumpToField } from "./fieldAnchors";
+import { jumpToField } from "./fieldNavigation";
 
 interface ModelProposalSummaryProps {
   /** Exactly what the model chose — see `DraftHandoff.proposed`. */

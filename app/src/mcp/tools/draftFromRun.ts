@@ -5,17 +5,18 @@
  * Uses formStateFromRunConfig to convert the config to editable FormState,
  * then projects the FormState to GeneratedRunDraft.
  *
- * Refuses (returns DRAFT_UNSUPPORTED) for:
- * - Uploaded applications (no file path in GeneratedApplication)
- * - Majorana with optional fields (tErrorRate, targetYear)
- * - Neutral Atom with optional fields (dataQubitSpacing, targetYear)
- * - Non-default trace transform stages
+ * Which runs cannot be drafted is decided by `generatedDraftFromFormState`, not
+ * restated here: the list is a property of what the generation contract can
+ * carry, and a copy of it in this header would drift the first time that
+ * changed. Uploaded applications are the one exception, refused before the
+ * adapter runs so the analyst is told which case they hit.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
 import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
-import { generatedDraftFromFormState } from "../projections.js";
+import { validateGeneratedDraft } from "../../main/draftValidation.js";
+import { generatedDraftFromFormState } from "../../renderer/state/generatedDraft.js";
 import { getRunStore } from "../runStoreAccess.js";
 import { validateRunRecord } from "../../shared/runRecordValidation.js";
 import { formStateFromRunConfig } from "../../renderer/state/formState.js";
@@ -101,6 +102,21 @@ export async function handleDraftFromRun(
       return toolFailure(
         "DRAFT_UNSUPPORTED",
         "The generated draft contains identity fields that should never be set by a model.",
+      );
+    }
+
+    // The committed generation schema is the arbiter of what a draft may look
+    // like, so check the projection against that artifact rather than trusting
+    // it. A draft this rejects cannot be handed to anything that validates.
+    const validated = validateGeneratedDraft(draft);
+    if (!validated.ok) {
+      logError("Projected draft does not satisfy the generation schema", {
+        id: input.id,
+        reason: validated.reason,
+      });
+      return toolFailure(
+        "DRAFT_UNSUPPORTED",
+        "This run cannot be expressed as an editable draft.",
       );
     }
 

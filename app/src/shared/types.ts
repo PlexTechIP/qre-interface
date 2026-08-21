@@ -790,12 +790,23 @@ export interface RunFilter {
   nameSearch?: string;
   /** applicationKey(config): a benchmark id, or `uploaded:<filePath>`. */
   application?: string;
+  /**
+   * Match any ONE of these application keys.
+   *
+   * `application` can only ask about a single run source. A caller that wants
+   * "any benchmark" would otherwise have to read the whole history and filter
+   * it afterwards, which is what the MCP list tool did.
+   */
+  applications?: readonly string[];
   architecture?: ArchitectureType;
   qecCode?: QecCodeId;
   magicStateFactory?: MagicStateFactoryId;
   qreVersion?: string;
 }
  
+/** The application key for a Manual Logical Counts run, which has no source. */
+export const MANUAL_COUNTS_APPLICATION_KEY = "manual-counts";
+
 /**
  * The stable key the Application filter groups by: the benchmark id for
  * benchmark runs, `uploaded:<filePath>` for uploaded programs, or
@@ -806,7 +817,7 @@ export function applicationKey(config: RunConfig): string {
   const app = config.application;
   if (app.type === "benchmark") return app.benchmarkId;
   if (app.type === "uploaded") return `uploaded:${app.filePath}`;
-  return "manual-counts";
+  return MANUAL_COUNTS_APPLICATION_KEY;
 }
  
 /** Does a record satisfy every constraint in the filter? Pure — the reference match semantics. */
@@ -817,6 +828,7 @@ export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean 
     if (needle.length > 0 && !config.name.toLowerCase().includes(needle)) return false;
   }
   if (filter.application !== undefined && applicationKey(config) !== filter.application) return false;
+  if (filter.applications !== undefined && !filter.applications.includes(applicationKey(config))) return false;
   if (filter.architecture !== undefined && config.architecture.type !== filter.architecture) return false;
   if (filter.qecCode !== undefined && config.qecCode !== filter.qecCode) return false;
   // "Runs that used this factory" — a multi-select run matches on any member.

@@ -26,6 +26,7 @@ import { isStoreAccessError, type StoreAccessErrorCode } from "./runStoreAccess.
 export type ToolErrorCode =
   | StoreAccessErrorCode
   | "STORE_READ_FAILED"
+  | "VALIDATION_FAILED"
   | "RUN_NOT_FOUND"
   | "INVALID_CURSOR"
   | "DRAFT_UNSUPPORTED";

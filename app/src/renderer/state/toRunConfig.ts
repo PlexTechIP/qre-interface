@@ -25,7 +25,7 @@ import { withAgentPrefix } from "./runNaming";
 import { ARCHITECTURE_LABELS, QEC_LABELS } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
-import { buildTraceTransform, deriveQecCode } from "./formState";
+import { buildTraceTransform, deriveQecCode, isSecondaryFactoryAllowed } from "./formState";
 import type {
   ApplicationForm,
   ArchitectureForm,
@@ -216,12 +216,7 @@ function effectiveSecondaryFactories(
   const out: SecondaryFactoryId[] = [];
   for (const factory of selected) {
     if (seen.has(factory)) continue;
-    if (
-      factory === "magic_up_to_clifford" &&
-      architecture.type === "majorana"
-    ) {
-      continue;
-    }
+    if (!isSecondaryFactoryAllowed(factory, architecture.type)) continue;
     seen.add(factory);
     out.push(factory);
   }

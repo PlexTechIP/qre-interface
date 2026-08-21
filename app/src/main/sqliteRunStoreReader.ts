@@ -81,6 +81,19 @@ export function selectRecordsByFilter(
   };
 
   addExactFilter("application", filter.application);
+
+  // An empty set matches nothing; SQL's `IN ()` is a syntax error, so say so.
+  if (filter.applications !== undefined) {
+    if (filter.applications.length === 0) {
+      predicates.push("0");
+    } else {
+      predicates.push(
+        `application IN (${filter.applications.map(() => "?").join(", ")})`,
+      );
+      parameters.push(...filter.applications);
+    }
+  }
+
   addExactFilter("architecture", filter.architecture);
   addExactFilter("qec_code", filter.qecCode);
   addExactFilter("qre_version", filter.qreVersion);

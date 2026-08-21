@@ -31,11 +31,14 @@ jobs:
       - name: Typecheck Electron main and shared contracts
         run: npx tsc --noEmit -p tsconfig.node.json
 
-      - name: Unit tests
-        run: npm run test
-
+      # Build BEFORE the tests, not after: the only tests that exercise the
+      # shipped MCP bundle skip when dist-electron is absent, so in this order
+      # they were never once run in CI.
       - name: Build
         run: npm run build
+
+      - name: Unit tests
+        run: npm run test
 
   # Only run on a PR or push to main, not every feature-branch push —
   # keeps push cheap; node-checks still gives fast feedback either way.

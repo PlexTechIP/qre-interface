@@ -11,6 +11,7 @@ import { createMcpServer } from "./createServer.js";
 import { logInfo, logError } from "./logger.js";
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from "./serverInfo.js";
 import { closeRunStore } from "./runStoreAccess.js";
+import { flushStream, shutdown } from "./shutdown.js";
 
 let serverInstance: ReturnType<typeof createMcpServer> | null = null;
 let transportInstance: StdioServerTransport | null = null;
@@ -31,48 +32,41 @@ async function main(): Promise<void> {
   });
 }
 
-// Handle stdin end
-process.stdin.once("end", () => {
-  logInfo("stdin ended");
-  closeRunStore();
-  process.exit(0);
-});
+/** Everything the shutdown sequence needs, resolved at the moment it runs. */
+function shutdownDependencies() {
+  return {
+    server: serverInstance,
+    transport: transportInstance,
+    closeStore: closeRunStore,
+    flush: () => flushStream(protocolStream),
+    exit: (code: number) => process.exit(code),
+  };
+}
 
-// Handle process signals
-process.on("SIGINT", () => {
-  logInfo("received SIGINT");
-  closeRunStore();
-  void transportInstance?.close();
-  void serverInstance?.close();
-  process.exit(0);
-});
+function leave(code: number, why: string): void {
+  logInfo(why);
+  void shutdown(code, shutdownDependencies());
+}
 
-process.on("SIGTERM", () => {
-  logInfo("received SIGTERM");
-  closeRunStore();
-  void transportInstance?.close();
-  void serverInstance?.close();
-  process.exit(0);
-});
+// The client closed its end of the pipe. Finish what is in flight and drain
+// before leaving; see shutdown.ts for why the order matters.
+process.stdin.once("end", () => leave(0, "stdin ended"));
 
-// Handle uncaught exceptions. The store is closed on the way out for the same
-// reason as on the ordinary paths: an abandoned handle leaves the database's
-// -wal file hot, and the next reader has to recover it.
+process.on("SIGINT", () => leave(0, "received SIGINT"));
+process.on("SIGTERM", () => leave(0, "received SIGTERM"));
+
 process.on("uncaughtException", (error: Error) => {
   logError("uncaught exception", error);
-  closeRunStore();
-  process.exit(1);
+  leave(1, "shutting down after an uncaught exception");
 });
 
-// Handle unhandled rejections
 process.on("unhandledRejection", (reason: unknown) => {
   logError("unhandled rejection", reason);
-  closeRunStore();
-  process.exit(1);
+  leave(1, "shutting down after an unhandled rejection");
 });
 
 // Start the server
 main().catch((error: unknown) => {
   logError("mcp server failed to start", error);
-  process.exit(1);
+  leave(1, "shutting down after a failed start");
 });

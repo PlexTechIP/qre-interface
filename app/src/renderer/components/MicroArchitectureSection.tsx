@@ -28,6 +28,7 @@ import {
   type ArchitectureForm,
   type DynamicMemoryComputeForm,
   type TraceTransformForm,
+  isSecondaryFactoryAllowed,
 } from "../state/formState";
 import { EVICTION_STRATEGIES, type EvictionStrategy } from "../../shared/traceTransform";
 import {
@@ -199,7 +200,9 @@ export function MicroArchitectureSection({
   const isMemberDisabled = (id: FactoryMemberId): boolean => {
     if (id === "litinski19") return !litinski19Allowed;
     if (id === "gsj24") return !gsj24Allowed;
-    if (id === "magic_up_to_clifford") return isMajorana;
+    if (id === "magic_up_to_clifford") {
+      return !isSecondaryFactoryAllowed(id, architecture.type);
+    }
     return false;
   };
 

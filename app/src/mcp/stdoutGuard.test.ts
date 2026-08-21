@@ -53,41 +53,50 @@ describe("installStdoutGuard", () => {
     expect(stdoutText).toBe('{"jsonrpc":"2.0","id":1}\n');
   });
 
-  it("should preserve backpressure on protocolStream", async () => {
-    const realStdout = new PassThrough({
-      highWaterMark: 16, // Small buffer to trigger backpressure
-    });
+  it("does not report a write as done until the real stdout has drained", async () => {
+    // The whole reason protocolStream exists: process.stdout is a pipe, and a
+    // pipe that is full must stall the writer instead of losing the tail of a
+    // JSON-RPC frame. Deleting the drain branch from installStdoutGuard makes
+    // this test fail, which the previous version of it did not.
+    let backedUp = true;
+    const drainListeners: Array<() => void> = [];
+    const received: Buffer[] = [];
 
-    // Pause the output to trigger backpressure
-    const chunks: Buffer[] = [];
-    realStdout.on("data", (chunk) => chunks.push(chunk));
-
-    const fakeStderr = new PassThrough();
+    const blockedStdout = {
+      write(chunk: Buffer | string): boolean {
+        received.push(Buffer.from(chunk as Buffer));
+        return !backedUp;
+      },
+      once(event: string, listener: () => void): unknown {
+        if (event === "drain") drainListeners.push(listener);
+        return blockedStdout;
+      },
+      on(): unknown {
+        return blockedStdout;
+      },
+    } as unknown as NodeJS.WritableStream;
 
     const { protocolStream } = installStdoutGuard({
-      stdout: realStdout,
-      stderr: fakeStderr,
+      stdout: blockedStdout,
+      stderr: new PassThrough(),
       console: global.console,
     });
 
-    // Pause the underlying stream to trigger backpressure
-    realStdout.pause();
+    let wroteThrough = false;
+    protocolStream.write(Buffer.alloc(64, "a"), () => {
+      wroteThrough = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
 
-    // Write should return false (backpressure)
-    const result = protocolStream.write(
-      Buffer.alloc(100, "a")
+    expect(received).toHaveLength(1);
+    expect(wroteThrough, "reported the write done while stdout was full").toBe(
+      false,
     );
-    if (result === false) {
-      // Backpressure detected, wait for drain
-      await new Promise((resolve) => {
-        protocolStream.once("drain", resolve);
-        realStdout.resume();
-      });
-    }
 
-    // Verify data eventually makes it through
-    realStdout.resume();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(chunks.length).toBeGreaterThan(0);
+    backedUp = false;
+    drainListeners.forEach((listener) => listener());
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(wroteThrough).toBe(true);
   });
 });

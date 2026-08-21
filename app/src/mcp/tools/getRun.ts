@@ -2,7 +2,7 @@
  * MCP tool: qre_get_run
  *
  * Retrieves a single run by ID with full details (except raw engine output).
- * Includes config, result metadata, a frontier sample, and error details.
+ * Includes config, result metadata, a bounded frontier sample, and error details.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -19,15 +19,6 @@ export interface GetRunInput {
 export interface GetRunOutput {
   run: RunDetail;
 }
-
-/**
- * Estimate the JSON size of an object (rough heuristic).
- */
-function estimateJsonSize(obj: unknown): number {
-  return JSON.stringify(obj).length;
-}
-
-const MAX_OUTPUT_SIZE = 65536; // ~64 KiB
 
 /**
  * Tool handler for qre_get_run.
@@ -57,20 +48,10 @@ export async function handleGetRun(input: GetRunInput): Promise<CallToolResult> 
       return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
     }
 
-    const output: GetRunOutput = { run: toRunDetail(record) };
-
-    // NOTE: rejecting an oversized run rather than bounding the projection is
-    // a known defect (the message claims a truncation that did not happen).
-    // Left as-is deliberately: replacing it is its own change.
-    const jsonSize = estimateJsonSize(output);
-    if (jsonSize > MAX_OUTPUT_SIZE) {
-      logError("RunDetail output too large", { id: input.id, size: jsonSize });
-      return toolFailure(
-        "STORE_READ_FAILED",
-        "Run details are too large to return; the data has been truncated to prevent context overflow.",
-      );
-    }
-
-    return toolSuccess(output);
+    // No size guard: `toRunDetail` bounds every engine-controlled field, so a
+    // RunDetail has a computable maximum. Refusing an oversized run made it
+    // permanently unreadable, and said the data had been truncated when nothing
+    // had been truncated and nothing was returned.
+    return toolSuccess({ run: toRunDetail(record) } satisfies GetRunOutput);
   });
 }
