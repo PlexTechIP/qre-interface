@@ -2,16 +2,30 @@
  * MCP tool: qre_validate_config
  *
  * Answers "would this draft run?" — and is only worth having if it answers the
- * same way the app does. So it walks the seam the Run button walks and states
- * no rule of its own:
+ * same way the app does. So it walks the seam the Run button walks:
  *
  *   committed generation schema -> the one draft adapter -> normalizeFormState
  *   -> validateForm -> toRunConfig -> validateRunConfigSchema
  *
  * Every architecture, factory and hyperparameter rule stays where the app keeps
- * it. A copy here would be a fifth statement of rules that already live in the
- * JSON Schema, the normalizer, the serialiser and the form — and the copy is
- * what makes a validator that disagrees with the thing it validates for.
+ * it. Where this file names a rule it does so by CALLING the app's own
+ * predicate or reading the app's own table, never by restating the rule — a
+ * copy is what makes a validator that disagrees with the thing it validates
+ * for.
+ *
+ * The order below is the load-bearing part, and it comes from team 2's
+ * implementation of this tool (#32): the coupling checks run against what the
+ * caller ASKED FOR, before the adapters repair it, because a repair erases the
+ * evidence. The chat path wants that repair — an analyst then edits a working
+ * form — and this path must not have it, or an agent asking "would this run?"
+ * is told yes about a different run.
+ *
+ * The round trip at the end is a BACKSTOP, not the primary check. The named
+ * checks above it produce messages that say what is wrong; the round trip only
+ * catches a substitution nobody has enumerated yet, and describes it
+ * generically. Measured against a battery of drafts it currently catches
+ * nothing the named checks miss, which is the point — it exists for the repair
+ * the adapters learn next.
  *
  * Nothing is persisted: no run store is opened, no record is written, and the
  * input type carries no `id` or `createdAt` for a model to mint run identity
@@ -25,13 +39,16 @@ import { validateGeneratedDraft } from "../../main/draftValidation.js";
 import { formStateFromGeneratedDraft } from "../../renderer/state/generatedDraftToForm.js";
 import { generatedDraftFromFormState } from "../../renderer/state/generatedDraft.js";
 import {
+  isPrimaryFactoryAllowed,
+  isSecondaryFactoryAllowed,
   normalizeFormState,
   type FormState,
 } from "../../renderer/state/formState.js";
-import { validateForm, type FieldErrors } from "../../renderer/state/validation.js";
-import type { HyperparamError } from "../../renderer/constants/hyperparameters.js";
+import { validateForm, type FormValidation } from "../../renderer/state/validation.js";
+import { BENCHMARK_HYPERPARAMS } from "../../renderer/constants/hyperparameters.js";
 import { schemaValidationStamp, toRunConfig } from "../../renderer/state/toRunConfig.js";
 import { validateRunConfigSchema } from "../../renderer/state/schemaValidation.js";
+import type { BenchmarkId } from "../../shared/types.js";
 import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 
 export interface ValidateConfigInput {
@@ -78,30 +95,95 @@ function boundErrors(errors: ValidationErrorItem[]): ValidationErrorItem[] {
 }
 
 /**
- * What the pipeline quietly changed on the way in.
+ * The form as the caller described it, before the adapter repaired it.
  *
- * The adapters repair rather than fail — right for the chat path, where the
- * analyst then edits a working form, and wrong here: an agent asking "would this
- * run?" about a repaired draft is told yes, about a different run.
- *
- * The check is a ROUND TRIP rather than a list of fields, because a list of
- * fields is what the previous version was and it covered one of them. It
- * compared factories only, so two other substitutions passed as valid:
- *
- *   - an empty `magicStateFactories` became `["round_based"]`
- *   - `parameters` naming a different benchmark's hyperparameters were dropped
- *     for that benchmark's DEFAULTS — a draft asking about a 4×4 lattice was
- *     answered `valid: true` for a Shor's run at bitSize 31
- *
- * Lowering the normalised form back through `generatedDraftFromFormState` — the
- * same projection `qre_draft_from_run` returns — gives what the caller would
- * actually get, and anything that differs is something they did not ask for.
- * It states no rules, so it keeps working when the adapters learn a new one.
- *
- * The round trip is stable: every one of the runs in a real history that can be
- * drafted at all round-trips byte-identically, so a difference here is a real
- * substitution and not an artefact of a default being filled in.
+ * `formStateFromGeneratedDraft` drops a factory the architecture forbids and
+ * falls back to `["round_based"]` rather than leaving the set empty. That is
+ * right for the chat path and wrong here, and it happens on the way IN — so by
+ * the time `validateForm` runs, the form no longer has anything to complain
+ * about. Putting the two factory sets back is what lets the app's own checks
+ * see what was actually asked for, rather than this file re-deciding what they
+ * would have said.
  */
+function asAsked(draft: GeneratedRunDraft, state: FormState): FormState {
+  return {
+    ...state,
+    magicStateFactories: draft.magicStateFactories,
+    secondaryFactories: draft.secondaryFactories,
+  };
+}
+
+/**
+ * The couplings a repair would hide, each answered by the app's own rule.
+ *
+ * Every branch here either calls a predicate the form calls
+ * (`isPrimaryFactoryAllowed`, `isSecondaryFactoryAllowed`) or reads the table
+ * the form reads (`BENCHMARK_HYPERPARAMS`), so there is no second statement of
+ * a rule to drift. The messages are the ones the app would give.
+ */
+function couplingErrors(
+  draft: GeneratedRunDraft,
+  asked: FormState,
+): ValidationErrorItem[] {
+  const errors: ValidationErrorItem[] = [];
+
+  for (const factory of draft.magicStateFactories) {
+    if (!isPrimaryFactoryAllowed(factory, asked.architecture)) {
+      errors.push({
+        field: "magicStateFactories",
+        source: "coupling",
+        message: `${factory} is not available on this architecture.`,
+      });
+    }
+  }
+
+  for (const factory of draft.secondaryFactories) {
+    if (!isSecondaryFactoryAllowed(factory, asked.architecture.type)) {
+      errors.push({
+        field: "secondaryFactories",
+        source: "coupling",
+        message: `${factory} is not available on this architecture.`,
+      });
+    }
+  }
+
+  // An empty set is a repair too — the normaliser fills it — and the form
+  // already has the message for it, naming the options. Asking `validateForm`
+  // for that one field beats writing a second copy of the sentence.
+  if (draft.magicStateFactories.length === 0) {
+    const message = validateForm(asked).fields.magicStateFactories;
+    if (message) {
+      errors.push({ field: "magicStateFactories", source: "coupling", message });
+    }
+  }
+
+  // Hyperparameters that belong to a DIFFERENT benchmark. The generation
+  // schema models `parameters` as one variant per benchmark, so a
+  // quantum-dynamics parameter set is structurally valid — it is just not this
+  // benchmark's, and the adapter answers by substituting this benchmark's
+  // defaults. Saying which key does not belong beats saying that something was
+  // replaced.
+  if (draft.application.type === "benchmark") {
+    const benchmarkId = draft.application.benchmarkId;
+    const declared = new Set(
+      (BENCHMARK_HYPERPARAMS[benchmarkId as BenchmarkId] ?? []).map(
+        (field) => field.key,
+      ),
+    );
+    for (const key of Object.keys(draft.parameters)) {
+      if (!declared.has(key)) {
+        errors.push({
+          field: "parameters",
+          source: "coupling",
+          message: `${key} is not a parameter of the ${benchmarkId} benchmark.`,
+        });
+      }
+    }
+  }
+
+  return errors;
+}
+
 /**
  * Fold values the contract itself calls equivalent, before comparing them.
  *
@@ -123,45 +205,34 @@ function canonical(field: string, value: unknown): unknown {
   return value;
 }
 
-function repairedByPipeline(
+/**
+ * The backstop: anything the pipeline changed that nothing above named.
+ *
+ * Lowering the normalised form back through `generatedDraftFromFormState` — the
+ * same projection `qre_draft_from_run` returns — gives what the caller would
+ * actually get, and a field that differs is one they did not ask for. It states
+ * no rules, so it keeps working when the adapters learn one nobody has written
+ * a check for.
+ *
+ * `reported` is what the named checks already covered, so a field they
+ * explained is not explained again, worse.
+ *
+ * The round trip is stable: every run in a real history that can be drafted at
+ * all round-trips byte-identically, so a difference here is a real substitution
+ * and not an artefact of a default being filled in.
+ */
+function unexplainedChanges(
   draft: GeneratedRunDraft,
   state: FormState,
+  reported: ReadonlySet<string>,
 ): ValidationErrorItem[] {
-  const dropped = (
-    field: "magicStateFactories" | "secondaryFactories",
-    asked: readonly string[],
-    kept: readonly string[],
-  ): ValidationErrorItem[] =>
-    asked
-      .filter((factory) => !kept.includes(factory))
-      .map((factory) => ({
-        field,
-        source: "coupling" as const,
-        message: `${factory} is not available on this architecture.`,
-      }));
-
-  // The one case worth a specific message, because it names the reason.
-  const specific = [
-    ...dropped(
-      "magicStateFactories",
-      draft.magicStateFactories,
-      state.magicStateFactories,
-    ),
-    ...dropped(
-      "secondaryFactories",
-      draft.secondaryFactories,
-      state.secondaryFactories,
-    ),
-  ];
-  const alreadyReported = new Set(specific.map((item) => item.field));
-
   let roundTripped: GeneratedRunDraft;
   try {
     roundTripped = generatedDraftFromFormState(state);
   } catch {
     // The form cannot be lowered back to a draft, so there is nothing to
-    // compare against. The later stages still have their say.
-    return specific;
+    // compare against. The stages above have already had their say.
+    return [];
   }
 
   const fields = new Set([
@@ -171,7 +242,7 @@ function repairedByPipeline(
 
   const changed: ValidationErrorItem[] = [];
   for (const field of fields) {
-    if (alreadyReported.has(field)) continue;
+    if (reported.has(field)) continue;
     const asked = canonical(field, (draft as Record<string, unknown>)[field]);
     const actual = canonical(field, (roundTripped as Record<string, unknown>)[field]);
     if (JSON.stringify(asked) === JSON.stringify(actual)) continue;
@@ -179,10 +250,9 @@ function repairedByPipeline(
     changed.push({
       field,
       source: "coupling",
-      // Both values are caller- or adapter-authored, so both are bounded here
-      // as well as at the boundary. Showing what it WOULD run as is the point:
-      // "this was ignored" without saying what replaced it leaves an agent
-      // guessing at exactly the moment it was about to be wrong.
+      // Showing what it WOULD run as is the point: "this was ignored" without
+      // saying what replaced it leaves an agent guessing at exactly the moment
+      // it was about to be wrong.
       message:
         `This was not used as given. The run would use ` +
         `${boundedText(JSON.stringify(actual), MAX_REPAIR_VALUE)} instead of ` +
@@ -190,36 +260,36 @@ function repairedByPipeline(
     });
   }
 
-  return [...specific, ...changed];
+  return changed;
 }
 
 /**
- * The form's own errors, flattened into one item per field.
+ * The form's own errors, one item per field.
  *
- * Every `FieldErrors` value is a string except `hyperparams`, which is a
- * `HyperparamError[]`. A uniform `String(message)` over the entries therefore
- * rendered every benchmark-parameter error as the literal text
- * `[object Object]` — the one error class an agent tuning a benchmark is most
- * likely to hit, and the one it could learn nothing from.
+ * The two halves are walked separately because they ARE two things:
+ * `fields` is uniformly string-valued and `hyperparams` carries a key and a
+ * label per entry. `validateForm` used to return them in one object, and both
+ * implementations of this tool tripped on that independently — one rendered
+ * every benchmark-parameter error as the literal text `[object Object]`, the
+ * other passed the array to a string function and died with
+ * `text.replace is not a function`. The shape is fixed at the source now, so
+ * there is no member here to special-case.
  */
-function formErrors(errors: FieldErrors): ValidationErrorItem[] {
+function formErrors(validation: FormValidation): ValidationErrorItem[] {
   const items: ValidationErrorItem[] = [];
 
-  for (const [field, value] of Object.entries(errors)) {
-    if (!value) continue;
-    if (field === "hyperparams" && Array.isArray(value)) {
-      for (const issue of value as HyperparamError[]) {
-        items.push({
-          // The parameter's own key, so the item names the field to change
-          // rather than the group it belongs to.
-          field: issue.key,
-          source: "form",
-          message: `${issue.label}: ${issue.message}`,
-        });
-      }
-      continue;
-    }
-    items.push({ field, source: "form", message: String(value) });
+  for (const [field, message] of Object.entries(validation.fields)) {
+    if (message) items.push({ field, source: "form", message });
+  }
+
+  for (const issue of validation.hyperparams) {
+    items.push({
+      // The parameter's own key, so the item names the field to change rather
+      // than the group it belongs to.
+      field: issue.key,
+      source: "form",
+      message: `${issue.label}: ${issue.message}`,
+    });
   }
 
   return items;
@@ -262,18 +332,20 @@ export async function handleValidateConfig(
         } satisfies ValidateConfigOutput);
       }
 
-      const normalized = normalizeFormState(mapped.state);
-
-      // 3. Anything the pipeline silently repaired is reported, not accepted.
-      //    Compared against the NORMALISED form, not the mapped one: the
-      //    normaliser repairs too, and its repairs were invisible here.
-      const coupling = repairedByPipeline(structural.draft, normalized);
+      // 3. Couplings, against what was ASKED rather than what the adapter kept.
+      //    Early return: a draft naming a forbidden factory has not been
+      //    validated so much as refused, and running the rest would bury that
+      //    under whatever the substituted configuration happens to say.
+      const asked = asAsked(structural.draft, mapped.state);
+      const coupling = couplingErrors(structural.draft, asked);
       if (coupling.length > 0) {
         return toolSuccess({
           valid: false,
           errors: boundErrors(coupling),
         } satisfies ValidateConfigOutput);
       }
+
+      const normalized = normalizeFormState(mapped.state);
 
       // 4. Field-level validation, as the form performs it.
       const errors: ValidationErrorItem[] = formErrors(validateForm(normalized));
@@ -303,6 +375,17 @@ export async function handleValidateConfig(
           message: issue.message,
         });
       }
+
+      // 7. Backstop: a substitution none of the above named. Runs last and adds
+      //    only to what is already there, so a field with a real explanation
+      //    keeps it.
+      errors.push(
+        ...unexplainedChanges(
+          structural.draft,
+          normalized,
+          new Set(errors.map((error) => error.field)),
+        ),
+      );
 
       return toolSuccess({
         valid: errors.length === 0,

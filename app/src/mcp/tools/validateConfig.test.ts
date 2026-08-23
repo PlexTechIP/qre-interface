@@ -39,6 +39,17 @@ const BENCHMARK_DRAFT = (): GeneratedRunDraft =>
     }),
   );
 
+const MAJORANA_DRAFT = (): GeneratedRunDraft =>
+  draftFor(
+    buildRunConfig({
+      name: "Majorana",
+      application: { type: "benchmark", benchmarkId: "shors-factoring" },
+      architecture: { type: "majorana", errorRate: 1e-5, operationTime: 1000 },
+      qecCode: "three_aux",
+      magicStateFactories: ["round_based"],
+    }),
+  );
+
 const MANUAL_COUNTS_DRAFT = (): GeneratedRunDraft =>
   draftFor(
     buildRunConfig({
@@ -187,8 +198,10 @@ describe("a draft the pipeline would quietly change", () => {
     expect(result.valid).toBe(false);
     const item = result.errors.find((e) => e.field === "magicStateFactories");
     expect(item?.source).toBe("coupling");
-    // And says what it would have run as, not merely that something changed.
-    expect(item?.message).toContain("round_based");
+    // The form's own sentence, naming the options — asked for rather than
+    // restated, so the two cannot drift.
+    expect(item?.message).toMatch(/at least one of/i);
+    expect(item?.message).toMatch(/Round-Based/);
   });
 
   it("does not call another benchmark's parameters valid", async () => {
@@ -211,9 +224,13 @@ describe("a draft the pipeline would quietly change", () => {
     const result = asData(await handleValidateConfig({ draft }));
 
     expect(result.valid).toBe(false);
-    const item = result.errors.find((e) => e.field === "parameters");
-    expect(item?.source).toBe("coupling");
-    expect(item?.message).toContain("bitSize");
+    // One item per key that does not belong, naming the key and the benchmark
+    // — not one item saying that something was replaced.
+    const items = result.errors.filter((e) => e.field === "parameters");
+    expect(items.length).toBeGreaterThan(1);
+    expect(items.every((e) => e.source === "coupling")).toBe(true);
+    expect(items[0]?.message).toContain("latticeN1");
+    expect(items[0]?.message).toContain("shors-factoring");
   });
 
   it("still accepts a draft the pipeline does not change", async () => {
@@ -280,5 +297,43 @@ describe("a spelling the contract calls equivalent", () => {
     );
 
     expect(result.valid).toBe(false);
+  });
+});
+
+/**
+ * The checks this tool inherited from team 2's implementation (#32), which ran
+ * its coupling checks against what the caller asked for rather than against
+ * what the adapter kept. Both are answered by calling the app's own predicate,
+ * so neither restates a rule.
+ */
+describe("a coupling the adapter would have repaired", () => {
+  it("names a secondary factory the architecture forbids", async () => {
+    const draft = {
+      ...MAJORANA_DRAFT(),
+      secondaryFactories: ["magic_up_to_clifford"],
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    const item = result.errors.find((e) => e.field === "secondaryFactories");
+    expect(item?.source).toBe("coupling");
+    expect(item?.message).toContain("magic_up_to_clifford");
+  });
+
+  it("explains a field once, not twice", async () => {
+    // The round trip runs last and adds only to what is already there. A
+    // factory the named check already explained must not also collect a
+    // generic "this was not used as given".
+    const draft = {
+      ...MAJORANA_DRAFT(),
+      magicStateFactories: ["litinski19"],
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    const items = result.errors.filter((e) => e.field === "magicStateFactories");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.message).not.toContain("was not used as given");
   });
 });

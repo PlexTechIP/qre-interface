@@ -16,7 +16,7 @@
 import type { FieldErrors } from "../state/validation";
 
 export type FieldAnchorKey =
-  | Exclude<keyof FieldErrors, "hyperparams">
+  | keyof FieldErrors
   | "runName"
   | "applicationType"
   | "architectureType"
