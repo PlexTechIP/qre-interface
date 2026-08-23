@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleGetRun } from "./getRun.js";
+import { readToolFailure } from "../toolResult.js";
+import { withNoPublishedDatabase } from "../testing/noPublishedDatabase.js";
 import type { RunDetail } from "../projections.js";
 import { createTempRunStore, seedTempRunStore, removeTempRunStore } from "../testing/tempRunStore.js";
 import { resetRunStoreForTests, getRunStore } from "../runStoreAccess.js";
@@ -14,7 +16,11 @@ function asData(result: Awaited<ReturnType<typeof handleGetRun>>): { run: RunDet
 
 function asError(result: Awaited<ReturnType<typeof handleGetRun>>): { code: string; message: string } {
   expect(result.isError).toBe(true);
-  return result.structuredContent as unknown as { code: string; message: string };
+  // A failure carries its code and message in the text block, never in
+  // `structuredContent` — see `toolFailure` for why.
+  const failure = readToolFailure(result);
+  expect(failure, "failure result was not in the documented shape").not.toBeNull();
+  return failure as { code: string; message: string };
 }
 
 describe("qre_get_run tool", () => {
@@ -104,10 +110,17 @@ describe("qre_get_run tool", () => {
 
   it("fails gracefully when database is not configured", async () => {
     resetRunStoreForTests();
-    delete process.env.QRE_DB_PATH;
+    // Deleting QRE_DB_PATH is only half of the resolution — the
+    // dashboard's published pointer is the other half, and on a machine
+    // where the app has been launched this read the real history.
+    const restore = withNoPublishedDatabase();
 
-    const err = asError(await handleGetRun({ id: "test-id" }));
-    expect(err.code).toBe("DB_NOT_CONFIGURED");
+    try {
+      const err = asError(await handleGetRun({ id: "test-id" }));
+      expect(err.code).toBe("DB_NOT_CONFIGURED");
+    } finally {
+      restore();
+    }
   });
 });
 

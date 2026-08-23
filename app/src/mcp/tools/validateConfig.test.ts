@@ -167,3 +167,118 @@ describe("qre_validate_config", () => {
     }
   });
 });
+
+/**
+ * The two ways this tool used to answer a question it had not been asked.
+ *
+ * Both were found by driving hand-built drafts through a real client rather
+ * than drafts the app itself had produced — the app's own drafts are already
+ * self-consistent, so they never exercise a repair.
+ */
+describe("a draft the pipeline would quietly change", () => {
+  it("does not call an empty factory set valid", async () => {
+    // normalizeFormState falls back to ["round_based"] rather than leaving the
+    // set empty. That is right for the chat path and wrong here: the answer
+    // would be about a run the caller did not describe.
+    const draft = { ...BENCHMARK_DRAFT(), magicStateFactories: [] };
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    const item = result.errors.find((e) => e.field === "magicStateFactories");
+    expect(item?.source).toBe("coupling");
+    // And says what it would have run as, not merely that something changed.
+    expect(item?.message).toContain("round_based");
+  });
+
+  it("does not call another benchmark's parameters valid", async () => {
+    // The generation schema's `parameters` is an anyOf over per-benchmark
+    // variants, so quantum-dynamics values are structurally fine — they are
+    // just not this benchmark's, and the adapter replaces them with Shor's
+    // DEFAULTS. Answering `valid: true` there describes a different run.
+    const draft = {
+      ...BENCHMARK_DRAFT(),
+      parameters: {
+        latticeN1: 4,
+        latticeN2: 4,
+        totalTime: 1,
+        trotterStep: 0.1,
+        couplingJ: 1,
+        fieldG: 1,
+      },
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    const item = result.errors.find((e) => e.field === "parameters");
+    expect(item?.source).toBe("coupling");
+    expect(item?.message).toContain("bitSize");
+  });
+
+  it("still accepts a draft the pipeline does not change", async () => {
+    // The round trip has to be stable, or every valid draft reports a repair.
+    const result = asData(await handleValidateConfig({ draft: BENCHMARK_DRAFT() }));
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+});
+
+describe("a benchmark parameter the form rejects", () => {
+  it("says which parameter and why", async () => {
+    // FieldErrors carries a string per field EXCEPT hyperparams, which is a
+    // HyperparamError[]. A uniform String(message) rendered every one of these
+    // as the literal text "[object Object]".
+    const draft = {
+      ...BENCHMARK_DRAFT(),
+      parameters: { bitSize: 99999, generator: 11 },
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    for (const error of result.errors) {
+      expect(error.message).not.toContain("[object Object]");
+    }
+    const item = result.errors.find((e) => e.source === "form");
+    expect(item?.message).toMatch(/8192/);
+    // Keyed by the parameter itself, so the item names the field to change.
+    expect(item?.field).toBe("bitSize");
+  });
+});
+
+describe("a spelling the contract calls equivalent", () => {
+  it("does not report a blank name as a substitution", async () => {
+    // The generation schema documents `name` as "Use null to let the app
+    // generate one", and RunConfig as "auto-derived when the user leaves it
+    // blank". The adapter's `state.name || null` is therefore spelling, not a
+    // repair — but the round trip compares written forms, and reported it as
+    // one: an empty name was answered `valid: false` with "The run would use
+    // null instead of \"\"" for a draft the app runs happily.
+    const result = asData(
+      await handleValidateConfig({ draft: { ...BENCHMARK_DRAFT(), name: "" } }),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("still accepts an explicitly null name", async () => {
+    const result = asData(
+      await handleValidateConfig({ draft: { ...BENCHMARK_DRAFT(), name: null } }),
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("still reports a name the pipeline actually changed", async () => {
+    // The fold is one equivalence, not a licence to ignore the field.
+    const draft = BENCHMARK_DRAFT();
+    const result = asData(
+      await handleValidateConfig({ draft: { ...draft, magicStateFactories: [] } }),
+    );
+
+    expect(result.valid).toBe(false);
+  });
+});

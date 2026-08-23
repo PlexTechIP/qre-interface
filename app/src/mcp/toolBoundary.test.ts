@@ -51,11 +51,23 @@ function everyString(value: unknown, found: string[] = []): string[] {
   return found;
 }
 
+/**
+ * A client in the state every real one is in: connected, and having already
+ * listed the tools.
+ *
+ * The `listTools()` is load-bearing, not tidiness. The SDK's client only
+ * validates a result against a tool's declared `outputSchema` once `tools/list`
+ * has populated its validator cache, so a test client that skips it is checking
+ * a configuration that does not occur in the field — and for a while that is
+ * exactly what these tests did, while every error path was failing for real
+ * clients with `-32602`.
+ */
 async function connectedClient(): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await createMcpServer().connect(serverTransport);
   const client = new Client({ name: "boundary-test", version: "0.0.0" });
   await client.connect(clientTransport);
+  await client.listTools();
   return client;
 }
 

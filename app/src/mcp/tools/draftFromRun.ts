@@ -16,9 +16,12 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
 import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { validateGeneratedDraft } from "../../main/draftValidation.js";
-import { generatedDraftFromFormState } from "../../renderer/state/generatedDraft.js";
+import {
+  DraftUnsupportedError,
+  generatedDraftFromFormState,
+} from "../../renderer/state/generatedDraft.js";
 import { getRunStore } from "../runStoreAccess.js";
-import { validateRunRecord } from "../../shared/runRecordValidation.js";
+import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
 import { formStateFromRunConfig } from "../../renderer/state/formState.js";
 import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 
@@ -55,7 +58,7 @@ export async function handleDraftFromRun(
     }
 
     // Validate the record
-    const validation = validateRunRecord(record);
+    const validation = validateStoredRunRecord(record);
     if (!validation.valid) {
       logError("Invalid run record in store", { id: record.id, errors: validation.errors });
       return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
@@ -86,9 +89,20 @@ export async function handleDraftFromRun(
     try {
       draft = generatedDraftFromFormState(formState);
     } catch (error) {
-      // This catch cannot distinguish a deliberate refusal from an internal
-      // fault, so the adapter's own message never reaches the client.
       logError("Error converting FormState to GeneratedRunDraft", error);
+      // A refusal names the setting a draft has no field for, and that reason
+      // is the whole value of the answer. Withholding it did not make the
+      // result safer, only emptier: asked why a run could not be drafted, an
+      // agent with no reason available inferred one — and reported, with
+      // confidence, that the cause was the run's QEC code, when it was a
+      // DynamicMemoryCompute trace-transform stage that two gate-based runs
+      // failed on too. A wrong reason is worse than a missing one.
+      //
+      // Only a refusal is forwarded. Anything else is a fault in our own code,
+      // and its message stays here. `toolFailure` sanitises either way.
+      if (error instanceof DraftUnsupportedError) {
+        return toolFailure("DRAFT_UNSUPPORTED", error.message);
+      }
       return toolFailure(
         "DRAFT_UNSUPPORTED",
         "This run cannot be expressed as an editable draft.",

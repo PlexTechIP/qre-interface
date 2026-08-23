@@ -20,9 +20,13 @@
 
 import { z } from "zod";
 
+import type { RunSettings } from "./projections.js";
+
 import {
   ARCHITECTURE_TYPES,
   UPLOADED_PROGRAM_FORMATS,
+  type FrontierEndpoint,
+  type FrontierSpan,
   type RunSummary,
   type RunSummaryApplication,
 } from "../shared/types.js";
@@ -38,6 +42,19 @@ const runSummaryApplication = z.union([
   z.object({ type: z.literal("manualCounts") }),
 ]) satisfies z.ZodType<RunSummaryApplication>;
 
+const frontierEndpoint = z.object({
+  physicalQubits: z.number(),
+  runtime: z.number(),
+}) satisfies z.ZodType<FrontierEndpoint>;
+
+const frontierSpan = z.object({
+  points: z.number(),
+  physicalQubitsUnit: z.string(),
+  runtimeUnit: z.string(),
+  fewestQubits: frontierEndpoint,
+  mostQubits: frontierEndpoint,
+}) satisfies z.ZodType<FrontierSpan>;
+
 const runSummary = z.object({
   id: z.string(),
   name: z.string(),
@@ -46,6 +63,7 @@ const runSummary = z.object({
   status: runStatus,
   architecture: z.enum(ARCHITECTURE_TYPES),
   application: runSummaryApplication,
+  frontier: frontierSpan.nullable(),
 }) satisfies z.ZodType<RunSummary>;
 
 /** A measured quantity as the engine reports it: value, unit, and display form. */
@@ -75,6 +93,23 @@ const frontierRow = z.object({
   additional: z.record(z.string(), fieldMetric).optional(),
 });
 
+/** One settings group: bounded primitives, keyed by whatever the run set. */
+const settingsGroup = z.record(
+  z.string(),
+  z.union([z.number(), z.string(), z.boolean(), z.null()]),
+);
+
+const runSettings = z.object({
+  qecCode: z.string(),
+  maxError: z.number(),
+  magicStateFactories: z.array(z.string()),
+  secondaryFactories: z.array(z.string()),
+  memoryOptimization: z.string(),
+  architecture: settingsGroup,
+  parameters: settingsGroup,
+  traceTransform: settingsGroup,
+}) satisfies z.ZodType<RunSettings>;
+
 const runDetail = z.object({
   id: z.string(),
   name: z.string(),
@@ -86,6 +121,7 @@ const runDetail = z.object({
   error: z.object({ code: z.string(), message: z.string() }).nullable(),
   architecture: z.enum(ARCHITECTURE_TYPES),
   application: runSummaryApplication,
+  settings: runSettings,
   qreVersion: z.string(),
   frontierSample: frontierRow.nullable(),
   frontierRowCount: z.number().nullable(),

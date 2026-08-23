@@ -30,8 +30,17 @@ function waitForPort(port, attempts = 100) {
   });
 }
 
+// Four builds share dist-electron, and the main one empties it (see
+// vite.main.config.ts), so everything else has to run after it — including the
+// MCP server, which the dashboard itself does not need.
+//
+// Leaving it out is what made `npm run dev` delete a bundle it never rebuilt.
+// An MCP client holds an absolute path to that file, so launching the dashboard
+// silently broke every already-configured agent with MODULE_NOT_FOUND, and the
+// only symptom was CONNECTION_CLOSED at the client.
 await waitFor(run("vite", ["build", "--config", "vite.main.config.ts"]));
 await waitFor(run("vite", ["build", "--config", "vite.preload.config.ts"]));
+await waitFor(run("vite", ["build", "--config", "vite.mcp.config.ts"]));
 
 const port = "5173";
 const vite = run("vite", ["--host", "127.0.0.1", "--port", port, "--strictPort"]);

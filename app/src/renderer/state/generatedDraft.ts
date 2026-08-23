@@ -16,6 +16,31 @@ import type { FormState } from "./formState.js";
 import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 
 /**
+ * This run is expressible in the app but not in the generation contract.
+ *
+ * A distinct type, because the two ways this adapter can fail are not the same
+ * failure and must not read the same to a caller. A refusal is a FACT about the
+ * run — it uses a setting a draft has no field for — and its message names that
+ * setting. Anything else thrown here is a fault in this code, whose message is
+ * nobody else's business.
+ *
+ * `src/mcp/tools/draftFromRun.ts` forwards the message of a refusal and
+ * replaces the message of a fault. Before this existed it could not tell them
+ * apart, so it replaced both with "This run cannot be expressed as an editable
+ * draft" — and an agent asked why, having no reason available, produced a
+ * confident and wrong one instead of the true reason.
+ *
+ * These messages are written to be read by someone who did not write this file.
+ * They name the setting, not the function that rejected it.
+ */
+export class DraftUnsupportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DraftUnsupportedError";
+  }
+}
+
+/**
  * Convert a FormState into a GeneratedRunDraft.
  *
  * This is a discriminated helper: it either returns a valid draft
@@ -32,7 +57,7 @@ import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 export function generatedDraftFromFormState(state: FormState): GeneratedRunDraft {
   // Reject uploaded applications
   if (state.application.type === "uploaded") {
-    throw new Error(
+    throw new DraftUnsupportedError(
       "Cannot draft from a form with an uploaded application. File paths cannot be represented in a generated draft.",
     );
   }
@@ -56,7 +81,7 @@ export function generatedDraftFromFormState(state: FormState): GeneratedRunDraft
       mc.ccixCount === null ||
       mc.measurementCount === null
     ) {
-      throw new Error(
+      throw new DraftUnsupportedError(
         "Cannot draft from manual counts with incomplete fields.",
       );
     }
@@ -93,7 +118,7 @@ export function generatedDraftFromFormState(state: FormState): GeneratedRunDraft
     const form = arch.majorana;
     // Reject if the form has set tErrorRate or targetYear
     if (form.tErrorRate !== null || form.targetYear !== null) {
-      throw new Error(
+      throw new DraftUnsupportedError(
         "Majorana-specific optional fields (tErrorRate, targetYear) cannot be represented in a generated draft.",
       );
     }
@@ -106,7 +131,7 @@ export function generatedDraftFromFormState(state: FormState): GeneratedRunDraft
     const form = arch.neutralAtom;
     // Reject if the form has set dataQubitSpacing or targetYear
     if (form.dataQubitSpacing !== null || form.targetYear !== null) {
-      throw new Error(
+      throw new DraftUnsupportedError(
         "Neutral Atom-specific optional fields (dataQubitSpacing, targetYear) cannot be represented in a generated draft.",
       );
     }
@@ -134,12 +159,12 @@ export function generatedDraftFromFormState(state: FormState): GeneratedRunDraft
   // Check trace transform for unsupported stages
   const tt = state.traceTransform;
   if (tt.dynamicMemoryCompute !== null) {
-    throw new Error(
+    throw new DraftUnsupportedError(
       "DynamicMemoryCompute trace transform stage cannot be represented in a generated draft.",
     );
   }
   if (tt.unmemory) {
-    throw new Error(
+    throw new DraftUnsupportedError(
       "Unmemory trace transform stage cannot be represented in a generated draft.",
     );
   }

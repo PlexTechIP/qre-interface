@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
+import { homedir } from "node:os";
 
 import {
   boundedText,
@@ -94,5 +95,98 @@ describe("redactPaths", () => {
     const prose = "Increase the error budget and/or the code distance (see 1/2).";
 
     expect(redactPaths(prose)).toBe(prose);
+  });
+});
+
+/**
+ * The paths the segment patterns alone did not reach.
+ *
+ * `POSIX_PATH` and `WINDOWS_PATH` enumerate the characters a path segment may
+ * contain, and a real person's home directory routinely contains one outside
+ * that set. Every case here leaked before: a surname survived as
+ * `<path> Smith<path>`, a Windows path kept everything after its first space,
+ * and a UNC share — which names an internal host as well as a directory — was
+ * not matched at all.
+ *
+ * The vector is not hypothetical. A stored engine failure carries up to 2000
+ * characters of raw Python stderr, `toRunDetail` returns it, and a traceback
+ * spells its paths as `File "…", line 42`.
+ */
+describe("redactPaths on the shapes a real machine produces", () => {
+  const leaks = [
+    ["a home directory containing a space", "/Users/John Smith/Documents/prog.qasm", "Smith"],
+    ["a Windows path containing a space", "C:\\Users\\John Smith\\Documents\\prog.qasm", "Smith"],
+    ["a UNC share", "\\\\corp-fileserver\\share\\secret.qasm", "corp-fileserver"],
+    ["an apostrophe in a surname", "/Users/o'brien/x.qasm", "brien"],
+    ["a mounted volume", "/Volumes/Shared Drive/proj/x.qasm", "Shared Drive"],
+  ] as const;
+
+  it.each(leaks)("redacts %s", (_label, input, secret) => {
+    expect(redactPaths(input)).not.toContain(secret);
+  });
+
+  it("redacts a path inside a Python traceback frame", () => {
+    const frame = 'File "/Users/Jane Doe/Acme Corp/run.py", line 42, in <module>';
+
+    const redacted = redactPaths(frame);
+
+    expect(redacted).not.toContain("Jane");
+    expect(redacted).not.toContain("Acme Corp");
+    // The frame is still readable as a frame; only the path is gone.
+    expect(redacted).toContain("line 42");
+  });
+
+  it("keeps the message that follows a path", () => {
+    // Over-redaction has a cost too: a path-shaped rule that swallows the rest
+    // of the line leaves an agent with no error to reason about.
+    const redacted = redactPaths("/Users/x/venv/bin/python: No such file or directory");
+
+    expect(redacted).toContain("No such file or directory");
+    expect(redacted).not.toContain("/Users");
+  });
+
+  it("leaves prose alone", () => {
+    for (const prose of [
+      "and/or see 1/2",
+      "the ratio is 3/4 and/or 5/6",
+      "ModuleNotFoundError: No module named qsharp",
+    ]) {
+      expect(redactPaths(prose)).toBe(prose);
+    }
+  });
+
+  it("redacts this machine's own home directory, whatever it is called", () => {
+    const underHome = `${homedir()}/qre/scratch/run-history.sqlite`;
+
+    const redacted = redactPaths(underHome);
+
+    expect(redacted).toBe("<path>");
+  });
+
+  it("stays idempotent", () => {
+    for (const input of leaks.map(([, value]) => value)) {
+      const once = redactPaths(input);
+      expect(redactPaths(once)).toBe(once);
+    }
+  });
+});
+
+describe("redactPaths on a quoted path containing the other quote", () => {
+  it("takes a double-quoted path whole even with an apostrophe in it", () => {
+    // A single class excluding both quotes never matched this at all, so it
+    // fell through to the segment patterns and kept the surname.
+    const frame = `File "/srv/exports/o'neill/x.py", line 7`;
+
+    const redacted = redactPaths(frame);
+
+    expect(redacted).not.toContain("neill");
+    expect(redacted).toContain("line 7");
+  });
+
+  it("takes a single-quoted path whole even with a double quote in it", () => {
+    const redacted = redactPaths(`File '/srv/say "hi"/x.py', line 3`);
+
+    expect(redacted).not.toContain("say");
+    expect(redacted).toContain("line 3");
   });
 });

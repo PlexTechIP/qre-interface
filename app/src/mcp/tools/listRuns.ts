@@ -12,7 +12,7 @@ import { logError } from "../logger.js";
 import { runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunSummary } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
-import { validateRunRecord } from "../../shared/runRecordValidation.js";
+import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
 import {
   BENCHMARK_IDS,
   MANUAL_COUNTS_APPLICATION_KEY,
@@ -198,7 +198,7 @@ export async function handleListRuns(
     // Validate only what is about to be returned. Validating the whole history
     // meant one unreadable record made every page fail.
     for (const record of page) {
-      const validation = validateRunRecord(record);
+      const validation = validateStoredRunRecord(record);
       if (!validation.valid) {
         logError("Invalid run record in store", {
           id: record.id,

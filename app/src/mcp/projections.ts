@@ -13,9 +13,42 @@ import type {
   RunSummary,
   RunSummaryApplication,
   FrontierRow,
+  FrontierSpan,
   RunError,
   ArchitectureType,
 } from "../shared/types.js";
+
+/**
+ * What the analyst asked for, as distinct from what came back.
+ *
+ * Without this a failure was unexplainable. `ESTIMATION_FAILED — the estimator
+ * found no feasible Pareto frontier point; relax maxError or adjust the model`
+ * names the field to relax, and nothing could say what it had been set to, so
+ * "why did this fail?" dead-ended on every failed run. The only other tool
+ * carrying configuration is `qre_draft_from_run`, which refuses the runs whose
+ * settings a draft cannot express — so precisely the unusual configurations
+ * most worth asking about were the ones nothing could report.
+ *
+ * Loose maps rather than a typed union, for the two fields that genuinely have
+ * no fixed shape: architecture parameters differ per architecture and
+ * hyperparameters differ per benchmark, so a union of every branch would be a
+ * fourth copy of a contract that already exists in the JSON Schema — and would
+ * silently drop a field the day a benchmark gains one. Values are bounded
+ * primitives, the same treatment `additional` metrics already get.
+ */
+export interface RunSettings {
+  qecCode: string;
+  maxError: number;
+  magicStateFactories: string[];
+  secondaryFactories: string[];
+  memoryOptimization: string;
+  /** Architecture-specific values, as this run set them. */
+  architecture: Record<string, number | string | boolean | null>;
+  /** Benchmark hyperparameters, as this run set them. Empty for a non-benchmark run. */
+  parameters: Record<string, number | string | boolean | null>;
+  /** Trace-transform settings, as this run set them. */
+  traceTransform: Record<string, number | string | boolean | null>;
+}
 
 /**
  * RunDetail — a fuller view of a run than RunSummary, but still with `raw`
@@ -33,6 +66,8 @@ export interface RunDetail {
   error: RunError | null;
   architecture: ArchitectureType;
   application: RunSummaryApplication;
+  /** What was asked for. `error` and `frontierSample` are what came back. */
+  settings: RunSettings;
   qreVersion: string;
   /** One representative frontier row (index 0, if available). */
   frontierSample: FrontierRow | null;
@@ -65,6 +100,52 @@ export function toRunSummary(record: RunRecord): RunSummary {
     status: record.result.status,
     architecture: record.config.architecture.type,
     application,
+    frontier: toFrontierSpan(record.result.frontier),
+  };
+}
+
+/**
+ * The cheapest and most expensive points a frontier reaches.
+ *
+ * Sorted here rather than trusted: the engine's row order is not a documented
+ * ranking, so reading `frontier[0]` as "the cheapest" would be a rule this
+ * projection invented.
+ *
+ * Each end is carried as a whole point. Taking a minimum per measurement would
+ * pair the smallest qubit count with the shortest runtime, and on a frontier
+ * that trades one against the other those two belong to opposite rows — the
+ * result would be a configuration the engine never returned and nothing can be
+ * run at.
+ *
+ * The units come from the cheapest point. A frontier that changed units between
+ * rows would make any comparison meaningless and the engine does not do that;
+ * reading them from one named row makes the assumption visible rather than
+ * averaging over it.
+ */
+function toFrontierSpan(
+  frontier: readonly FrontierRow[] | null,
+): FrontierSpan | null {
+  if (frontier === null || frontier.length === 0) return null;
+
+  const byQubits = [...frontier].sort(
+    (a, b) => a.physicalQubits.value - b.physicalQubits.value,
+  );
+  const cheapest = byQubits[0];
+  const largest = byQubits[byQubits.length - 1];
+  if (cheapest === undefined || largest === undefined) return null;
+
+  return {
+    points: frontier.length,
+    physicalQubitsUnit: boundedText(cheapest.physicalQubits.unit, MAX_SHORT_FIELD),
+    runtimeUnit: boundedText(cheapest.runtime.unit, MAX_SHORT_FIELD),
+    fewestQubits: {
+      physicalQubits: cheapest.physicalQubits.value,
+      runtime: cheapest.runtime.value,
+    },
+    mostQubits: {
+      physicalQubits: largest.physicalQubits.value,
+      runtime: largest.runtime.value,
+    },
   };
 }
 
@@ -82,6 +163,8 @@ const MAX_ERROR_MESSAGE = 1000;
 /** Codes, versions, units, display strings, and metric keys. */
 const MAX_SHORT_FIELD = 100;
 const MAX_ADDITIONAL_METRICS = 24;
+/** Architecture fields, hyperparameters, and factory sets are all small. */
+const MAX_SETTING_ENTRIES = 32;
 const MAX_FACTORY_ENTRIES = 16;
 
 function boundedNumericMetric(metric: NumericMetric): NumericMetric {
@@ -202,10 +285,103 @@ export function toRunDetail(record: RunRecord): RunDetail {
     error,
     architecture: record.config.architecture.type,
     application,
+    settings: toRunSettings(record.config),
     qreVersion: boundedText(record.result.qreVersion, MAX_SHORT_FIELD),
     frontierSample: bounded?.sample ?? null,
     frontierRowCount,
     frontierSampleOmitted: bounded?.omitted ?? 0,
+  };
+}
+
+/** One level of nesting is all these config shapes have; the cap is the guard. */
+const MAX_SETTING_DEPTH = 3;
+
+/**
+ * Flatten one settings group into bounded primitives, nested keys joined by `.`.
+ *
+ * `type` is dropped where it appears: the architecture discriminator is already
+ * reported at the top of the detail, and repeating it invites an agent to treat
+ * the two as independently meaningful.
+ *
+ * Nested values are FLATTENED, not discarded, and the reason is that discarding
+ * them is not neutral. `traceTransform.dynamicMemoryCompute` is either null,
+ * meaning the stage is off, or an object describing the stage — so collapsing
+ * the object to null did not withhold information, it asserted the opposite of
+ * the truth, beside a `qre_draft_from_run` refusal naming that very stage as the
+ * reason the run could not be drafted. A view of a configuration has to be able
+ * to distinguish "off" from "on, and not shown".
+ *
+ * Depth and entry count are both capped, so an unexpectedly deep future setting
+ * is bounded rather than unbounded.
+ */
+function toBoundedSettings(
+  source: Record<string, unknown> | undefined,
+): Record<string, number | string | boolean | null> {
+  const bounded: Record<string, number | string | boolean | null> = {};
+  if (source === undefined) return bounded;
+
+  const walk = (value: unknown, prefix: string, depth: number): void => {
+    if (Object.keys(bounded).length >= MAX_SETTING_ENTRIES) return;
+
+    const key = boundedText(prefix, MAX_SHORT_FIELD);
+    if (Object.hasOwn(bounded, key)) return;
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      bounded[key] = value;
+    } else if (typeof value === "string") {
+      bounded[key] = boundedText(value, MAX_SHORT_FIELD);
+    } else if (value === null || value === undefined) {
+      // A real null: the stage is off, the option is unset. Distinct from the
+      // null below, which means "too deep to show".
+      bounded[key] = null;
+    } else if (depth >= MAX_SETTING_DEPTH) {
+      bounded[key] = null;
+    } else if (Array.isArray(value)) {
+      value.forEach((item, index) => walk(item, `${prefix}.${index}`, depth + 1));
+    } else {
+      for (const [childKey, childValue] of Object.entries(value)) {
+        walk(childValue, `${prefix}.${childKey}`, depth + 1);
+      }
+    }
+  };
+
+  for (const [key, value] of Object.entries(source)) {
+    if (key === "type") continue;
+    walk(value, key, 1);
+  }
+  return bounded;
+}
+
+/**
+ * Project a run's configuration into the settings an agent may see.
+ *
+ * `application` is deliberately absent — it is reported separately, by
+ * `buildRunSummaryApplication`, which is the projection that strips an uploaded
+ * program's file path. Reading the application from here instead would route
+ * around that.
+ */
+function toRunSettings(config: RunRecord["config"]): RunSettings {
+  const architecture = config.architecture as unknown as Record<string, unknown>;
+
+  return {
+    qecCode: boundedText(config.qecCode, MAX_SHORT_FIELD),
+    maxError: config.maxError,
+    magicStateFactories: config.magicStateFactories
+      .slice(0, MAX_SETTING_ENTRIES)
+      .map((factory) => boundedText(factory, MAX_SHORT_FIELD)),
+    secondaryFactories: (config.secondaryFactories ?? [])
+      .slice(0, MAX_SETTING_ENTRIES)
+      .map((factory) => boundedText(factory, MAX_SHORT_FIELD)),
+    // Absent means "none" — see RunConfig. Saying so beats an empty string an
+    // agent has to interpret.
+    memoryOptimization: boundedText(config.memoryOptimization ?? "none", MAX_SHORT_FIELD),
+    architecture: toBoundedSettings(architecture),
+    parameters: toBoundedSettings(
+      config.parameters as unknown as Record<string, unknown> | undefined,
+    ),
+    traceTransform: toBoundedSettings(
+      config.traceTransform as unknown as Record<string, unknown>,
+    ),
   };
 }
 

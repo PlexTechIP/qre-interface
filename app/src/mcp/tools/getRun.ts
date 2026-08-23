@@ -10,7 +10,7 @@ import { logError } from "../logger.js";
 import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunDetail, type RunDetail } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
-import { validateRunRecord } from "../../shared/runRecordValidation.js";
+import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
 
 export interface GetRunInput {
   id: string;
@@ -39,7 +39,7 @@ export async function handleGetRun(input: GetRunInput): Promise<CallToolResult> 
       );
     }
 
-    const validation = validateRunRecord(record);
+    const validation = validateStoredRunRecord(record);
     if (!validation.valid) {
       logError("Invalid run record in store", {
         id: record.id,

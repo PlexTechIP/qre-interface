@@ -4,6 +4,11 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   build: {
+    // This config is the only one that empties dist-electron, and four builds
+    // write there — main, preload, the MCP server, and the runtime assets
+    // below. So this one must run FIRST and the others after it, in `npm run
+    // build` and in scripts/dev.mjs alike. Running it on its own deletes the
+    // MCP bundle, which an MCP client holds an absolute path to.
     emptyOutDir: true,
     outDir: "dist-electron",
     ssr: "src/main/main.ts",

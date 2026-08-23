@@ -47,3 +47,66 @@ export function validateRunRecord(record: unknown): RunRecordValidationResult {
   }
   return { valid: true, errors: "" };
 }
+
+/** The version each committed schema pins, read from the artifact itself. */
+function pinnedVersion(schema: unknown): string | undefined {
+  const constant = (
+    schema as { properties?: { schemaVersion?: { const?: unknown } } }
+  ).properties?.schemaVersion?.const;
+  return typeof constant === "string" ? constant : undefined;
+}
+
+/**
+ * Rewrite only the three version stamps, leaving everything else alone.
+ * Returns null if the record is not even shaped like one.
+ */
+function restampVersions(record: unknown): unknown | null {
+  if (typeof record !== "object" || record === null) return null;
+  const { config, result } = record as { config?: unknown; result?: unknown };
+  if (typeof config !== "object" || config === null) return null;
+  if (typeof result !== "object" || result === null) return null;
+
+  return {
+    ...record,
+    schemaVersion: pinnedVersion(runRecordSchema),
+    config: { ...config, schemaVersion: pinnedVersion(runConfigSchema) },
+    result: { ...result, schemaVersion: pinnedVersion(runResultSchema) },
+  };
+}
+
+/**
+ * Validate a record that is being READ, where its age is not a defect.
+ *
+ * `validateRunRecord` answers "could this be saved right now?", and the three
+ * schemas pin `schemaVersion` to a `const`. That is right on the way in — a
+ * record written today must be current — and unusable on the way out, because
+ * `upgradeRunConfig` deliberately leaves `schemaVersion` as saved: "a run
+ * configured under 1.1.0 must keep saying 1.1.0 in History and in exports;
+ * claiming a later version would be a lie about what the user actually chose."
+ *
+ * Those two rules together mean the strict validator rejects every legitimately
+ * old record, permanently and by construction. Used as a read gate it did:
+ * seven of twenty-two runs in a real history failed it, all seven for nothing
+ * but their version stamp, and because `qre_list_runs` validates a whole page
+ * one of them made the default page — the answer to "what runs do I have?" —
+ * fail outright.
+ *
+ * So this asks the question a reader actually has: is the record SOUND, whatever
+ * wrote it? The committed schemas still decide, unmodified; only the version
+ * stamps are set aside, and the record itself is not changed — callers keep
+ * projecting the original, which still reports the version it was saved with.
+ *
+ * The store's own `save` path keeps using the strict validator.
+ */
+export function validateStoredRunRecord(
+  record: unknown,
+): RunRecordValidationResult {
+  const strict = validateRunRecord(record);
+  if (strict.valid) return strict;
+
+  const restamped = restampVersions(record);
+  if (restamped === null) return strict;
+
+  // Re-run in full, so the id/config.id/result.runId invariant is still checked.
+  return validateRunRecord(restamped);
+}

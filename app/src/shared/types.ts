@@ -764,10 +764,51 @@ export type RunSummaryApplication =
   | { type: "manualCounts" };
 
 /**
+ * What a run's Pareto frontier spans, as a summary can honestly state it.
+ *
+ * A frontier has no "the" answer — `agentRunReport.ts` says so where it reports
+ * one to the chat surface, and picking row zero here would be this type
+ * inventing a ranking the engine deliberately did not supply. The span between
+ * the cheapest and most expensive point is what the frontier actually says.
+ *
+ * Bare numbers plus one unit, rather than a `NumericMetric` per bound: this is
+ * repeated once per run in a list of up to a hundred, and four `{ value, unit,
+ * display }` objects per row is most of a page's context spent on units that do
+ * not vary. `qre_get_run` is where the formatted metrics live.
+ */
+export interface FrontierSpan {
+  /** How many points the engine returned. */
+  points: number;
+  physicalQubitsUnit: string;
+  runtimeUnit: string;
+  /**
+   * The two ends of the trade-off, as whole points rather than as independent
+   * minima. A frontier trades qubits against time, so the run with the fewest
+   * qubits is generally the SLOWEST — reporting a `min` and a `max` per
+   * measurement would pair a qubit count with a runtime from a different row
+   * and describe a configuration the engine never returned.
+   *
+   * Equal to each other when the frontier has one point.
+   */
+  fewestQubits: FrontierEndpoint;
+  mostQubits: FrontierEndpoint;
+}
+
+/** One frontier point, reduced to the two numbers a comparison turns on. */
+export interface FrontierEndpoint {
+  physicalQubits: number;
+  runtime: number;
+}
+
+/**
  * Summarized run for MCP exposure — a stripped-down view of RunRecord.
  * This type deliberately excludes most fields from the full RunRecord to keep
  * the agent's context bounded and avoid flooding it with full configs, results,
  * and raw engine output.
+ *
+ * `frontier` is the one measurement it carries, because without it the question
+ * this app exists to answer — which configuration costs less — took one call per
+ * run to ask.
  */
 export interface RunSummary {
   id: string;
@@ -777,6 +818,8 @@ export interface RunSummary {
   status: "succeeded" | "failed";
   architecture: ArchitectureType;
   application: RunSummaryApplication;
+  /** Null for a failed run, and for a run that produced no feasible points. */
+  frontier: FrontierSpan | null;
 }
 
 /**
