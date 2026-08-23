@@ -21,7 +21,7 @@
  * only means "build first" trains people to ignore it.
  */
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -31,6 +31,30 @@ const BUNDLE = resolve(APP_DIR, "dist-electron", "mcp-server.mjs");
 const ELECTRON = resolve(APP_DIR, "node_modules", ".bin", "electron");
 
 const runnable = existsSync(BUNDLE) && existsSync(ELECTRON);
+
+/**
+ * Make Electron's binary present before anything reads its stdout.
+ *
+ * `node_modules/.bin/electron` is a shim: on the first run after a fresh
+ * install it DOWNLOADS the real binary and narrates that to stdout —
+ * `Downloading Electron binary...`. The handshake below asserts that every
+ * line on stdout is a JSON-RPC frame, which is the whole point of it, and on a
+ * cold `npm ci` the launcher's own chatter arrived on that stream before the
+ * server had even started. The test failed for something the server did not do.
+ *
+ * So the download is provoked here, once, where its output is discarded. What
+ * the assertion then sees is only what the bundle wrote.
+ */
+async function warmElectron(): Promise<void> {
+  await new Promise<void>((done) => {
+    const child = spawn(ELECTRON, ["--version"], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      stdio: "ignore",
+    });
+    child.on("error", () => done());
+    child.on("exit", () => done());
+  });
+}
 
 /** Speak just enough protocol to prove the server started and can answer. */
 function handshake(command: string, args: string[]): Promise<string> {
@@ -103,6 +127,11 @@ function handshake(command: string, args: string[]): Promise<string> {
 }
 
 describe("the shipped bundle under Electron's own Node", () => {
+  // Generous: this is a binary download on a cold install, not a unit of work.
+  beforeAll(async () => {
+    if (runnable) await warmElectron();
+  }, 300_000);
+
   it.skipIf(!runnable)(
     "starts, handshakes, and answers a tool call",
     async () => {
@@ -112,7 +141,10 @@ describe("the shipped bundle under Electron's own Node", () => {
       expect(stdout, "no answer to the tool call").toContain("shors-factoring");
       // stdout is the protocol stream and nothing else may share it.
       for (const frame of stdout.split("\n").filter((l) => l.trim().length > 0)) {
-        expect(() => JSON.parse(frame) as unknown).not.toThrow();
+        expect(
+          () => JSON.parse(frame) as unknown,
+          `stdout carried a line that is not a JSON-RPC frame: ${frame.slice(0, 120)}`,
+        ).not.toThrow();
       }
     },
     90_000,
