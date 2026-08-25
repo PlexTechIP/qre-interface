@@ -10,6 +10,7 @@ import {
   type AppInfoService,
   type StorageLocation,
   type StorageLocationId,
+  type McpSetup,
 } from "../../shared/appInfoTypes";
 import type { ChatStore } from "../../shared/chatTypes";
 import { ProviderModelSelect } from "../components/ProviderModelSelect";
@@ -109,6 +110,51 @@ const describeError = (error: unknown): string =>
  * is that keys are now managed per provider instead of through a single
  * dropdown that also repointed the chat.
  */
+/**
+ * The clients this panel offers, and how each one is set up.
+ *
+ * A table rather than four hand-written blocks: every entry is the same shape —
+ * a heading, one line of instruction, a copyable string — and writing them out
+ * separately is how the fifth one ends up missing its Copy button.
+ */
+const MCP_CLIENTS: readonly {
+  readonly id: string;
+  readonly label: string;
+  readonly intro: string;
+  readonly copyLabel: string;
+  readonly value: (setup: McpSetup) => string;
+}[] = [
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    intro: "Run this once, from any folder.",
+    copyLabel: "Copy command",
+    value: (setup) => setup.claudeCodeCommand,
+  },
+  {
+    id: "codex",
+    label: "Codex CLI",
+    intro: "Run this once, from any folder.",
+    copyLabel: "Copy command",
+    value: (setup) => setup.codexCommand,
+  },
+  {
+    id: "claude-desktop",
+    label: "Claude Desktop and other JSON clients",
+    intro:
+      "Merge this into the client\u2019s configuration file, then restart it.",
+    copyLabel: "Copy configuration",
+    value: (setup) => setup.configJson,
+  },
+  {
+    id: "codex-toml",
+    label: "Codex, by hand",
+    intro: "Or add this to ~/.codex/config.toml yourself.",
+    copyLabel: "Copy TOML",
+    value: (setup) => setup.codexConfigToml,
+  },
+];
+
 export function SettingsPage({
   service,
   status,
@@ -134,6 +180,8 @@ export function SettingsPage({
   const [locations, setLocations] = useState<readonly StorageLocation[]>([]);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
+  const [mcpSetup, setMcpSetup] = useState<McpSetup | null>(null);
+  const [mcpError, setMcpError] = useState<string | null>(null);
 
   const anyConfigured = status.providers.some((candidate) => candidate.configured);
 
@@ -162,6 +210,29 @@ export function SettingsPage({
         if (!current) return;
         setLocations([]);
         setStorageError(describeError(caught));
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [appInfo]);
+
+  useEffect(() => {
+    if (appInfo === undefined) return;
+    let current = true;
+    void appInfo.getMcpSetup().then(
+      (setup) => {
+        if (!current) return;
+        setMcpSetup(setup);
+        setMcpError(null);
+      },
+      (caught: unknown) => {
+        // Same reason the storage read reports rather than renders empty: a
+        // blank block looks like "there is nothing to connect", which is a
+        // different and wrong answer.
+        if (!current) return;
+        setMcpSetup(null);
+        setMcpError(describeError(caught));
       },
     );
     return () => {
@@ -304,6 +375,60 @@ export function SettingsPage({
             </div>
           </section>
         </>
+      ),
+    },
+    {
+      id: "mcp",
+      label: "MCP Server",
+      panel: (
+        <section className="form-section">
+          <p className="form-section__intro">
+            Claude, Codex and other MCP clients can read your saved runs — to
+            compare them, explain a failure, or check a configuration before you
+            run it. Access is read-only: an agent cannot start a run, change
+            one, or write to these files.
+          </p>
+          <p className="form-section__intro">
+            The paths below belong to this installation on this machine, and are
+            worked out when the app starts. If you move or update the app, come
+            back and copy them again.
+          </p>
+
+          {mcpError !== null ? (
+            <p className="agent-error" role="alert">
+              The connection details could not be read: {mcpError}
+            </p>
+          ) : null}
+
+          {mcpSetup !== null ? (
+            <>
+              {mcpSetup.problems.map((problem, index) => (
+                // Keyed by position: these are plain sentences with no identity
+                // of their own, and two could legitimately read the same.
+                <p key={index} className="agent-note">
+                  {problem}
+                </p>
+              ))}
+
+              {MCP_CLIENTS.map((client) => (
+                <div key={client.id} className="mcp-client">
+                  <h3 className="settings-subhead">{client.label}</h3>
+                  <p className="form-section__intro">{client.intro}</p>
+                  <div role="group" aria-label={`${client.label} setup`}>
+                    <pre className="settings-code">{client.value(mcpSetup)}</pre>
+                    <div className="agent-actions">
+                      <CopyButton
+                        value={client.value(mcpSetup)}
+                        label={client.copyLabel}
+                        className="agent-secondary"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : null}
+        </section>
       ),
     },
     {

@@ -3,11 +3,16 @@ import { existsSync } from "node:fs";
 
 import {
   isStorageLocationId,
+  type McpSetup,
   type RevealResult,
   type StorageInfo,
   type StorageLocation,
 } from "../shared/appInfoTypes.js";
-import { APP_INFO_REVEAL_CHANNEL, APP_INFO_STORAGE_CHANNEL } from "./ipcChannels.js";
+import {
+  APP_INFO_MCP_CHANNEL,
+  APP_INFO_REVEAL_CHANNEL,
+  APP_INFO_STORAGE_CHANNEL,
+} from "./ipcChannels.js";
 
 /**
  * Opening a path in the OS file manager. Injected rather than importing
@@ -27,11 +32,22 @@ export type RevealItem = (path: string) => void;
 export function registerAppInfoHandlers(
   ipcMain: Pick<IpcMain, "handle">,
   locations: readonly StorageLocation[],
+  /**
+   * How to connect an MCP client, resolved PER CALL rather than at startup.
+   *
+   * The paths in it are fixed for the process, but the problems it reports are
+   * not: "no runs are saved yet" stops being true the moment the analyst saves
+   * one. Computed once and closed over, Settings kept saying it for the rest of
+   * the session, contradicting the History tab next to it.
+   */
+  resolveMcpSetup: () => Promise<McpSetup>,
   revealItem: RevealItem,
   /** Injected for the same reason `revealItem` is: no Electron under test. */
   pathExists: (target: string) => boolean = existsSync,
 ): void {
   ipcMain.handle(APP_INFO_STORAGE_CHANNEL, (): StorageInfo => ({ locations }));
+
+  ipcMain.handle(APP_INFO_MCP_CHANNEL, (): Promise<McpSetup> => resolveMcpSetup());
 
   ipcMain.handle(APP_INFO_REVEAL_CHANNEL, (_event, rawId: unknown): RevealResult => {
     /*

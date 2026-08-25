@@ -9,6 +9,7 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
 import type { RevealResult, StorageInfo, StorageLocation } from "../shared/appInfoTypes.js";
+import { FAKE_MCP_SETUP } from "../shared/testing/fakeAppInfo.js";
 import { registerAppInfoHandlers } from "./appInfoHandler.js";
 import { APP_INFO_REVEAL_CHANNEL, APP_INFO_STORAGE_CHANNEL } from "./ipcChannels.js";
 
@@ -31,7 +32,13 @@ function setup(
   };
   const revealItem = vi.fn(revealImpl);
   const pathExists = vi.fn(pathExistsImpl);
-  registerAppInfoHandlers(ipcMain, LOCATIONS, revealItem, pathExists);
+  registerAppInfoHandlers(
+    ipcMain,
+    LOCATIONS,
+    async () => FAKE_MCP_SETUP,
+    revealItem,
+    pathExists,
+  );
 
   const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
     const handler = handlers.get(channel);

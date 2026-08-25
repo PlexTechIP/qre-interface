@@ -36,6 +36,38 @@ export interface StorageInfo {
 }
 
 /**
+ * What an MCP client needs to launch this app's read-only server.
+ *
+ * The dashboard is the only process that can answer this. It knows its own
+ * executable, where its resources were installed, and which database it opened
+ * — and in a packaged app none of those are derivable from anywhere else: there
+ * is no checkout, no `npm run`, and the paths move with every release.
+ */
+export interface McpClientEntry {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env: Readonly<Record<string, string>>;
+}
+
+export interface McpSetup {
+  readonly entry: McpClientEntry;
+  /** The `mcpServers` block, ready to paste into a client's config file. */
+  readonly configJson: string;
+  /** The equivalent one-liner for Claude Code. */
+  readonly claudeCodeCommand: string;
+  /** The same, for the Codex CLI, which takes the same arguments. */
+  readonly codexCommand: string;
+  /** The `~/.codex/config.toml` block, for editing that file by hand. */
+  readonly codexConfigToml: string;
+  /**
+   * What is not yet true. Empty means the block above will work as it stands;
+   * anything here is a step the analyst has to take first, said in their words
+   * rather than left to be discovered at the first tool call.
+   */
+  readonly problems: readonly string[];
+}
+
+/**
  * Opening a file manager can fail for ordinary reasons — the folder was
  * deleted, the volume is gone — so it resolves as data like every other
  * expected outcome on these surfaces.
@@ -51,6 +83,15 @@ export type RevealResult =
  */
 export interface AppInfoService {
   getStorage(): Promise<StorageInfo>;
+  /**
+   * How to point an MCP client at this install.
+   *
+   * Read-only like the rest of this surface: it reports a configuration, and
+   * cannot apply one. Writing another application's config file is that
+   * application's business, and a dashboard that edited it would be reaching
+   * outside its own install to do it.
+   */
+  getMcpSetup(): Promise<McpSetup>;
   /**
    * Show a stored file in the OS file manager.
    *

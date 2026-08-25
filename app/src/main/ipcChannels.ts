@@ -69,6 +69,9 @@ export const APP_INFO_STORAGE_CHANNEL = "appInfo:storage";
 // renderer can steer the file manager.
 export const APP_INFO_REVEAL_CHANNEL = "appInfo:reveal";
 
+/** How to connect an MCP client to this install. Read-only, like the rest. */
+export const APP_INFO_MCP_CHANNEL = "appInfo:mcp";
+
 // Prose arriving mid-request, pushed rather than invoked.
 //
 // The only channel here that main initiates. `agent:reply` keeps its invoke
