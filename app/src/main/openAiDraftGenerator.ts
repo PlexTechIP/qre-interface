@@ -22,5 +22,13 @@ export function openAiDraftGenerator(
     model,
     baseUrl,
     fetchImpl,
+    // The gpt-5.6 models are reasoning models, and OpenAI defaults them to a
+    // non-"none" reasoning effort. On /v1/chat/completions that default is
+    // incompatible with function tools — which this generator ALWAYS sends — and
+    // the request is rejected 400 with "Function tools with reasoning_effort are
+    // not supported … set reasoning_effort to 'none'." So we set it, exactly as
+    // the API instructs. Scoped to OpenAI via bodyExtras rather than the shared
+    // body, because it is not a parameter every chat-completions host accepts.
+    bodyExtras: { reasoning_effort: "none" },
   });
 }
