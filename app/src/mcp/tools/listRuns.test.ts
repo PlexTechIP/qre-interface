@@ -3,8 +3,11 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleListRuns, type ListRunsInput, type ListRunsOutput } from "./listRuns.js";
 import { createTempRunStore, seedTempRunStore, removeTempRunStore } from "../testing/tempRunStore.js";
 import { resetRunStoreForTests } from "../runStoreAccess.js";
+import { readToolFailure } from "../toolResult.js";
+import { withNoPublishedDatabase } from "../testing/noPublishedDatabase.js";
 import { buildRunRecord } from "../../shared/testing/builders.js";
 import type { RunRecord } from "../../shared/types.js";
+import { DatabaseSync } from "node:sqlite";
 
 function asData(result: Awaited<ReturnType<typeof handleListRuns>>): ListRunsOutput {
   expect(result.isError).toBeFalsy();
@@ -13,7 +16,11 @@ function asData(result: Awaited<ReturnType<typeof handleListRuns>>): ListRunsOut
 
 function asError(result: Awaited<ReturnType<typeof handleListRuns>>): { code: string; message: string } {
   expect(result.isError).toBe(true);
-  return result.structuredContent as unknown as { code: string; message: string };
+  // A failure carries its code and message in the text block, never in
+  // `structuredContent` — see `toolFailure` for why.
+  const failure = readToolFailure(result);
+  expect(failure, "failure result was not in the documented shape").not.toBeNull();
+  return failure as { code: string; message: string };
 }
 
 describe("qre_list_runs tool", () => {
@@ -231,11 +238,164 @@ describe("qre_list_runs tool", () => {
     expect("nextCursor" in data).toBe(false);
   });
 
+
+  it("applies a benchmarkId filter on its own", async () => {
+    // benchmarkId and applicationType are independent optional fields, so this
+    // is a legal call — and it used to match every run in the store.
+    const data = asData(
+      await handleListRuns({ filter: { benchmarkId: "no-such-benchmark" } }),
+    );
+
+    expect(data.totalMatched).toBe(0);
+    expect(data.runs).toHaveLength(0);
+  });
+
+  it("returns only the named benchmark when filtering by id alone", async () => {
+    const data = asData(
+      await handleListRuns({ filter: { benchmarkId: "shors-factoring" } }),
+    );
+
+    expect(data.runs.map((run) => run.name)).toEqual(["Shor Benchmark Run"]);
+  });
+
+  it("still supports the coarse applicationType filter on its own", async () => {
+    const benchmarks = asData(
+      await handleListRuns({ filter: { applicationType: "benchmark" } }),
+    );
+    const manual = asData(
+      await handleListRuns({ filter: { applicationType: "manualCounts" } }),
+    );
+
+    expect(benchmarks.totalMatched).toBe(3);
+    expect(manual.runs.map((run) => run.name)).toEqual(["Manual Counts Test"]);
+  });
+
+  it("matches nothing when the two application filters contradict each other", async () => {
+    const data = asData(
+      await handleListRuns({
+        filter: { applicationType: "manualCounts", benchmarkId: "shors-factoring" },
+      }),
+    );
+
+    expect(data.totalMatched).toBe(0);
+  });
+
+  it("reports a cursor whose run is gone instead of restarting", async () => {
+    const staleCursor = Buffer.from(
+      JSON.stringify([
+        "2020-01-01T00:00:00.000Z",
+        "2020-01-01T00:00:00.000Z",
+        "deleted-run",
+      ]),
+      "utf8",
+    ).toString("base64url");
+
+    const err = asError(await handleListRuns({ limit: 2, cursor: staleCursor }));
+
+    expect(err.code).toBe("INVALID_CURSOR");
+  });
+
+  it("is not brought down by an unreadable record outside the requested page", async () => {
+    // A record saved by a future build validates against a contract this one
+    // does not know. Only the page being returned should be validated, so a
+    // bad record further down the history must not fail the whole call.
+    const database = new DatabaseSync(dbPath);
+    const row = database.prepare("SELECT * FROM run_records LIMIT 1").get() as {
+      record_json: string;
+      name: string;
+      application: string;
+      architecture: string;
+      qec_code: string;
+      magic_state_factory: string;
+      qre_version: string;
+    };
+    const future = JSON.parse(row.record_json) as Record<string, unknown>;
+    future.schemaVersion = "99.0.0";
+    future.id = "ffffffff-ffff-4fff-bfff-ffffffffffff";
+    database
+      .prepare(
+        `INSERT INTO run_records (id, schema_version, record_json, name, application,
+           architecture, qec_code, magic_state_factory, qre_version, created_at, saved_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "ffffffff-ffff-4fff-bfff-ffffffffffff",
+        "99.0.0",
+        JSON.stringify(future),
+        row.name,
+        row.application,
+        row.architecture,
+        row.qec_code,
+        row.magic_state_factory,
+        row.qre_version,
+        "1999-01-01T00:00:00Z",
+        "1999-01-01T00:00:00Z",
+      );
+    database.close();
+
+    const data = asData(await handleListRuns({ limit: 2 }));
+
+    expect(data.runs).toHaveLength(2);
+  });
+
+  it("cannot be used to probe for uploaded file paths", async () => {
+    // `applicationKey` renders an uploaded run as `uploaded:<absolute path>`.
+    // Passing that form as a benchmarkId used to reach the store filter, which
+    // turned this tool into an oracle for testing whether a given file on the
+    // analyst's disk had ever been run.
+    const { dbPath: probePath, store } = await createTempRunStore();
+    await seedTempRunStore(store, [
+      buildRunRecord({
+        config: {
+          id: "99999999-9999-4999-b999-999999999999",
+          name: "Uploaded",
+          application: {
+            type: "uploaded",
+            filePath: "/Users/analyst/secret-program.qs",
+            format: "qsharp",
+            addToLibrary: false,
+          },
+        },
+      }),
+    ]);
+    store.close();
+    resetRunStoreForTests();
+    process.env.QRE_DB_PATH = probePath;
+
+    try {
+      const hit = asData(
+        await handleListRuns({
+          filter: { benchmarkId: "uploaded:/Users/analyst/secret-program.qs" },
+        }),
+      );
+      const miss = asData(
+        await handleListRuns({
+          filter: { benchmarkId: "uploaded:/Users/analyst/no-such-file.qs" },
+        }),
+      );
+
+      // Indistinguishable: the tool must not answer questions about paths.
+      expect(hit.totalMatched).toBe(0);
+      expect(miss.totalMatched).toBe(0);
+    } finally {
+      resetRunStoreForTests();
+      removeTempRunStore(probePath);
+      process.env.QRE_DB_PATH = dbPath;
+    }
+  });
+
   it("fails gracefully when database is not configured", async () => {
     resetRunStoreForTests();
-    delete process.env.QRE_DB_PATH;
+    // Deleting QRE_DB_PATH is only half of the resolution — the
+    // dashboard's published pointer is the other half, and on a machine
+    // where the app has been launched this read the real history.
+    const restore = withNoPublishedDatabase();
 
-    const err = asError(await handleListRuns({}));
-    expect(err.code).toBe("DB_NOT_CONFIGURED");
+    try {
+      const err = asError(await handleListRuns({}));
+      expect(err.code).toBe("DB_NOT_CONFIGURED");
+    } finally {
+      restore();
+    }
   });
 });

@@ -764,10 +764,51 @@ export type RunSummaryApplication =
   | { type: "manualCounts" };
 
 /**
+ * What a run's Pareto frontier spans, as a summary can honestly state it.
+ *
+ * A frontier has no "the" answer — `agentRunReport.ts` says so where it reports
+ * one to the chat surface, and picking row zero here would be this type
+ * inventing a ranking the engine deliberately did not supply. The span between
+ * the cheapest and most expensive point is what the frontier actually says.
+ *
+ * Bare numbers plus one unit, rather than a `NumericMetric` per bound: this is
+ * repeated once per run in a list of up to a hundred, and four `{ value, unit,
+ * display }` objects per row is most of a page's context spent on units that do
+ * not vary. `qre_get_run` is where the formatted metrics live.
+ */
+export interface FrontierSpan {
+  /** How many points the engine returned. */
+  points: number;
+  physicalQubitsUnit: string;
+  runtimeUnit: string;
+  /**
+   * The two ends of the trade-off, as whole points rather than as independent
+   * minima. A frontier trades qubits against time, so the run with the fewest
+   * qubits is generally the SLOWEST — reporting a `min` and a `max` per
+   * measurement would pair a qubit count with a runtime from a different row
+   * and describe a configuration the engine never returned.
+   *
+   * Equal to each other when the frontier has one point.
+   */
+  fewestQubits: FrontierEndpoint;
+  mostQubits: FrontierEndpoint;
+}
+
+/** One frontier point, reduced to the two numbers a comparison turns on. */
+export interface FrontierEndpoint {
+  physicalQubits: number;
+  runtime: number;
+}
+
+/**
  * Summarized run for MCP exposure — a stripped-down view of RunRecord.
  * This type deliberately excludes most fields from the full RunRecord to keep
  * the agent's context bounded and avoid flooding it with full configs, results,
  * and raw engine output.
+ *
+ * `frontier` is the one measurement it carries, because without it the question
+ * this app exists to answer — which configuration costs less — took one call per
+ * run to ask.
  */
 export interface RunSummary {
   id: string;
@@ -777,6 +818,8 @@ export interface RunSummary {
   status: "succeeded" | "failed";
   architecture: ArchitectureType;
   application: RunSummaryApplication;
+  /** Null for a failed run, and for a run that produced no feasible points. */
+  frontier: FrontierSpan | null;
 }
 
 /**
@@ -790,6 +833,14 @@ export interface RunFilter {
   nameSearch?: string;
   /** applicationKey(config): a benchmark id, or `uploaded:<filePath>`. */
   application?: string;
+  /**
+   * Match any ONE of these application keys.
+   *
+   * `application` can only ask about a single run source. A caller that wants
+   * "any benchmark" would otherwise have to read the whole history and filter
+   * it afterwards, which is what the MCP list tool did.
+   */
+  applications?: readonly string[];
   architecture?: ArchitectureType;
   qecCode?: QecCodeId;
   magicStateFactory?: MagicStateFactoryId;
@@ -802,6 +853,9 @@ export interface RunFilter {
   authoredBy?: ConfigAuthor;
 }
  
+/** The application key for a Manual Logical Counts run, which has no source. */
+export const MANUAL_COUNTS_APPLICATION_KEY = "manual-counts";
+
 /**
  * The stable key the Application filter groups by: the benchmark id for
  * benchmark runs, `uploaded:<filePath>` for uploaded programs, or
@@ -812,7 +866,7 @@ export function applicationKey(config: RunConfig): string {
   const app = config.application;
   if (app.type === "benchmark") return app.benchmarkId;
   if (app.type === "uploaded") return `uploaded:${app.filePath}`;
-  return "manual-counts";
+  return MANUAL_COUNTS_APPLICATION_KEY;
 }
  
 /** Does a record satisfy every constraint in the filter? Pure — the reference match semantics. */
@@ -823,6 +877,7 @@ export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean 
     if (needle.length > 0 && !config.name.toLowerCase().includes(needle)) return false;
   }
   if (filter.application !== undefined && applicationKey(config) !== filter.application) return false;
+  if (filter.applications !== undefined && !filter.applications.includes(applicationKey(config))) return false;
   if (filter.architecture !== undefined && config.architecture.type !== filter.architecture) return false;
   if (filter.qecCode !== undefined && config.qecCode !== filter.qecCode) return false;
   // "Runs that used this factory" — a multi-select run matches on any member.
@@ -879,12 +934,22 @@ export function queryRunRecords(records: readonly RunRecord[], filter: RunFilter
  * return newest-first; `get`/`query`/`list` hand back copies so callers can
  * never mutate stored state.
  */
-export interface RunStore {
-  save(record: RunRecord): Promise<void>;
+/**
+ * The read half of the store boundary.
+ *
+ * A consumer that must not change the run history takes this rather than
+ * `RunStore`, so "it only reads" is checked by the compiler instead of being
+ * asserted in a comment. The MCP server is the first such consumer.
+ */
+export interface ReadableRunStore {
   list(): Promise<RunRecord[]>;
   get(id: string): Promise<RunRecord | null>;
-  delete(id: string): Promise<void>;
   query(filter: RunFilter): Promise<RunRecord[]>;
+}
+
+export interface RunStore extends ReadableRunStore {
+  save(record: RunRecord): Promise<void>;
+  delete(id: string): Promise<void>;
 }
  
 /**

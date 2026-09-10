@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { handleDraftFromRun } from "./draftFromRun.js";
+import { readToolFailure } from "../toolResult.js";
+import { withNoPublishedDatabase } from "../testing/noPublishedDatabase.js";
 import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 import { createTempRunStore, seedTempRunStore, removeTempRunStore } from "../testing/tempRunStore.js";
 import { resetRunStoreForTests } from "../runStoreAccess.js";
@@ -13,7 +15,11 @@ function asData(result: Awaited<ReturnType<typeof handleDraftFromRun>>): { draft
 
 function asError(result: Awaited<ReturnType<typeof handleDraftFromRun>>): { code: string; message: string } {
   expect(result.isError).toBe(true);
-  return result.structuredContent as unknown as { code: string; message: string };
+  // A failure carries its code and message in the text block, never in
+  // `structuredContent` — see `toolFailure` for why.
+  const failure = readToolFailure(result);
+  expect(failure, "failure result was not in the documented shape").not.toBeNull();
+  return failure as { code: string; message: string };
 }
 
 describe("qre_draft_from_run tool", () => {
@@ -149,7 +155,7 @@ describe("qre_draft_from_run tool", () => {
     expect(data.draft.parameters.latticeN1).toBe(3);
   });
 
-  it("returns empty parameters for manual counts runs", async () => {
+  it("marks a manual counts run as carrying no benchmark parameters", async () => {
     resetRunStoreForTests();
 
     const { dbPath: testDbPath, store } = await createTempRunStore();
@@ -173,7 +179,9 @@ describe("qre_draft_from_run tool", () => {
 
     process.env.QRE_DB_PATH = testDbPath;
     const data = asData(await handleDraftFromRun({ id: record.id }));
-    expect(data.draft.parameters).toEqual({});
+    // The contract models `parameters` as one variant per benchmark plus a
+    // `none` variant; an empty object matches no variant at all.
+    expect(data.draft.parameters).toEqual({ none: true });
   });
 
   it("ensures draft has no identity fields", async () => {
@@ -206,9 +214,16 @@ describe("qre_draft_from_run tool", () => {
 
   it("fails gracefully when database is not configured", async () => {
     resetRunStoreForTests();
-    delete process.env.QRE_DB_PATH;
+    // Deleting QRE_DB_PATH is only half of the resolution — the
+    // dashboard's published pointer is the other half, and on a machine
+    // where the app has been launched this read the real history.
+    const restore = withNoPublishedDatabase();
 
-    const err = asError(await handleDraftFromRun({ id: "test-id" }));
-    expect(err.code).toBe("DB_NOT_CONFIGURED");
+    try {
+      const err = asError(await handleDraftFromRun({ id: "test-id" }));
+      expect(err.code).toBe("DB_NOT_CONFIGURED");
+    } finally {
+      restore();
+    }
   });
 });

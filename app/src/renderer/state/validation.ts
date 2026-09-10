@@ -55,23 +55,46 @@ export interface FieldErrors {
   maxError?: string;
   /** Set when the primary magic-state factory set is empty. */
   magicStateFactories?: string;
-  /** Per-benchmark hyperparameter errors (only present when non-empty). */
-  hyperparams?: HyperparamError[];
+}
+
+/**
+ * What `validateForm` answers: the scalar field errors, and the benchmark
+ * hyperparameters, which are a different shape and now say so.
+ *
+ * `hyperparams` used to live inside `FieldErrors` as the one member that was
+ * not a string, and every consumer that walked the object had to know. Three
+ * of them did: `ValidationSummary` destructured it out before iterating,
+ * `fieldAnchors` wrote `Exclude<keyof FieldErrors, "hyperparams">`, and the MCP
+ * `qre_validate_config` tool special-cased it. Two implementations of that tool
+ * were written against this type and BOTH got it wrong independently — one
+ * rendered every benchmark-parameter error as the literal text
+ * `[object Object]`, the other passed the array to a string function and died
+ * with `text.replace is not a function`, turning the commonest error an agent
+ * tuning a benchmark can hit into a failed tool call.
+ *
+ * A type that needs three workarounds and still catches people is the defect.
+ * Separated, `FieldErrors` is uniformly `string` and cannot be walked wrongly.
+ */
+export interface FormValidation {
+  /** One message per form field. Every value is a string. */
+  fields: FieldErrors;
+  /** Per-benchmark hyperparameter errors; empty when there are none. */
+  hyperparams: HyperparamError[];
 }
  
-export function validateForm(state: FormState): FieldErrors {
+export function validateForm(state: FormState): FormValidation {
   const errors: FieldErrors = {};
+  let hyperparams: HyperparamError[] = [];
   const { application, architecture, traceTransform, maxError } = state;
  
   if (application.type === "benchmark") {
     if (application.benchmarkId.length === 0) {
       errors.benchmarkId = "Select a benchmark to estimate.";
     }
-    const hyperparamErrors = validateHyperparams(
+    hyperparams = validateHyperparams(
       application.benchmarkId,
       application.hyperparams[application.benchmarkId] ?? {},
     );
-    if (hyperparamErrors.length > 0) errors.hyperparams = hyperparamErrors;
   } else if (application.type === "saved") {
     const chosen = application.savedPrograms.find(
       (program) => program.id === application.selectedSavedId,
@@ -159,7 +182,7 @@ export function validateForm(state: FormState): FieldErrors {
       "At least one of Round-Based, Litinski19 or GSJ24 must stay selected.";
   }
 
-  return errors;
+  return { fields: errors, hyperparams };
 }
 
 /**
@@ -281,6 +304,13 @@ function validateNeutralAtom(n: NeutralAtomForm, errors: FieldErrors): void {
 export function hasFieldErrors(errors: FieldErrors): boolean {
   return Object.keys(errors).length > 0;
 }
+
+/** Anything at all wrong, of either kind. What Run gating asks. */
+export function hasFormErrors(validation: FormValidation): boolean {
+  return (
+    hasFieldErrors(validation.fields) || validation.hyperparams.length > 0
+  );
+}
  
 /**
  * Run gating: valid only when there are no inline field errors AND the
@@ -298,7 +328,7 @@ export function isConfigValid(
   state: FormState,
   provenance?: RunProvenance,
 ): boolean {
-  if (hasFieldErrors(validateForm(state))) return false;
+  if (hasFormErrors(validateForm(state))) return false;
   const config = toRunConfig(state, schemaValidationStamp(provenance));
   if (config === null) return false;
   return validateRunConfigSchema(config).valid;

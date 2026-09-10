@@ -2,17 +2,28 @@
  * MCP tool: qre_list_runs
  *
  * Lists recent quantum runs with optional filtering and cursor-based pagination.
- * Filtering happens in-memory over the full result set, not in SQL.
+ * Filtering runs through the store's own query semantics; only the coarse
+ * application-type filter, which `RunFilter` cannot express, is applied here.
  * Pagination is keyset-based using base64-encoded composite keys.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { toolFailure, toolSuccess } from "../toolResult.js";
+import { runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunSummary } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
-import { validateRunRecord } from "../../shared/runRecordValidation.js";
-import type { RunSummary, ArchitectureType, QecCodeId, MagicStateFactoryId, RunRecord } from "../../shared/types.js";
+import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
+import {
+  BENCHMARK_IDS,
+  MANUAL_COUNTS_APPLICATION_KEY,
+  type BenchmarkId,
+  type ArchitectureType,
+  type MagicStateFactoryId,
+  type QecCodeId,
+  type RunFilter,
+  type RunRecord,
+  type RunSummary,
+} from "../../shared/types.js";
 
 export interface ListRunsInput {
   limit?: number | undefined;
@@ -69,62 +80,67 @@ function decodeCursor(cursor: string): [string, string, string] | null {
 }
 
 /**
- * Check if a run should be included based on filter criteria.
+ * Translate the MCP filter into the store's own `RunFilter`.
+ *
+ * The store already owns these semantics — `matchesRunFilter` in
+ * `shared/types.ts` is described there as "the reference match semantics", and
+ * `SqliteRunStore.query` pushes the exact-match fields into indexed SQL. Only
+ * the application dimension needs translating, because the MCP surface splits
+ * the store's single composite key into a coarse `applicationType` plus an
+ * optional `benchmarkId`: a model must never be handed the `uploaded:<path>`
+ * form of that key.
+ *
+ * A benchmark id is only honoured when it names a benchmark this build knows:
+ * `applicationKey` renders an uploaded run as `uploaded:<absolute path>`, so
+ * forwarding arbitrary caller text as an application key would let a model test
+ * whether a given file on the analyst's disk had been run, and read the answer
+ * off `totalMatched`. An unrecognised id matches nothing, which is also the
+ * honest answer for a benchmark that does not exist.
+ *
+ * "Any benchmark" becomes the set of known ids, and "any upload" cannot be a
+ * key set at all — `matchesApplicationType` handles that one after the query.
  */
-function matchesFilter(record: RunRecord, filter: ListRunsInput["filter"]): boolean {
-  if (!filter) return true;
+function isKnownBenchmark(id: string): id is BenchmarkId {
+  return (BENCHMARK_IDS as readonly string[]).includes(id);
+}
 
-  const { config, result } = record;
+function toStoreFilter(filter: ListRunsInput["filter"]): RunFilter {
+  const storeFilter: RunFilter = {};
+  if (filter === undefined) return storeFilter;
 
-  // Name search: case-insensitive substring
-  if (filter.nameSearch !== undefined) {
-    const needle = filter.nameSearch.toLowerCase().trim();
-    if (needle.length > 0 && !config.name.toLowerCase().includes(needle)) {
-      return false;
-    }
-  }
-
-  // Application type filter
-  if (filter.applicationType !== undefined) {
-    const expectedAppType = filter.applicationType;
-    if (config.application.type !== expectedAppType) {
-      return false;
-    }
-
-    // If filtering by applicationType and it's benchmark, also check benchmarkId if provided
-    if (
-      filter.benchmarkId !== undefined &&
-      config.application.type === "benchmark"
-    ) {
-      if (config.application.benchmarkId !== filter.benchmarkId) {
-        return false;
-      }
-    }
-  }
-
-  // Architecture filter
-  if (filter.architecture !== undefined && config.architecture.type !== filter.architecture) {
-    return false;
-  }
-
-  // QEC code filter
-  if (filter.qecCode !== undefined && config.qecCode !== filter.qecCode) {
-    return false;
-  }
-
-  // Magic state factory filter (matches any in the set)
+  if (filter.nameSearch !== undefined) storeFilter.nameSearch = filter.nameSearch;
+  if (filter.architecture !== undefined) storeFilter.architecture = filter.architecture;
+  if (filter.qecCode !== undefined) storeFilter.qecCode = filter.qecCode;
   if (filter.magicStateFactory !== undefined) {
-    if (!config.magicStateFactories.includes(filter.magicStateFactory)) {
-      return false;
-    }
+    storeFilter.magicStateFactory = filter.magicStateFactory;
+  }
+  if (filter.qreVersion !== undefined) storeFilter.qreVersion = filter.qreVersion;
+
+  if (filter.benchmarkId !== undefined) {
+    storeFilter.applications = isKnownBenchmark(filter.benchmarkId)
+      ? [filter.benchmarkId]
+      : [];
+  } else if (filter.applicationType === "manualCounts") {
+    storeFilter.application = MANUAL_COUNTS_APPLICATION_KEY;
+  } else if (filter.applicationType === "benchmark") {
+    storeFilter.applications = BENCHMARK_IDS;
   }
 
-  // QRE version filter
-  if (filter.qreVersion !== undefined && result.qreVersion !== filter.qreVersion) {
-    return false;
-  }
+  return storeFilter;
+}
 
-  return true;
+/**
+ * The part of the application filter `RunFilter` cannot carry.
+ *
+ * Also what makes a contradictory filter behave: asking for `manualCounts` runs
+ * of a benchmark matches nothing, rather than quietly ignoring one of the two.
+ */
+function matchesApplicationType(
+  record: RunRecord,
+  filter: ListRunsInput["filter"],
+): boolean {
+  if (filter?.applicationType === undefined) return true;
+  return record.config.application.type === filter.applicationType;
 }
 
 /**
@@ -133,66 +149,74 @@ function matchesFilter(record: RunRecord, filter: ListRunsInput["filter"]): bool
 export async function handleListRuns(
   input: ListRunsInput,
 ): Promise<CallToolResult> {
-  try {
+  return runTool(
+    "listRuns",
+    { code: "STORE_READ_FAILED", message: "Failed to list runs." },
+    async () => {
     const limit = Math.min(input.limit ?? 25, 100);
     if (limit < 1) {
       return toolFailure("STORE_READ_FAILED", "limit must be at least 1");
     }
 
-    // Fetch all runs (sorted newest-first by store)
-    const store = getRunStore();
-    const allRecords = await store.list();
+    // NOTE (design F-4): the page is sliced in memory. `RunStore` cannot
+    // express a seek predicate, so the whole matching set is read even when one
+    // page is wanted. Filed as a store-level change; recorded here so the cost
+    // is visible rather than assumed away.
+    const matching = (await getRunStore().query(toStoreFilter(input.filter)))
+      .filter((record) => matchesApplicationType(record, input.filter));
+    const totalMatched = matching.length;
 
-    // Validate all records
-    for (const record of allRecords) {
-      const validation = validateRunRecord(record);
-      if (!validation.valid) {
-        logError("Invalid run record in store", { id: record.id, errors: validation.errors });
-        return toolFailure("STORE_READ_FAILED", "Encountered invalid record in store.");
-      }
-    }
-
-    // Filter in-memory
-    const filtered = allRecords.filter((record) => matchesFilter(record, input.filter));
-    const totalMatched = filtered.length;
-
-    // Apply cursor-based pagination
     let startIndex = 0;
-    if (input.cursor) {
+    if (input.cursor !== undefined && input.cursor.length > 0) {
       const decoded = decodeCursor(input.cursor);
       if (!decoded) {
         return toolFailure("INVALID_CURSOR", "Cursor is malformed.");
       }
 
       const [cursorCreatedAt, cursorSavedAt, cursorId] = decoded;
-      // Find the position of the cursor run, then start AFTER it
-      for (let i = 0; i < filtered.length; i++) {
-        const r = filtered[i];
-        if (
-          r &&
-          r.config.createdAt === cursorCreatedAt &&
-          r.savedAt === cursorSavedAt &&
-          r.id === cursorId
-        ) {
-          startIndex = i + 1;
-          break;
-        }
+      const position = matching.findIndex(
+        (record) =>
+          record.config.createdAt === cursorCreatedAt &&
+          record.savedAt === cursorSavedAt &&
+          record.id === cursorId,
+      );
+      // Silently restarting here hands the agent page one again together with a
+      // fresh cursor, so it re-reads runs it has already seen and believes it
+      // advanced. Say so instead.
+      if (position === -1) {
+        return toolFailure(
+          "INVALID_CURSOR",
+          "This cursor no longer points at a run in these results; the history " +
+            "or the filter changed. List again without a cursor.",
+        );
       }
-      // If cursor run not found, start from the beginning
+      startIndex = position + 1;
     }
 
-    // Slice the page
-    const page = filtered.slice(startIndex, startIndex + limit);
+    const page = matching.slice(startIndex, startIndex + limit);
 
-    // Build output
-    const runs = page.map(toRunSummary);
+    // Validate only what is about to be returned. Validating the whole history
+    // meant one unreadable record made every page fail.
+    for (const record of page) {
+      const validation = validateStoredRunRecord(record);
+      if (!validation.valid) {
+        logError("Invalid run record in store", {
+          id: record.id,
+          errors: validation.errors,
+        });
+        return toolFailure(
+          "STORE_READ_FAILED",
+          "Encountered invalid record in store.",
+        );
+      }
+    }
+
     const output: ListRunsOutput = {
-      runs,
+      runs: page.map(toRunSummary),
       totalMatched,
     };
 
-    // Set nextCursor only if there are more results
-    if (page.length > 0 && startIndex + limit < filtered.length) {
+    if (page.length > 0 && startIndex + limit < matching.length) {
       const lastOnPage = page[page.length - 1];
       if (lastOnPage) {
         output.nextCursor = encodeCursor(
@@ -203,20 +227,8 @@ export async function handleListRuns(
       }
     }
 
-    return toolSuccess(output);
-  } catch (error) {
-    logError("listRuns handler error", error);
-    if (error && typeof error === "object" && "code" in error) {
-      const errCode = (error as { code?: string }).code;
-      if (
-        errCode === "DB_NOT_CONFIGURED" ||
-        errCode === "DB_NOT_FOUND" ||
-        errCode === "DB_SCHEMA_MISMATCH"
-      ) {
-        return toolFailure(errCode as "DB_NOT_CONFIGURED" | "DB_NOT_FOUND" | "DB_SCHEMA_MISMATCH", (error as { message?: string }).message || "Database error");
-      }
-    }
-    return toolFailure("STORE_READ_FAILED", "Failed to list runs.");
-  }
+    return toolSuccess(output satisfies ListRunsOutput);
+    },
+  );
 }
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAgentHandlers } from "./agentHandler.js";
 import { registerAppInfoHandlers } from "./appInfoHandler.js";
+import { buildMcpSetup } from "./mcpSetup.js";
 import { AnthropicDraftGenerator } from "./anthropicDraftGenerator.js";
 import { registerChatHandlers } from "./chatHandler.js";
 import { SqliteChatStore } from "./sqliteChatStore.js";
@@ -23,6 +24,7 @@ import { resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
 import { registerEstimatorHandler } from "./estimatorHandler.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
+import { publishRunDatabaseLocation } from "./publishDataLocation.js";
 import { registerStoreHandlers } from "./storeHandler.js";
 import { registerUploadHandler } from "./uploadHandler.js";
 import { hardenWebContents } from "./windowSecurity.js";
@@ -81,8 +83,15 @@ app.whenReady().then(() => {
     dbOverride && dbOverride.length > 0
       ? dbOverride
       : path.join(app.getPath("userData"), "run-history.sqlite");
-  runStore = new SqliteRunStore(dbPath);
-  registerStoreHandlers(ipcMain, runStore);
+  const store = new SqliteRunStore(dbPath);
+  runStore = store;
+  registerStoreHandlers(ipcMain, store);
+
+  // Tell non-Electron processes where that resolved to. The MCP server cannot
+  // call app.getPath(), and a second copy of Electron's per-platform rule would
+  // drift the first time packaging sets a productName — so the process that
+  // knows writes it down instead. Best effort; never fatal.
+  publishRunDatabaseLocation(dbPath);
 
   // A separate file from run history, deliberately: see sqliteChatStore.ts.
   // Run records are immutable forever; a transcript is the analyst's own prose
@@ -113,6 +122,21 @@ app.whenReady().then(() => {
         overridden: Boolean(chatDbOverride && chatDbOverride.length > 0),
       },
     ],
+    // The MCP server ships beside this file — `build:mcp` writes it into the
+    // same dist-electron directory `main.cjs` is loaded from — so resolving it
+    // relative to `currentDir` keeps working wherever an installer puts them,
+    // which no absolute path baked at build time would.
+    async () =>
+      buildMcpSetup({
+        executablePath: process.execPath,
+        serverBundlePath: path.join(currentDir, "mcp-server.mjs"),
+        runDatabasePath: dbPath,
+        // `RunStore` has no count, so this reads the history to answer a
+        // yes/no. Settings is opened deliberately and rarely, which is what
+        // makes that acceptable; a `count()` on the store is the cheaper
+        // answer if this ever sits anywhere warmer.
+        hasSavedRuns: (await store.list()).length > 0,
+      }),
     (target) => shell.showItemInFolder(target),
   );
 

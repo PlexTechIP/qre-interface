@@ -195,7 +195,7 @@ describe("v1.1.0 — Neutral Atom field validation (validateForm)", () => {
   it("reports no architecture errors for a default Neutral Atom draft", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
-    const errors = validateForm(s);
+    const errors = validateForm(s).fields;
     expect(errors.rydbergTime).toBeUndefined();
     expect(errors.rydbergError).toBeUndefined();
     expect(errors.handoffTime).toBeUndefined();
@@ -206,27 +206,27 @@ describe("v1.1.0 — Neutral Atom field validation (validateForm)", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
     s.architecture.neutralAtom.rydbergError = 0.01;
-    expect(validateForm(s).rydbergError).toBeDefined();
+    expect(validateForm(s).fields.rydbergError).toBeDefined();
   });
  
   it("accepts handoff time of 0 (inclusive lower bound)", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
     s.architecture.neutralAtom.handoffTime = 0;
-    expect(validateForm(s).handoffTime).toBeUndefined();
+    expect(validateForm(s).fields.handoffTime).toBeUndefined();
   });
  
   it("flags a Surface Code time factor below 1", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
     s.architecture.neutralAtom.surfaceCodeOneQubitTimeFactor = 0;
-    expect(validateForm(s).surfaceCodeOneQubitTimeFactor).toBeDefined();
+    expect(validateForm(s).fields.surfaceCodeOneQubitTimeFactor).toBeDefined();
   });
  
   it("flags a non-integer time field", () => {
     const s = validGateBasedDraft();
     s.architecture.type = "neutralAtom";
     s.architecture.neutralAtom.rydbergTime = 500.5;
-    expect(validateForm(s).rydbergTime).toBeDefined();
+    expect(validateForm(s).fields.rydbergTime).toBeDefined();
   });
 });

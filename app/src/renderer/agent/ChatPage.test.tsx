@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +20,7 @@ import type { RunConfig, RunResult } from "../../shared/types";
 import { buildSuccessResult, fakeEstimator } from "../../shared/testing";
 import { fakeAgentService, FAKE_GENERATED_DRAFT } from "../../shared/testing/fakeAgentService";
 import { ChatPage, type ChatView } from "./ChatPage";
+import { REVEAL_MAX_CPS } from "./streamReveal";
 import type { FormSnapshot } from "../RunConfiguration";
 
 function statusWith(configured: readonly ProviderId[]): AgentProviderStatus {
@@ -129,6 +130,7 @@ function renderChat(options: HarnessOptions = {}) {
  */
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const composer = (): HTMLElement => screen.getByRole("textbox", { name: "Your message" });
@@ -1574,6 +1576,32 @@ describe("ChatPage — streaming survives the round trip", () => {
   it("paints in even steps even though delivery is lumpy", async () => {
     const BURSTS = [2, 1, 90, 3, 1, 120, 4, 60, 1, 2];
     const PROSE = "x".repeat(BURSTS.reduce((a, b) => a + b, 0));
+
+    /*
+     * Frames are driven by hand here, and that is the point of the setup rather
+     * than a convenience.
+     *
+     * `charsToReveal` is a RATE: chars = cps x elapsed, where elapsed is the
+     * real gap between animation frames. So on a loaded machine a stretched
+     * frame legitimately paints a bigger step — at REVEAL_MAX_CPS any gap over
+     * ~22ms already exceeds 40 characters — and this test, which used to sample
+     * the DOM on an 8ms wall-clock poll, was measuring the machine's scheduler
+     * as much as the component. It passed alone and failed inside the full
+     * suite.
+     *
+     * With the clock supplied, every frame is exactly one frame, and the step
+     * size is a property of the pacing policy alone.
+     */
+    const FRAME_MS = 16;
+    let clock = 0;
+    const pendingFrames: FrameRequestCallback[] = [];
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      pendingFrames.push(callback);
+      return pendingFrames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
     const listeners = new Set<(delta: { requestId: string; fragment: string }) => void>();
     const gate: { release: (() => void) | null } = { release: null };
     const service: AgentService = {
@@ -1585,7 +1613,7 @@ describe("ChatPage — streaming survives the round trip", () => {
       async requestReply(request): Promise<AgentChatResult> {
         let at = 0;
         for (const size of BURSTS) {
-          await new Promise((r) => setTimeout(r, 40));
+          await new Promise((r) => setTimeout(r, 5));
           const fragment = PROSE.slice(at, at + size);
           at += size;
           for (const listener of listeners) {
@@ -1606,32 +1634,53 @@ describe("ChatPage — streaming survives the round trip", () => {
     };
     renderChat({ service });
 
-    // Sample the streamed turn as it grows, then look at the step sizes.
-    const lengths: number[] = [];
-    const stop = { now: false };
-    const poll = (): void => {
-      // `.chat-md` is the assistant's prose specifically — the analyst's own
-      // turn is rendered as typed and shares `.chat-turn__text`.
+    // `.chat-md` is the assistant's prose specifically — the analyst's own turn
+    // is rendered as typed and shares `.chat-turn__text`.
+    const painted = (): number => {
       const all = document.querySelectorAll(".chat-md");
-      const el = all[all.length - 1];
-      const len = el?.textContent?.length ?? 0;
-      if (len > 0 && len !== lengths[lengths.length - 1]) lengths.push(len);
-      if (!stop.now) setTimeout(poll, 8);
+      return all[all.length - 1]?.textContent?.length ?? 0;
     };
-    poll();
+
+    const lengths: number[] = [];
+    /** Run exactly one animation frame, then record what it painted. */
+    const pumpFrame = async (): Promise<void> => {
+      const due = pendingFrames.splice(0);
+      clock += FRAME_MS;
+      await act(async () => {
+        for (const callback of due) callback(clock);
+      });
+      const length = painted();
+      if (length > 0 && length !== lengths[lengths.length - 1]) lengths.push(length);
+    };
 
     await sendMessage("Estimate Grover search");
-    await waitFor(() => expect(lengths[lengths.length - 1]).toBe(PROSE.length), {
-      timeout: 8000,
-    });
-    stop.now = true;
+
+    // Every paint is observed, because every frame is one of these — there is
+    // no sampling window for a paint to hide in.
+    for (let i = 0; i < 4000 && painted() < PROSE.length; i++) {
+      await pumpFrame();
+      // Yield to the real timers the provider delivers its bursts on. Their
+      // timing no longer affects step size, only when text becomes available.
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
     gate.release?.();
+
+    expect(painted(), "the reply never finished painting").toBe(PROSE.length);
 
     const steps = lengths.slice(1).map((len, i) => len - lengths[i]!);
     expect(steps.length).toBeGreaterThan(10);
-    // No paint may dump a whole large burst. The biggest arrival was 120
-    // characters; the biggest thing drawn at once must be far under that.
-    expect(Math.max(...steps)).toBeLessThan(40);
+
+    // Derived from the policy rather than picked: one frame at the ceiling
+    // rate. Writing the bound this way means a change to REVEAL_MAX_CPS is
+    // reported by `streamReveal.test.ts`, where the rate lives, instead of
+    // failing here as an unexplained number.
+    const mostOneFrameMayReveal = Math.round((REVEAL_MAX_CPS * FRAME_MS) / 1000);
+    expect(Math.max(...steps)).toBeLessThanOrEqual(mostOneFrameMayReveal);
+
+    // And that ceiling is far below the lumps it absorbed, which is the claim:
+    // no paint dumps a whole burst.
+    expect(mostOneFrameMayReveal).toBeLessThan(Math.max(...BURSTS));
   }, 20000);
 
   it("sends a request id at all", async () => {

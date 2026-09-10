@@ -25,7 +25,7 @@ import {
   toRunConfig,
 } from "./state/toRunConfig";
 import { useRunFlow } from "./state/useRunFlow";
-import { isConfigValid, validateForm } from "./state/validation";
+import { isConfigValid, validateForm, type FieldErrors } from "./state/validation";
 import {
   blocksRun,
   useUploadPreflight,
@@ -230,11 +230,14 @@ export function RunConfiguration({
   // the synchronous validateForm/isConfigValid pair — it is merged into both the
   // field errors and the Run gate here instead.
   const preflight = useUploadPreflight(state.application);
-  const baseErrors = validateForm(state);
-  const errors =
+  const validation = validateForm(state);
+  // Only the scalar half takes the pre-flight message; hyperparameter errors
+  // are a different shape and travel separately, which is what keeps every
+  // value in `errors` a string.
+  const errors: FieldErrors =
     preflight.status === "invalid"
       ? {
-          ...baseErrors,
+          ...validation.fields,
           // Saved programs and fresh uploads surface under different fields, but
           // both serialize to the contract's `uploaded` variant and both get
           // checked, so the message has to land on whichever control is showing.
@@ -242,7 +245,7 @@ export function RunConfiguration({
             ? { savedProgram: preflight.message }
             : { uploadFilePath: preflight.message }),
         }
-      : baseErrors;
+      : validation.fields;
   const generatedName = generateName(state);
   // `draftProvenance` is passed to the gate and to Run from the same variable:
   // the config the gate approves is then the config that executes, provenance
@@ -293,6 +296,7 @@ export function RunConfiguration({
           <ApplicationSection
             value={state.application}
             errors={errors}
+            hyperparamErrors={validation.hyperparams}
             isCheckingFile={preflight.status === "checking"}
             onChange={(application) => update((s) => ({ ...s, application }))}
           />
@@ -343,7 +347,7 @@ export function RunConfiguration({
             generatedName={generatedName}
             onChange={(name) => update((s) => ({ ...s, name }))}
           />
-          <ValidationSummary errors={errors} />
+          <ValidationSummary errors={errors} hyperparams={validation.hyperparams} />
           <button
             type="button"
             className="run-button run-button--full"

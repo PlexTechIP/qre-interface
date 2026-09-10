@@ -1,10 +1,11 @@
 import type { FieldErrors } from "../state/validation";
+import type { HyperparamError } from "../constants/hyperparameters";
 import {
   FIELD_ANCHORS,
   FIELD_LABELS,
   hyperparamAnchor,
-  jumpToField,
 } from "./fieldAnchors";
+import { jumpToField } from "./fieldNavigation";
 
 /**
  * The field name, emphasised once.
@@ -39,16 +40,22 @@ function labelled(message: string, label: string): React.JSX.Element {
 }
 
 interface ValidationSummaryProps {
+  /** Scalar field errors. Every value is a string. */
   errors: FieldErrors;
+  /** Benchmark hyperparameter errors, which carry their own key and label. */
+  hyperparams?: readonly HyperparamError[];
   pending?: boolean;
 }
 
 /** Inline error box — lists every unresolved field so there's no dead end. */
 export function ValidationSummary({
   errors,
+  hyperparams = [],
   pending = false,
 }: ValidationSummaryProps): React.JSX.Element {
-  const { hyperparams, ...scalarErrors } = errors;
+  // No destructuring-to-exclude any more: `errors` is uniformly string-valued,
+  // so walking it is safe by construction.
+  const scalarErrors = errors;
   const entries: {
     key: string;
     label: string;
@@ -69,7 +76,7 @@ export function ValidationSummary({
   }
   // Hyperparameter errors carry their own field label from the schema, and their
   // inputs are rendered with a `hparam-<key>` id by HyperparametersPanel.
-  for (const error of hyperparams ?? []) {
+  for (const error of hyperparams) {
     entries.push({
       key: `hyperparam-${error.key}`,
       label: error.label,

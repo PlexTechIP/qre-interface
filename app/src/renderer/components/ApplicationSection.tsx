@@ -6,7 +6,7 @@ import {
   MANUAL_COUNT_DEFINITIONS,
 } from "../constants/configDefinitions";
 import { BENCHMARKS } from "../constants/staticOptions";
-import type { HyperparamValue } from "../constants/hyperparameters";
+import type { HyperparamValue, HyperparamError } from "../constants/hyperparameters";
 import type {
   ApplicationForm,
   ApplicationFormType,
@@ -21,6 +21,8 @@ import { NumberField } from "./NumberField";
 interface ApplicationSectionProps {
   value: ApplicationForm;
   errors: FieldErrors;
+  /** Benchmark hyperparameter errors, which are not FieldErrors' shape. */
+  hyperparamErrors?: readonly HyperparamError[];
   onChange: (value: ApplicationForm) => void;
   /** True while the chosen program file is being pre-flighted. Run is gated on
    *  it, so the wait needs to be visible rather than looking like a dead button. */
@@ -77,6 +79,7 @@ function inferFormat(filePath: string): UploadedProgramFormat {
 export function ApplicationSection({
   value,
   errors,
+  hyperparamErrors,
   onChange,
   isCheckingFile = false,
 }: ApplicationSectionProps): React.JSX.Element {
@@ -306,7 +309,7 @@ export function ApplicationSection({
           <HyperparametersPanel
             benchmarkId={value.benchmarkId}
             values={value.hyperparams[value.benchmarkId] ?? {}}
-            errors={errors.hyperparams ?? []}
+            errors={hyperparamErrors ?? []}
             onChange={setHyperparam}
           />
         </>

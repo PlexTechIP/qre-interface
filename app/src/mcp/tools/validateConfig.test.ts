@@ -1,312 +1,339 @@
 // @vitest-environment node
+
+/**
+ * `qre_validate_config` tells an agent whether a draft would run, so the only
+ * thing that makes it worth having is agreeing with the app. It therefore walks
+ * the same seam the Run button walks — committed generation schema, the one
+ * draft adapter, `normalizeFormState`, `validateForm`, `toRunConfig`,
+ * `validateRunConfigSchema` — and states no rule of its own.
+ */
+
 import { describe, expect, it } from "vitest";
-import { handleValidateConfig } from "./validateConfig.js";
-import type { ValidateConfigOutput } from "./validateConfig.js";
+
+import {
+  handleValidateConfig,
+  type ValidateConfigOutput,
+} from "./validateConfig.js";
+import { generatedDraftFromFormState } from "../../renderer/state/generatedDraft.js";
+import { formStateFromRunConfig } from "../../renderer/state/formState.js";
+import { buildRunConfig } from "../../shared/testing/builders.js";
 import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 
-function asData(result: Awaited<ReturnType<typeof handleValidateConfig>>): ValidateConfigOutput {
+function asData(
+  result: Awaited<ReturnType<typeof handleValidateConfig>>,
+): ValidateConfigOutput {
   expect(result.isError).toBeFalsy();
   return result.structuredContent as unknown as ValidateConfigOutput;
 }
 
-describe("qre_validate_config tool", () => {
-  // Test 1: Valid complete quantum-dynamics benchmark draft
-  it("accepts a valid quantum-dynamics benchmark draft", async () => {
-    const draft: GeneratedRunDraft = {
-      name: "Valid Quantum Dynamics",
-      application: {
-        type: "benchmark",
-        benchmarkId: "quantum-dynamics",
-      },
-      architecture: {
-        type: "gateBased",
-        errorRate: 0.0001,
-        gateTime: 50,
-        measurementTime: 100,
-        twoQubitGateTime: null,
-      },
+/** A draft the app itself would produce, for the given config. */
+function draftFor(config: Parameters<typeof formStateFromRunConfig>[0]): GeneratedRunDraft {
+  return generatedDraftFromFormState(formStateFromRunConfig(config));
+}
+
+const BENCHMARK_DRAFT = (): GeneratedRunDraft =>
+  draftFor(
+    buildRunConfig({
+      name: "Shor",
+      application: { type: "benchmark", benchmarkId: "shors-factoring" },
+    }),
+  );
+
+const MAJORANA_DRAFT = (): GeneratedRunDraft =>
+  draftFor(
+    buildRunConfig({
+      name: "Majorana",
+      application: { type: "benchmark", benchmarkId: "shors-factoring" },
+      architecture: { type: "majorana", errorRate: 1e-5, operationTime: 1000 },
+      qecCode: "three_aux",
       magicStateFactories: ["round_based"],
-      secondaryFactories: [],
-      memoryOptimization: "none",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        latticeN1: 10,
-        latticeN2: 10,
-        totalTime: 30.0,
-        trotterStep: 0.9,
-        couplingJ: 1.0,
-        fieldG: 1.0,
-      },
-    };
+    }),
+  );
 
-    const result = asData(await handleValidateConfig({ draft }));
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
-  });
-
-  // Test 2: Majorana + disallowed litinski19 factory
-  it("rejects majorana with disallowed litinski19 factory", async () => {
-    const draft: GeneratedRunDraft = {
-      name: "Majorana Litinski",
+const MANUAL_COUNTS_DRAFT = (): GeneratedRunDraft =>
+  draftFor(
+    buildRunConfig({
+      name: "Manual",
       application: {
-        type: "benchmark",
-        benchmarkId: "shors-factoring",
+        type: "manualCounts",
+        numQubits: 50,
+        tCount: 100,
+        rotationCount: 200,
+        rotationDepth: 50,
+        cczCount: 10,
+        ccixCount: 5,
+        measurementCount: 50,
       },
-      architecture: {
-        type: "majorana",
-        errorRate: 0.0001,
-        operationTime: 1000,
-      },
-      magicStateFactories: ["litinski19"],
-      secondaryFactories: [],
-      memoryOptimization: "none",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        bitSize: 31,
-        generator: 11,
-      },
-    };
+    }),
+  );
 
-    const result = asData(await handleValidateConfig({ draft }));
-    expect(result.valid).toBe(false);
-    const couplingErrors = result.errors.filter((e) => e.source === "coupling");
-    expect(couplingErrors.some((e) => e.message.includes("litinski19"))).toBe(true);
+describe("qre_validate_config", () => {
+  it("accepts a draft the app would run", async () => {
+    const data = asData(
+      await handleValidateConfig({ draft: BENCHMARK_DRAFT() }),
+    );
+
+    expect(data.errors).toEqual([]);
+    expect(data.valid).toBe(true);
   });
 
+  it("accepts a manual-counts draft", async () => {
+    // The case that used to fail: the contract's `parameters` has a `none`
+    // variant for runs with no benchmark parameters, and a draft that omitted
+    // the sentinel matched no variant at all.
+    const data = asData(
+      await handleValidateConfig({ draft: MANUAL_COUNTS_DRAFT() }),
+    );
 
-  // Test 4: Empty magic state factories
-  it("rejects empty magic state factories", async () => {
-    const draft: GeneratedRunDraft = {
-      name: "No factories",
-      application: {
-        type: "benchmark",
-        benchmarkId: "phase-estimation",
-      },
-      architecture: {
-        type: "gateBased",
-        errorRate: 0.0001,
-        gateTime: 50,
-        measurementTime: 100,
-        twoQubitGateTime: null,
-      },
-      magicStateFactories: [],
-      secondaryFactories: [],
-      memoryOptimization: "none",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        precision: 5,
-        registerSize: 10,
-      },
-    };
-
-    const result = asData(await handleValidateConfig({ draft }));
-    expect(result.valid).toBe(false);
-    const formErrors = result.errors.filter((e) => e.source === "form" && e.field === "magicStateFactories");
-    expect(formErrors.length).toBeGreaterThan(0);
+    expect(data.errors).toEqual([]);
+    expect(data.valid).toBe(true);
   });
 
-
-  // Test 6: Majorana + magic_up_to_clifford secondary factory disallowed
-  it("rejects majorana with magic_up_to_clifford", async () => {
-    const draft: GeneratedRunDraft = {
-      name: "Majorana with magic_up_to_clifford",
-      application: {
-        type: "benchmark",
-        benchmarkId: "ekera-hastad-factoring",
-      },
-      architecture: {
-        type: "majorana",
-        errorRate: 0.00001,
-        operationTime: 1000,
-      },
-      magicStateFactories: ["round_based"],
-      secondaryFactories: ["magic_up_to_clifford"],
-      memoryOptimization: "none",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        rsaInstance: "rsa-100",
-        generator: 7,
-      },
-    };
-
-    const result = asData(await handleValidateConfig({ draft }));
-    expect(result.valid).toBe(false);
-    const couplingErrors = result.errors.filter((e) => e.source === "coupling" && e.field === "secondaryFactories");
-    expect(couplingErrors.length).toBeGreaterThan(0);
-  });
-
-
-  // Schema-legal (errorRate < 0.01) but coupling-invalid above the 1e-3 litinski19
-  // threshold — catches a reorder back to normalize-before-check, which would
-  // silently swap this factory to round_based instead of reporting it.
-  it("rejects gate-based with litinski19 above the error-rate threshold", async () => {
-    const draft: GeneratedRunDraft = {
-      name: "High error rate Litinski",
-      application: {
-        type: "benchmark",
-        benchmarkId: "grovers-search",
-      },
-      architecture: {
-        type: "gateBased",
-        errorRate: 0.005,
-        gateTime: 50,
-        measurementTime: 100,
-        twoQubitGateTime: null,
-      },
-      magicStateFactories: ["litinski19"],
-      secondaryFactories: [],
-      memoryOptimization: "none",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        searchQubits: 10,
-      },
-    };
-
-    const result = asData(await handleValidateConfig({ draft }));
-    expect(result.valid).toBe(false);
-    const couplingErrors = result.errors.filter((e) => e.source === "coupling");
-    expect(couplingErrors.some((e) => e.message.includes("litinski19"))).toBe(true);
-  });
-
-  // Caught at the structural gate today (the schema locks memoryOptimization to
-  // "none"), not by checkCouplingViolations's D2 check — asserts the guarantee
-  // holds regardless of which layer catches it.
-  it("rejects a non-none memoryOptimization", async () => {
-    const draft: GeneratedRunDraft = {
-      name: "Bad memory optimization",
-      application: {
-        type: "benchmark",
-        benchmarkId: "quantum-dynamics",
-      },
-      architecture: {
-        type: "gateBased",
-        errorRate: 0.0001,
-        gateTime: 50,
-        measurementTime: 100,
-        twoQubitGateTime: null,
-      },
-      magicStateFactories: ["round_based"],
-      secondaryFactories: [],
-      memoryOptimization: "yoked_1d",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        latticeN1: 10,
-        latticeN2: 10,
-        totalTime: 30.0,
-        trotterStep: 0.9,
-        couplingJ: 1.0,
-        fieldG: 1.0,
-      },
-    };
-
-    const result = asData(await handleValidateConfig({ draft }));
-    expect(result.valid).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
-  });
-
-  // Test 9: nothing is persisted — this tool never touches the database, so a valid
-  // draft must validate correctly even with QRE_DB_PATH completely unset.
-  it("validates correctly with no database configured", async () => {
-    const originalDbPath = process.env.QRE_DB_PATH;
-    delete process.env.QRE_DB_PATH;
-
-    try {
-      const draft: GeneratedRunDraft = {
-        name: "No DB needed",
+  it("agrees with qre_draft_from_run about every run the app can draft", async () => {
+    // The whole point of the tool. If these two disagree, an agent is told its
+    // own draft is invalid.
+    for (const config of [
+      buildRunConfig({
+        application: { type: "benchmark", benchmarkId: "grovers-search" },
+      }),
+      buildRunConfig({
+        application: { type: "benchmark", benchmarkId: "quantum-dynamics" },
+        architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
+        qecCode: "three_aux",
+      }),
+      buildRunConfig({
         application: {
-          type: "benchmark",
-          benchmarkId: "quantum-dynamics",
+          type: "manualCounts",
+          numQubits: 10,
+          tCount: 20,
+          rotationCount: 0,
+          rotationDepth: 0,
+          cczCount: 0,
+          ccixCount: 0,
+          measurementCount: 5,
         },
-        architecture: {
-          type: "gateBased",
-          errorRate: 0.0001,
-          gateTime: 50,
-          measurementTime: 100,
-          twoQubitGateTime: null,
-        },
-        magicStateFactories: ["round_based"],
-        secondaryFactories: [],
-        memoryOptimization: "none",
-        traceTransform: {
-          tStatesPerRotation: 10,
-          ccxMagicStates: false,
-        },
-        maxError: 0.5,
-        parameters: {
-          latticeN1: 10,
-          latticeN2: 10,
-          totalTime: 30.0,
-          trotterStep: 0.9,
-          couplingJ: 1.0,
-          fieldG: 1.0,
-        },
-      };
+      }),
+    ]) {
+      const data = asData(
+        await handleValidateConfig({ draft: draftFor(config) }),
+      );
 
-      const result = asData(await handleValidateConfig({ draft }));
-      expect(result.valid).toBe(true);
-    } finally {
-      if (originalDbPath !== undefined) {
-        process.env.QRE_DB_PATH = originalDbPath;
-      }
+      expect(data.valid, JSON.stringify(data.errors)).toBe(true);
     }
   });
 
-  // Test 8: Input with extra fields is rejected at structure level
-  it("rejects input with unexpected extra fields", async () => {
-    const invalidDraft = {
-      name: "With extra field",
-      application: {
-        type: "benchmark",
-        benchmarkId: "grovers-search",
-      },
-      architecture: {
-        type: "gateBased",
-        errorRate: 0.0001,
-        gateTime: 50,
-        measurementTime: 100,
-        twoQubitGateTime: null,
-      },
-      magicStateFactories: ["round_based"],
-      secondaryFactories: [],
-      memoryOptimization: "none",
-      traceTransform: {
-        tStatesPerRotation: 10,
-        ccxMagicStates: false,
-      },
-      maxError: 0.5,
-      parameters: {
-        searchQubits: 10,
-      },
-      id: "should-not-be-here",
+  it("reports a structurally impossible draft rather than throwing", async () => {
+    const draft = {
+      ...BENCHMARK_DRAFT(),
+      architecture: { type: "gateBased", errorRate: "not a number" },
     } as unknown as GeneratedRunDraft;
 
-    const result = asData(await handleValidateConfig({ draft: invalidDraft }));
+    const data = asData(await handleValidateConfig({ draft }));
+
+    expect(data.valid).toBe(false);
+    expect(data.errors[0]?.source).toBe("structure");
+  });
+
+  it("names the field a schema error is about", async () => {
+    // Ajv reports JSON Pointer instance paths; parsing its rendered text with
+    // a `data.field` regex matched nothing, so every schema error came back
+    // labelled "schema" — on the one error source whose whole value is saying
+    // which field is wrong.
+    const draft = { ...BENCHMARK_DRAFT(), maxError: 5 } as GeneratedRunDraft;
+
+    const data = asData(await handleValidateConfig({ draft }));
+
+    expect(data.valid).toBe(false);
+    expect(data.errors.map((error) => error.field)).toContain("maxError");
+  });
+
+  it("rejects a factory the architecture forbids", async () => {
+    const draft = {
+      ...BENCHMARK_DRAFT(),
+      architecture: { type: "majorana", errorRate: 0.00001, operationTime: 1000 },
+      secondaryFactories: ["magic_up_to_clifford"],
+    } as unknown as GeneratedRunDraft;
+
+    const data = asData(await handleValidateConfig({ draft }));
+
+    expect(data.valid).toBe(false);
+    expect(data.errors.map((error) => error.field)).toContain(
+      "secondaryFactories",
+    );
+  });
+
+  it("writes nothing, whatever it is given", async () => {
+    // No run store is configured at all: a tool that persisted anything would
+    // have to reach for one, and would fail loudly here.
+    const saved = process.env.QRE_DB_PATH;
+    delete process.env.QRE_DB_PATH;
+    try {
+      const data = asData(
+        await handleValidateConfig({ draft: BENCHMARK_DRAFT() }),
+      );
+
+      expect(data.valid).toBe(true);
+    } finally {
+      if (saved !== undefined) process.env.QRE_DB_PATH = saved;
+    }
+  });
+});
+
+/**
+ * The two ways this tool used to answer a question it had not been asked.
+ *
+ * Both were found by driving hand-built drafts through a real client rather
+ * than drafts the app itself had produced — the app's own drafts are already
+ * self-consistent, so they never exercise a repair.
+ */
+describe("a draft the pipeline would quietly change", () => {
+  it("does not call an empty factory set valid", async () => {
+    // normalizeFormState falls back to ["round_based"] rather than leaving the
+    // set empty. That is right for the chat path and wrong here: the answer
+    // would be about a run the caller did not describe.
+    const draft = { ...BENCHMARK_DRAFT(), magicStateFactories: [] };
+
+    const result = asData(await handleValidateConfig({ draft }));
+
     expect(result.valid).toBe(false);
-    const structErrors = result.errors.filter((e) => e.source === "structure");
-    expect(structErrors.length).toBeGreaterThan(0);
+    const item = result.errors.find((e) => e.field === "magicStateFactories");
+    expect(item?.source).toBe("coupling");
+    // The form's own sentence, naming the options — asked for rather than
+    // restated, so the two cannot drift.
+    expect(item?.message).toMatch(/at least one of/i);
+    expect(item?.message).toMatch(/Round-Based/);
+  });
+
+  it("does not call another benchmark's parameters valid", async () => {
+    // The generation schema's `parameters` is an anyOf over per-benchmark
+    // variants, so quantum-dynamics values are structurally fine — they are
+    // just not this benchmark's, and the adapter replaces them with Shor's
+    // DEFAULTS. Answering `valid: true` there describes a different run.
+    const draft = {
+      ...BENCHMARK_DRAFT(),
+      parameters: {
+        latticeN1: 4,
+        latticeN2: 4,
+        totalTime: 1,
+        trotterStep: 0.1,
+        couplingJ: 1,
+        fieldG: 1,
+      },
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    // One item per key that does not belong, naming the key and the benchmark
+    // — not one item saying that something was replaced.
+    const items = result.errors.filter((e) => e.field === "parameters");
+    expect(items.length).toBeGreaterThan(1);
+    expect(items.every((e) => e.source === "coupling")).toBe(true);
+    expect(items[0]?.message).toContain("latticeN1");
+    expect(items[0]?.message).toContain("shors-factoring");
+  });
+
+  it("still accepts a draft the pipeline does not change", async () => {
+    // The round trip has to be stable, or every valid draft reports a repair.
+    const result = asData(await handleValidateConfig({ draft: BENCHMARK_DRAFT() }));
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+});
+
+describe("a benchmark parameter the form rejects", () => {
+  it("says which parameter and why", async () => {
+    // FieldErrors carries a string per field EXCEPT hyperparams, which is a
+    // HyperparamError[]. A uniform String(message) rendered every one of these
+    // as the literal text "[object Object]".
+    const draft = {
+      ...BENCHMARK_DRAFT(),
+      parameters: { bitSize: 99999, generator: 11 },
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    for (const error of result.errors) {
+      expect(error.message).not.toContain("[object Object]");
+    }
+    const item = result.errors.find((e) => e.source === "form");
+    expect(item?.message).toMatch(/8192/);
+    // Keyed by the parameter itself, so the item names the field to change.
+    expect(item?.field).toBe("bitSize");
+  });
+});
+
+describe("a spelling the contract calls equivalent", () => {
+  it("does not report a blank name as a substitution", async () => {
+    // The generation schema documents `name` as "Use null to let the app
+    // generate one", and RunConfig as "auto-derived when the user leaves it
+    // blank". The adapter's `state.name || null` is therefore spelling, not a
+    // repair — but the round trip compares written forms, and reported it as
+    // one: an empty name was answered `valid: false` with "The run would use
+    // null instead of \"\"" for a draft the app runs happily.
+    const result = asData(
+      await handleValidateConfig({ draft: { ...BENCHMARK_DRAFT(), name: "" } }),
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("still accepts an explicitly null name", async () => {
+    const result = asData(
+      await handleValidateConfig({ draft: { ...BENCHMARK_DRAFT(), name: null } }),
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it("still reports a name the pipeline actually changed", async () => {
+    // The fold is one equivalence, not a licence to ignore the field.
+    const draft = BENCHMARK_DRAFT();
+    const result = asData(
+      await handleValidateConfig({ draft: { ...draft, magicStateFactories: [] } }),
+    );
+
+    expect(result.valid).toBe(false);
+  });
+});
+
+/**
+ * The checks this tool inherited from team 2's implementation (#32), which ran
+ * its coupling checks against what the caller asked for rather than against
+ * what the adapter kept. Both are answered by calling the app's own predicate,
+ * so neither restates a rule.
+ */
+describe("a coupling the adapter would have repaired", () => {
+  it("names a secondary factory the architecture forbids", async () => {
+    const draft = {
+      ...MAJORANA_DRAFT(),
+      secondaryFactories: ["magic_up_to_clifford"],
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    expect(result.valid).toBe(false);
+    const item = result.errors.find((e) => e.field === "secondaryFactories");
+    expect(item?.source).toBe("coupling");
+    expect(item?.message).toContain("magic_up_to_clifford");
+  });
+
+  it("explains a field once, not twice", async () => {
+    // The round trip runs last and adds only to what is already there. A
+    // factory the named check already explained must not also collect a
+    // generic "this was not used as given".
+    const draft = {
+      ...MAJORANA_DRAFT(),
+      magicStateFactories: ["litinski19"],
+    } as unknown as GeneratedRunDraft;
+
+    const result = asData(await handleValidateConfig({ draft }));
+
+    const items = result.errors.filter((e) => e.field === "magicStateFactories");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.message).not.toContain("was not used as given");
   });
 });

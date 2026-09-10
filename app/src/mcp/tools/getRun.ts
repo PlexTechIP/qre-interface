@@ -2,15 +2,15 @@
  * MCP tool: qre_get_run
  *
  * Retrieves a single run by ID with full details (except raw engine output).
- * Includes config, result metadata, a frontier sample, and error details.
+ * Includes config, result metadata, a bounded frontier sample, and error details.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { toolFailure, toolSuccess } from "../toolResult.js";
+import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunDetail, type RunDetail } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
-import { validateRunRecord } from "../../shared/runRecordValidation.js";
+import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
 
 export interface GetRunInput {
   id: string;
@@ -21,66 +21,37 @@ export interface GetRunOutput {
 }
 
 /**
- * Estimate the JSON size of an object (rough heuristic).
- */
-function estimateJsonSize(obj: unknown): number {
-  return JSON.stringify(obj).length;
-}
-
-const MAX_OUTPUT_SIZE = 65536; // ~64 KiB
-
-/**
  * Tool handler for qre_get_run.
  */
 export async function handleGetRun(input: GetRunInput): Promise<CallToolResult> {
-  try {
+  return runTool("getRun", { code: "STORE_READ_FAILED", message: "Failed to retrieve the run." }, async () => {
     if (!input.id || input.id.trim() === "") {
       return toolFailure("STORE_READ_FAILED", "Run ID is required and must not be empty");
     }
 
-    const store = getRunStore();
-    const record = await store.get(input.id);
-
+    const record = await getRunStore().get(input.id);
     if (!record) {
-      return toolFailure("RUN_NOT_FOUND", `No run found with ID: ${input.id}`);
-    }
-
-    // Validate the record
-    const validation = validateRunRecord(record);
-    if (!validation.valid) {
-      logError("Invalid run record in store", { id: record.id, errors: validation.errors });
-      return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
-    }
-
-    // Project to RunDetail
-    const detail = toRunDetail(record);
-
-    // Check output size
-    const output: GetRunOutput = { run: detail };
-    const jsonSize = estimateJsonSize(output);
-
-    if (jsonSize > MAX_OUTPUT_SIZE) {
-      logError("RunDetail output too large", { id: input.id, size: jsonSize });
+      // The id is the one string the caller fully controls, so it is bounded
+      // before being echoed. `boundedText` also escapes it.
       return toolFailure(
-        "STORE_READ_FAILED",
-        "Run details are too large to return; the data has been truncated to prevent context overflow.",
+        "RUN_NOT_FOUND",
+        `No run found with ID: ${boundedText(input.id, 100)}`,
       );
     }
 
-    return toolSuccess(output);
-  } catch (error) {
-    logError("getRun handler error", error);
-    if (error && typeof error === "object" && "code" in error) {
-      const errCode = (error as { code?: string }).code;
-      if (
-        errCode === "DB_NOT_CONFIGURED" ||
-        errCode === "DB_NOT_FOUND" ||
-        errCode === "DB_SCHEMA_MISMATCH"
-      ) {
-        return toolFailure(errCode as "DB_NOT_CONFIGURED" | "DB_NOT_FOUND" | "DB_SCHEMA_MISMATCH", (error as { message?: string }).message || "Database error");
-      }
+    const validation = validateStoredRunRecord(record);
+    if (!validation.valid) {
+      logError("Invalid run record in store", {
+        id: record.id,
+        errors: validation.errors,
+      });
+      return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
     }
-    return toolFailure("STORE_READ_FAILED", "Failed to retrieve the run.");
-  }
-}
 
+    // No size guard: `toRunDetail` bounds every engine-controlled field, so a
+    // RunDetail has a computable maximum. Refusing an oversized run made it
+    // permanently unreadable, and said the data had been truncated when nothing
+    // had been truncated and nothing was returned.
+    return toolSuccess({ run: toRunDetail(record) } satisfies GetRunOutput);
+  });
+}

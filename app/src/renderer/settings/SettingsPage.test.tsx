@@ -13,6 +13,7 @@ import type {
 import type { AppInfoService } from "../../shared/appInfoTypes";
 import { InMemoryChatStore } from "../../shared/chatStore";
 import { fakeAgentService, fakeAppInfoService } from "../../shared/testing";
+import { FAKE_MCP_SETUP, FAKE_STORAGE_LOCATIONS } from "../../shared/testing/fakeAppInfo";
 import { QRE_VERSION } from "../constants/staticOptions";
 import type { ThemePreference } from "../theme";
 import { SettingsPage } from "./SettingsPage";
@@ -419,7 +420,7 @@ describe("SettingsPage", () => {
       // The rest of the page is still standing. An unknown id used to reach a
       // copy lookup that returned undefined and threw inside render, taking the
       // whole page down rather than one row.
-      expect(screen.getAllByRole("tab")).toHaveLength(4);
+      expect(screen.getAllByRole("tab")).toHaveLength(5);
     });
 
     /**
@@ -431,6 +432,7 @@ describe("SettingsPage", () => {
         tab: "Data & storage",
         appInfo: {
           getStorage: () => Promise.reject(new Error("no handler registered")),
+          getMcpSetup: () => Promise.resolve(FAKE_MCP_SETUP),
           reveal: async () => ({ ok: true as const }),
         },
       });
@@ -559,6 +561,7 @@ describe("SettingsPage — tabs", () => {
     expect(screen.getAllByRole("tab").map((entry) => entry.textContent)).toEqual([
       "General",
       "AI providers",
+      "MCP Server",
       "Data & storage",
       "About",
     ]);
@@ -642,5 +645,82 @@ describe("SettingsPage — tabs", () => {
 
     expect(tab("General")).toHaveAttribute("tabindex", "0");
     expect(tab("About")).toHaveAttribute("tabindex", "-1");
+  });
+});
+
+/**
+ * The answer to "I downloaded the app — how do I connect Claude to it?"
+ *
+ * `npm run mcp:config` answers that for a developer with a checkout. It cannot
+ * answer it for a downloaded app: it resolves the server bundle relative to
+ * `src/mcp/`, which is not shipped, and there is no npm to run it with. This
+ * panel is the shipped counterpart, and the dashboard is the only process that
+ * can produce it — it alone knows its own executable, its resources, and the
+ * database it opened.
+ */
+describe("SettingsPage — the MCP Server tab", () => {
+  it("offers a setup for every client it names", async () => {
+    setup({ tab: "MCP Server" });
+
+    // Claude Code, Codex CLI, the JSON block, the TOML block — each with its
+    // own copyable value, so nobody has to translate one into another.
+    expect(
+      await screen.findByRole("group", { name: /claude code setup/i }),
+    ).toHaveTextContent("claude mcp add qre-dashboard");
+    expect(screen.getByRole("group", { name: /codex cli setup/i })).toHaveTextContent(
+      "codex mcp add qre-dashboard",
+    );
+    expect(
+      screen.getByRole("group", { name: /claude desktop and other json clients setup/i }),
+    ).toHaveTextContent(/"mcpServers"/);
+    expect(screen.getByRole("group", { name: /codex, by hand setup/i })).toHaveTextContent(
+      "[mcp_servers.qre-dashboard]",
+    );
+  });
+
+  it("gives each block its own copy button", async () => {
+    setup({ tab: "MCP Server" });
+
+    await screen.findByRole("group", { name: /claude code setup/i });
+    // Two commands and two configurations; a shared button would copy the
+    // wrong one for three of the four.
+    expect(screen.getAllByRole("button", { name: /copy command/i })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /copy configuration/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /copy toml/i })).toBeVisible();
+  });
+
+  it("says the access is read-only, because that is the question asked", async () => {
+    setup({ tab: "MCP Server" });
+
+    const block = await screen.findByText(/read-only/i);
+    expect(block).toHaveTextContent(/cannot start a run/i);
+  });
+
+  it("surfaces a problem rather than a block that will not work", async () => {
+    setup({
+      tab: "MCP Server",
+      appInfo: fakeAppInfoService({
+        mcpSetup: { ...FAKE_MCP_SETUP, problems: ["No runs are saved yet."] },
+      }),
+    });
+
+    expect(await screen.findByText(/no runs are saved yet/i)).toBeVisible();
+  });
+
+  it("reports a failed read instead of rendering an empty panel", async () => {
+    // An empty tab reads as "there is nothing to connect", which is a
+    // different and wrong answer — the same reason the storage list reports.
+    setup({
+      tab: "MCP Server",
+      appInfo: {
+        getStorage: () => Promise.resolve({ locations: FAKE_STORAGE_LOCATIONS }),
+        getMcpSetup: () => Promise.reject(new Error("no handler registered")),
+        reveal: async () => ({ ok: true as const }),
+      },
+    });
+
+    expect(
+      await screen.findByText(/connection details could not be read/i),
+    ).toBeVisible();
   });
 });

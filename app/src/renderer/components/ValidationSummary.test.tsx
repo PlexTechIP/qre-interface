@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ValidationSummary } from "./ValidationSummary";
-import type { FieldErrors } from "../state/validation";
+import type { HyperparamError } from "../constants/hyperparameters";
 
 afterEach(() => {
   cleanup();
@@ -94,10 +94,8 @@ describe("ValidationSummary jump-to-field", () => {
   it("routes a hyperparameter issue to its hparam- input", async () => {
     const user = userEvent.setup();
     const input = mountField("hparam-bond_dim");
-    const errors: FieldErrors = {
-      hyperparams: [{ key: "bond_dim", label: "Bond dimension", message: "Required." }],
-    };
-    render(<ValidationSummary errors={errors} />);
+    const hyperparams: HyperparamError[] = [{ key: "bond_dim", label: "Bond dimension", message: "Required." }];
+    render(<ValidationSummary errors={{}} hyperparams={hyperparams} />);
 
     await user.click(screen.getByRole("button", { name: /Bond dimension/ }));
 
@@ -114,12 +112,10 @@ describe("ValidationSummary jump-to-field", () => {
   it("opens the collapsed panel a hyperparameter lives in", async () => {
     const user = userEvent.setup();
     const { input, details } = mountCollapsedHyperparam("trotter_step");
-    const errors: FieldErrors = {
-      hyperparams: [
+    const hyperparams: HyperparamError[] = [
         { key: "trotter_step", label: "Trotter Step", message: "Trotter Step must be at most Total Time." },
-      ],
-    };
-    render(<ValidationSummary errors={errors} />);
+      ];
+    render(<ValidationSummary errors={{}} hyperparams={hyperparams} />);
     expect(details.open).toBe(false);
 
     await user.click(screen.getByRole("button", { name: /Trotter Step/ }));
@@ -134,10 +130,8 @@ describe("ValidationSummary jump-to-field", () => {
     const { details: inner } = mountCollapsedHyperparam("trotter_step");
     outer.appendChild(inner);
     document.body.appendChild(outer);
-    const errors: FieldErrors = {
-      hyperparams: [{ key: "trotter_step", label: "Trotter Step", message: "Too large." }],
-    };
-    render(<ValidationSummary errors={errors} />);
+    const hyperparams: HyperparamError[] = [{ key: "trotter_step", label: "Trotter Step", message: "Too large." }];
+    render(<ValidationSummary errors={{}} hyperparams={hyperparams} />);
 
     await user.click(screen.getByRole("button", { name: /Trotter Step/ }));
 
@@ -148,10 +142,8 @@ describe("ValidationSummary jump-to-field", () => {
   it("flashes the whole hyperparameter group, not the bare input", async () => {
     const user = userEvent.setup();
     const { input, group } = mountCollapsedHyperparam("trotter_step");
-    const errors: FieldErrors = {
-      hyperparams: [{ key: "trotter_step", label: "Trotter Step", message: "Too large." }],
-    };
-    render(<ValidationSummary errors={errors} />);
+    const hyperparams: HyperparamError[] = [{ key: "trotter_step", label: "Trotter Step", message: "Too large." }];
+    render(<ValidationSummary errors={{}} hyperparams={hyperparams} />);
 
     await user.click(screen.getByRole("button", { name: /Trotter Step/ }));
 
@@ -167,12 +159,10 @@ describe("ValidationSummary jump-to-field", () => {
    * Time." — the field named twice in eight words.
    */
   it("does not name the field twice when the message already opens with it", () => {
-    const errors: FieldErrors = {
-      hyperparams: [
+    const hyperparams: HyperparamError[] = [
         { key: "trotter_step", label: "Trotter Step", message: "Trotter Step must be at most Total Time." },
-      ],
-    };
-    render(<ValidationSummary errors={errors} />);
+      ];
+    render(<ValidationSummary errors={{}} hyperparams={hyperparams} />);
 
     const button = screen.getByRole("button", { name: /Trotter Step/ });
     expect(button.textContent).toBe("Trotter Step must be at most Total Time.");

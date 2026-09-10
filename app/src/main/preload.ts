@@ -15,6 +15,7 @@ import type {
   RevealResult,
   StorageInfo,
   StorageLocationId,
+  McpSetup,
 } from "../shared/appInfoTypes.js";
 import type {
   ChatMessage,
@@ -34,6 +35,7 @@ import type {
 } from "../shared/types.js";
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
 import {
+  APP_INFO_MCP_CHANNEL,
   AGENT_CANCEL_CHANNEL,
   AGENT_CATALOG_CHANNEL,
   AGENT_REPLY_DELTA_CHANNEL,
@@ -204,6 +206,9 @@ const chats: ChatStore = {
 const appInfo: AppInfoService = {
   getStorage(): Promise<StorageInfo> {
     return ipcRenderer.invoke(APP_INFO_STORAGE_CHANNEL) as Promise<StorageInfo>;
+  },
+  getMcpSetup(): Promise<McpSetup> {
+    return ipcRenderer.invoke(APP_INFO_MCP_CHANNEL) as Promise<McpSetup>;
   },
   reveal(id: StorageLocationId): Promise<RevealResult> {
     return ipcRenderer.invoke(APP_INFO_REVEAL_CHANNEL, id) as Promise<RevealResult>;

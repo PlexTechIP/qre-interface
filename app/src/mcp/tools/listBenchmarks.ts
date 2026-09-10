@@ -7,8 +7,7 @@
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { BENCHMARK_REGISTRY } from "../../main/engine/benchmarkRegistry.js";
-import { logError } from "../logger.js";
-import { toolFailure, toolSuccess } from "../toolResult.js";
+import { runTool, toolSuccess } from "../toolResult.js";
 
 export interface ListBenchmarksOutput {
   benchmarks: Array<{
@@ -23,8 +22,11 @@ export interface ListBenchmarksOutput {
  * Tool handler for qre_list_benchmarks.
  * Always succeeds (no external state queried).
  */
-export function handleListBenchmarks(): CallToolResult {
-  try {
+export async function handleListBenchmarks(): Promise<CallToolResult> {
+  return runTool(
+    "listBenchmarks",
+    { code: "STORE_READ_FAILED", message: "Failed to list benchmarks." },
+    async () => {
     const benchmarks = Object.values(BENCHMARK_REGISTRY).map((entry) => ({
       id: entry.id,
       name: entry.name,
@@ -32,9 +34,7 @@ export function handleListBenchmarks(): CallToolResult {
       format: entry.format,
     }));
 
-    return toolSuccess({ benchmarks });
-  } catch (error) {
-    logError("listBenchmarks handler error", error);
-    return toolFailure("STORE_READ_FAILED", "Failed to list benchmarks.");
-  }
+    return toolSuccess({ benchmarks } satisfies ListBenchmarksOutput);
+    },
+  );
 }

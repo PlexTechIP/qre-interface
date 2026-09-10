@@ -5,19 +5,23 @@
  * Uses formStateFromRunConfig to convert the config to editable FormState,
  * then projects the FormState to GeneratedRunDraft.
  *
- * Refuses (returns DRAFT_UNSUPPORTED) for:
- * - Uploaded applications (no file path in GeneratedApplication)
- * - Majorana with optional fields (tErrorRate, targetYear)
- * - Neutral Atom with optional fields (dataQubitSpacing, targetYear)
- * - Non-default trace transform stages
+ * Which runs cannot be drafted is decided by `generatedDraftFromFormState`, not
+ * restated here: the list is a property of what the generation contract can
+ * carry, and a copy of it in this header would drift the first time that
+ * changed. Uploaded applications are the one exception, refused before the
+ * adapter runs so the analyst is told which case they hit.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "../logger.js";
-import { toolFailure, toolSuccess } from "../toolResult.js";
-import { generatedDraftFromFormState } from "../projections.js";
+import { boundedText, runTool, toolFailure, toolSuccess } from "../toolResult.js";
+import { validateGeneratedDraft } from "../../main/draftValidation.js";
+import {
+  DraftUnsupportedError,
+  generatedDraftFromFormState,
+} from "../../renderer/state/generatedDraft.js";
 import { getRunStore } from "../runStoreAccess.js";
-import { validateRunRecord } from "../../shared/runRecordValidation.js";
+import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
 import { formStateFromRunConfig } from "../../renderer/state/formState.js";
 import type { GeneratedRunDraft } from "../../shared/agentTypes.js";
 
@@ -35,7 +39,10 @@ export interface DraftFromRunOutput {
 export async function handleDraftFromRun(
   input: DraftFromRunInput,
 ): Promise<CallToolResult> {
-  try {
+  return runTool(
+    "draftFromRun",
+    { code: "DRAFT_UNSUPPORTED", message: "Failed to generate a draft from the run." },
+    async () => {
     if (!input.id || input.id.trim() === "") {
       return toolFailure("STORE_READ_FAILED", "Run ID is required and must not be empty");
     }
@@ -44,14 +51,25 @@ export async function handleDraftFromRun(
     const record = await store.get(input.id);
 
     if (!record) {
-      return toolFailure("RUN_NOT_FOUND", `No run found with ID: ${input.id}`);
+      return toolFailure(
+        "RUN_NOT_FOUND",
+        `No run found with ID: ${boundedText(input.id, 100)}`,
+      );
     }
 
     // Validate the record
-    const validation = validateRunRecord(record);
+    const validation = validateStoredRunRecord(record);
     if (!validation.valid) {
       logError("Invalid run record in store", { id: record.id, errors: validation.errors });
       return toolFailure("STORE_READ_FAILED", "The stored run record is corrupted.");
+    }
+
+    if (record.config.application.type === "uploaded") {
+      return toolFailure(
+        "DRAFT_UNSUPPORTED",
+        "This run used an uploaded program. A draft cannot name a local file, " +
+          "so uploaded runs cannot be re-drafted.",
+      );
     }
 
     // Convert config to FormState
@@ -71,10 +89,24 @@ export async function handleDraftFromRun(
     try {
       draft = generatedDraftFromFormState(formState);
     } catch (error) {
-      // Catch structured refusals
-      const message = error instanceof Error ? error.message : String(error);
-      logError("Error converting FormState to GeneratedRunDraft", { message });
-      return toolFailure("DRAFT_UNSUPPORTED", message);
+      logError("Error converting FormState to GeneratedRunDraft", error);
+      // A refusal names the setting a draft has no field for, and that reason
+      // is the whole value of the answer. Withholding it did not make the
+      // result safer, only emptier: asked why a run could not be drafted, an
+      // agent with no reason available inferred one — and reported, with
+      // confidence, that the cause was the run's QEC code, when it was a
+      // DynamicMemoryCompute trace-transform stage that two gate-based runs
+      // failed on too. A wrong reason is worse than a missing one.
+      //
+      // Only a refusal is forwarded. Anything else is a fault in our own code,
+      // and its message stays here. `toolFailure` sanitises either way.
+      if (error instanceof DraftUnsupportedError) {
+        return toolFailure("DRAFT_UNSUPPORTED", error.message);
+      }
+      return toolFailure(
+        "DRAFT_UNSUPPORTED",
+        "This run cannot be expressed as an editable draft.",
+      );
     }
 
     // Sanity check: draft should have no identity fields
@@ -87,20 +119,23 @@ export async function handleDraftFromRun(
       );
     }
 
-    return toolSuccess({ draft });
-  } catch (error) {
-    logError("draftFromRun handler error", error);
-    if (error && typeof error === "object" && "code" in error) {
-      const errCode = (error as { code?: string }).code;
-      if (
-        errCode === "DB_NOT_CONFIGURED" ||
-        errCode === "DB_NOT_FOUND" ||
-        errCode === "DB_SCHEMA_MISMATCH"
-      ) {
-        return toolFailure(errCode as "DB_NOT_CONFIGURED" | "DB_NOT_FOUND" | "DB_SCHEMA_MISMATCH", (error as { message?: string }).message || "Database error");
-      }
+    // The committed generation schema is the arbiter of what a draft may look
+    // like, so check the projection against that artifact rather than trusting
+    // it. A draft this rejects cannot be handed to anything that validates.
+    const validated = validateGeneratedDraft(draft);
+    if (!validated.ok) {
+      logError("Projected draft does not satisfy the generation schema", {
+        id: input.id,
+        reason: validated.reason,
+      });
+      return toolFailure(
+        "DRAFT_UNSUPPORTED",
+        "This run cannot be expressed as an editable draft.",
+      );
     }
-    return toolFailure("DRAFT_UNSUPPORTED", "Failed to generate a draft from the run.");
-  }
+
+    return toolSuccess({ draft } satisfies DraftFromRunOutput);
+    },
+  );
 }
 
