@@ -53,5 +53,8 @@
   },
   "optionalDependencies": {
     "qsharp-lang": "1.29.1"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.6"
   }
 }
