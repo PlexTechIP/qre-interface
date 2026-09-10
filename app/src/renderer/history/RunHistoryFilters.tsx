@@ -31,6 +31,16 @@ interface Option {
   value: string;
   label: string;
 }
+
+/**
+ * The "Authored by" options are semantic, not derived from the records: unlike
+ * the other dropdowns, both values are always meaningful (a run is either
+ * model-assisted or human-authored, absent provenance counting as human).
+ */
+const AUTHORED_BY_OPTIONS: Option[] = [
+  { value: "model_assisted", label: "AI-generated" },
+  { value: "human", label: "Human-authored" },
+];
  
 /** Distinct values present across the records, as {value,label}, stable-sorted by label. */
 function distinct(
@@ -153,6 +163,13 @@ export function RunHistoryFilters({ allRecords, filter, onFilterChange }: RunHis
         value={filter.qreVersion ?? ""}
         options={versionOptions}
         onChange={(v) => setKey("qreVersion", v)}
+      />
+      <Dropdown
+        id="filter-authored-by"
+        label="Authored by"
+        value={filter.authoredBy ?? ""}
+        options={AUTHORED_BY_OPTIONS}
+        onChange={(v) => setKey("authoredBy", v)}
       />
     </section>
   );

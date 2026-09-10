@@ -315,9 +315,16 @@ export function registerAgentHandlers(
       }
 
       if (apiKey === null) {
-        throw new Error(
-          "agent:reply requires a configured credential. Check window.agent.getStatus().available before sending a turn.",
-        );
+        // No key stored for this provider. The renderer is meant to gate on
+        // `getStatus().available`, but the active-provider picker can still be
+        // pointed at an unconfigured provider — so this resolves as an ordinary,
+        // actionable failure rather than throwing, which would reach the analyst
+        // as raw "Error invoking remote method 'agent:reply'…" IPC text.
+        return {
+          ok: false,
+          code: "NOT_CONFIGURED",
+          message: `No API key is configured for ${PROVIDER_MODELS[request.provider].displayName}. Add one under AI providers in Settings to use it.`,
+        };
       }
 
       // Registered only now: a cancel arriving before the credential is read has

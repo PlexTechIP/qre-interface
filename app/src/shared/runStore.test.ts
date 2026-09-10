@@ -155,6 +155,25 @@ describe("query / filter", () => {
     expect(matchesRunFilter(byId(R1), { nameSearch: "   " })).toBe(true);
   });
 
+  it("filters by config author, counting absent provenance as human", () => {
+    const noProvenance = structuredClone(byId(R1));
+    delete noProvenance.config.provenance;
+    const aiRun = structuredClone(byId(R1));
+    aiRun.config.provenance = { authoredBy: "model_assisted", model: "claude" };
+    const humanRun = structuredClone(byId(R1));
+    humanRun.config.provenance = { authoredBy: "human" };
+
+    // The AI-generated filter matches only the model-assisted record.
+    expect(matchesRunFilter(aiRun, { authoredBy: "model_assisted" })).toBe(true);
+    expect(matchesRunFilter(humanRun, { authoredBy: "model_assisted" })).toBe(false);
+    expect(matchesRunFilter(noProvenance, { authoredBy: "model_assisted" })).toBe(false);
+
+    // The human filter matches explicit-human AND records that predate provenance.
+    expect(matchesRunFilter(humanRun, { authoredBy: "human" })).toBe(true);
+    expect(matchesRunFilter(noProvenance, { authoredBy: "human" })).toBe(true);
+    expect(matchesRunFilter(aiRun, { authoredBy: "human" })).toBe(false);
+  });
+
   it("applicationKey distinguishes benchmark ids and uploaded programs", () => {
     expect(applicationKey(byId(R1).config)).toBe("quantum-dynamics");
     const uploaded = structuredClone(byId(R1));

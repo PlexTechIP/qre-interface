@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from "react";
 
 import type { AgentService, ProviderId } from "../../shared/agentTypes";
+import { DefinitionTip } from "../components/DefinitionTip";
 
 interface ProviderKeyCardProps {
   provider: ProviderId;
@@ -16,6 +17,14 @@ interface ProviderKeyCardProps {
   onConfigured: (provider: ProviderId) => void;
   /** A key was deleted. The shell re-reads status; the selection is untouched. */
   onCleared: (provider: ProviderId) => void;
+  /**
+   * Id of the shared "the key goes straight to main…" note, which now lives once
+   * above all the cards rather than being repeated in each. The key input points
+   * its `aria-describedby` here so a screen-reader user still hears the security
+   * guarantee on the field itself. Omitted when the card is rendered on its own
+   * (a test), where there is no shared note to point at.
+   */
+  keyInputDescribedBy?: string;
   /**
    * Anything else this provider needs, rendered below the key form.
    *
@@ -47,6 +56,7 @@ export function ProviderKeyCard({
   service,
   onConfigured,
   onCleared,
+  keyInputDescribedBy,
   children,
 }: ProviderKeyCardProps): React.JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +77,7 @@ export function ProviderKeyCard({
   const id = useId();
   const inputId = `${id}-key`;
   const headingId = `${id}-heading`;
+  const keyInfoId = `${id}-key-info`;
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
@@ -121,8 +132,23 @@ export function ProviderKeyCard({
   return (
     <section className="provider-card" aria-labelledby={headingId}>
       <div className="provider-card__header">
-        <h3 className="provider-card__name" id={headingId}>
-          {displayName}
+        <h3 className="provider-card__name provider-card__name--tip" aria-describedby={keyInfoId}>
+          {/*
+            The name text carries the id, not the whole heading: the card's
+            `aria-labelledby` points here, and folding in the "?" trigger's own
+            label would rename the region "Anthropic About the Anthropic key".
+          */}
+          <span id={headingId}>{displayName}</span>
+          <DefinitionTip
+            id={keyInfoId}
+            label={displayName}
+            triggerLabel={`About the ${displayName} key`}
+            portal
+          >
+            {configured
+              ? `A key is stored for ${displayName}. Saving another one replaces it.`
+              : `Paste an API key from the ${displayName} console. It is validated once, encrypted by your operating system's key store, and never readable from this window again.`}
+          </DefinitionTip>
         </h3>
         <span className={`agent-status agent-status--${configured ? "on" : "off"}`}>
           {/*
@@ -137,12 +163,6 @@ export function ProviderKeyCard({
       </div>
 
       <form className="agent-credential-form" onSubmit={(event) => void submit(event)}>
-        <p className="provider-card__intro">
-          {configured
-            ? `A key is stored for ${displayName}. Saving another one replaces it.`
-            : `Paste an API key from the ${displayName} console. It is validated once, encrypted by your operating system's key store, and never readable from this window again.`}
-        </p>
-
         <label className="agent-label" htmlFor={inputId}>
           {displayName} API key
         </label>
@@ -154,17 +174,12 @@ export function ProviderKeyCard({
           autoComplete="off"
           spellCheck={false}
           placeholder="sk-…"
-          aria-describedby={`${id}-note`}
+          aria-describedby={keyInputDescribedBy}
           onChange={() => {
             if (error !== null) setError(null);
             if (saved) setSaved(false);
           }}
         />
-        <p id={`${id}-note`} className="agent-note">
-          The key goes straight to the app's main process and is stored encrypted
-          outside the run database. No screen, export, or log can display it
-          afterwards.
-        </p>
 
         <div className="agent-actions">
           <button type="submit" className="run-button agent-primary" disabled={saving || removing}>

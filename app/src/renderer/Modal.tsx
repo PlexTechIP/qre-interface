@@ -14,10 +14,21 @@ import { useEffect, useRef, type ReactNode } from "react";
  * Accessibility: role="dialog" + aria-modal, labelled by the caller's title id,
  * closes on Escape or backdrop click, moves focus into the dialog on open and
  * restores it on close, and traps Tab within the dialog while open.
+ *
+ * Two header shapes. The default renders the dialog's own title bar (an `<h2>`
+ * and a close button) from `title`/`titleId`. A surface whose content already
+ * carries its own heading — Settings, whose page owns an `<h1>` — instead passes
+ * `ariaLabel` and no `title`: the dialog is labelled by that string, gets a
+ * floating close button, and does not stamp a second "Settings" above the one
+ * the page already renders.
  */
 export interface ModalProps {
-  titleId: string;
-  title: string;
+  /** Id of the rendered title `<h2>`. Required with `title`; unused without it. */
+  titleId?: string;
+  /** The dialog's visible title bar. Omit it when the content owns its heading. */
+  title?: string;
+  /** Accessible name when there is no `title` to label the dialog by. */
+  ariaLabel?: string;
   onClose: () => void;
   children: ReactNode;
   /** Optional footer actions (usually buttons). */
@@ -29,7 +40,15 @@ export interface ModalProps {
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ titleId, title, onClose, children, footer, className }: ModalProps) {
+export function Modal({
+  titleId,
+  title,
+  ariaLabel,
+  onClose,
+  children,
+  footer,
+  className,
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Move focus into the dialog on open; restore it to the trigger on close.
@@ -60,6 +79,13 @@ export function Modal({ titleId, title, onClose, children, footer, className }: 
     }
   };
 
+  // A dialog must be named exactly one way: by the title bar it renders, or by
+  // `ariaLabel` when it renders none.
+  const labelling =
+    title !== undefined
+      ? { "aria-labelledby": titleId }
+      : { "aria-label": ariaLabel };
+
   return (
     // Backdrop click (mousedown on the backdrop itself) closes; clicks inside the
     // card stop propagation so they never reach the backdrop.
@@ -69,17 +95,30 @@ export function Modal({ titleId, title, onClose, children, footer, className }: 
         className={`modal-card${className ? ` ${className}` : ""}`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
+        {...labelling}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div className="modal-header">
-          <h2 id={titleId}>{title}</h2>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close dialog">
+        {title !== undefined ? (
+          <div className="modal-header">
+            <h2 id={titleId}>{title}</h2>
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Close dialog">
+              ×
+            </button>
+          </div>
+        ) : (
+          // Headerless: the content owns its heading, so the close control floats
+          // over the top-right corner rather than sitting in a title bar.
+          <button
+            type="button"
+            className="modal-close modal-close--float"
+            onClick={onClose}
+            aria-label="Close dialog"
+          >
             ×
           </button>
-        </div>
+        )}
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-footer">{footer}</div> : null}
       </div>

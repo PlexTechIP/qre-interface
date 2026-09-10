@@ -794,6 +794,12 @@ export interface RunFilter {
   qecCode?: QecCodeId;
   magicStateFactory?: MagicStateFactoryId;
   qreVersion?: string;
+  /**
+   * Who authored the configuration (v1.4.0 provenance). A record with no
+   * provenance is treated as `human` — absent provenance means human-authored,
+   * per the contract — so filtering on `human` includes those older records.
+   */
+  authoredBy?: ConfigAuthor;
 }
  
 /**
@@ -827,6 +833,13 @@ export function matchesRunFilter(record: RunRecord, filter: RunFilter): boolean 
     return false;
   }
   if (filter.qreVersion !== undefined && result.qreVersion !== filter.qreVersion) return false;
+  // Absent provenance means human-authored (contract rule), so default to "human".
+  if (
+    filter.authoredBy !== undefined &&
+    (config.provenance?.authoredBy ?? "human") !== filter.authoredBy
+  ) {
+    return false;
+  }
   return true;
 }
  

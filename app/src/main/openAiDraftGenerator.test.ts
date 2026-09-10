@@ -59,6 +59,17 @@ describe("openAiDraftGenerator", () => {
     expect(JSON.stringify(body)).not.toContain(API_KEY);
   });
 
+  /**
+   * The gpt-5.6 models default to a non-"none" reasoning effort, which
+   * /v1/chat/completions rejects alongside function tools ("… set
+   * reasoning_effort to 'none'"). Every request here carries function tools, so
+   * the body must pin it — otherwise the first real send 400s.
+   */
+  it("sets reasoning_effort to none so function tools are accepted", () => {
+    const body = openAiDraftGenerator().buildRequestBody(TURNS);
+    expect((body as unknown as Record<string, unknown>)["reasoning_effort"]).toBe("none");
+  });
+
   /** The system turn leads; the transcript follows it, oldest first. */
   it("puts the whole transcript after the system turn", () => {
     const transcript: ChatTurn[] = [

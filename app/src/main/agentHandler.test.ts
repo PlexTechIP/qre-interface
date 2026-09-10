@@ -273,12 +273,18 @@ describe("registerAgentHandlers", () => {
     });
   });
 
-  it("draft rejects with no credential configured — the one programmer error", async () => {
+  it("resolves a friendly failure when no credential is configured", async () => {
     const { invoke, vault } = setup({ openai: false, key: null });
 
-    await expect(invoke(AGENT_REPLY_CHANNEL, request)).rejects.toThrow(
-      /requires a configured credential/,
-    );
+    // A user can point the active-provider picker at an unconfigured provider,
+    // so this is an ordinary outcome the UI renders — not a throw that would
+    // reach the analyst as raw "Error invoking remote method…" IPC text.
+    const result = await invoke<AgentChatResult>(AGENT_REPLY_CHANNEL, request);
+    expect(result).toEqual({
+      ok: false,
+      code: "NOT_CONFIGURED",
+      message: expect.stringMatching(/no api key is configured/i),
+    });
     // The generator is resolved before the key is read, so what matters is
     // that the read was attempted and nothing was sent afterwards — not that
     // the registry went untouched.
