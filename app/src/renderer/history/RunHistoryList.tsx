@@ -145,6 +145,8 @@ export function RunHistoryList({
                 const isOpen = record.id === selectedId;
                 const isChecked = selectedSet.has(record.id);
                 const isFailed = result.status === "failed";
+                const isAgentAuthored =
+                  config.provenance?.authoredBy === "model_assisted";
 
                 return (
                   <tr
@@ -179,7 +181,12 @@ export function RunHistoryList({
                       />
                     </td>
                     <td>
-                      <span className="run-name">{config.name}</span>
+                      <span className="run-name">
+                        {config.name}
+                        {isAgentAuthored ? (
+                          <AgentAuthoredMark model={config.provenance?.model} />
+                        ) : null}
+                      </span>
                       {isFailed ? <span className="status-pill failed">Failed</span> : null}
                     </td>
                     <td>
@@ -231,6 +238,25 @@ export function RunHistoryList({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * A compact sparkle beside runs a model helped author (provenance
+ * `model_assisted`). It carries the meaning in its accessible name and title so
+ * the glyph alone never has to; the model id, when known, enriches the tooltip.
+ */
+function AgentAuthoredMark({ model }: { model?: string | undefined }) {
+  const label = model
+    ? `AI-generated configuration (${model})`
+    : "AI-generated configuration";
+  return (
+    <span className="agent-authored-mark" title={label} role="img" aria-label={label}>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2.5l1.9 5.1c.28.75.86 1.33 1.6 1.6L20.5 11l-5 1.9c-.75.28-1.33.86-1.6 1.6L12 19.5l-1.9-5c-.28-.75-.86-1.33-1.6-1.6L3.5 11l5-1.8c.75-.28 1.33-.86 1.6-1.6L12 2.5z" />
+        <path d="M18.5 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9z" />
+      </svg>
+    </span>
   );
 }
 

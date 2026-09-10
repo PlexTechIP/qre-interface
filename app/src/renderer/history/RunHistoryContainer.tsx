@@ -346,7 +346,8 @@ export function RunHistoryContainer({
           filter.architecture ||
           filter.qecCode ||
           filter.magicStateFactory ||
-          filter.qreVersion,
+          filter.qreVersion ||
+          filter.authoredBy,
       ),
     [filter],
   );

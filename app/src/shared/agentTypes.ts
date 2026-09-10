@@ -317,6 +317,17 @@ export type AgentFailureCode =
    */
   | "CREDENTIAL_UNREADABLE"
   /**
+   * No key is stored for the selected provider at all.
+   *
+   * Distinct from CREDENTIAL_UNREADABLE (a stored key that will not decrypt):
+   * here there is nothing stored, so the fix is to add a key rather than replace
+   * one. The renderer is expected to gate sends on `getStatus().available`, but
+   * the active-provider picker lets an analyst point at a provider they have not
+   * configured — so this arrives as an ordinary, actionable outcome rather than
+   * a thrown programmer error that would surface as raw IPC text.
+   */
+  | "NOT_CONFIGURED"
+  /**
    * The selected model is not one this provider will route to.
    *
    * Only reachable for a provider whose catalogue is fetched rather than

@@ -21,7 +21,6 @@ import {
   type RunProvenance,
   type SecondaryFactoryId,
 } from "../../shared/types";
-import { withAgentPrefix } from "./runNaming";
 import { ARCHITECTURE_LABELS, QEC_LABELS } from "../constants/labels";
 import { QRE_VERSION, findBenchmark } from "../constants/staticOptions";
 import { BENCHMARK_HYPERPARAMS } from "../constants/hyperparameters";
@@ -309,21 +308,13 @@ export function toRunConfig(state: FormState, stamp: RunStamp): RunConfig | null
   }
  
   /*
-   * The "(agent)" marker is applied HERE rather than when a draft is carried
-   * into the form, because this is the one place both naming paths meet: a name
-   * the analyst typed and a name `generateName` derived. Prefixing at the
-   * handoff would have tagged only the drafts the model happened to name, and
-   * left every auto-named model run looking like a human's.
-   *
-   * It reads off provenance, so a configuration the analyst authored is never
-   * tagged, and a model-authored one stays tagged through a Rerun.
+   * The run name is exactly what the analyst typed, or a derived name when they
+   * left it blank. Model-authored runs are NOT tagged in the name: provenance
+   * (`RunProvenance.authoredBy`) carries that fact, and the UI surfaces it with
+   * a marker beside the name rather than baking "(agent)" into the name itself.
    */
-  const authored =
-    state.name.trim().length > 0 ? state.name.trim() : generateName(state);
   const name =
-    stamp.provenance?.authoredBy === "model_assisted"
-      ? withAgentPrefix(authored)
-      : authored;
+    state.name.trim().length > 0 ? state.name.trim() : generateName(state);
  
   const secondaryFactories = effectiveSecondaryFactories(
     state.secondaryFactories,

@@ -366,37 +366,39 @@ describe("toRunConfig — invalid states never serialize", () => {
 });
 
 /**
- * `RunProvenance.authoredBy` has recorded model-assisted runs since v1.4.0, but
- * provenance is not on screen in Run History, the comparison table, or an
- * exported report. The name is, everywhere.
+ * `RunProvenance.authoredBy` records model-assisted runs (since v1.4.0), and
+ * that is the ONLY place authorship lives. The run name is never touched: the UI
+ * denotes a model-authored run with a symbol beside the name, so a name the
+ * model chose and a name a human chose serialize identically.
  */
-describe("toRunConfig — marking a model-authored run", () => {
+describe("toRunConfig — naming a model-authored run", () => {
   const stampWith = (provenance?: RunProvenance): RunStamp => {
     const stamp: RunStamp = { id: "run-1", createdAt: "2026-01-01T00:00:00.000Z" };
     if (provenance !== undefined) stamp.provenance = provenance;
     return stamp;
   };
 
-  it("tags a name the model chose", () => {
+  it("keeps a name the model chose verbatim, without a marker", () => {
     const state = { ...validGateBasedDraft(), name: "Grover search" };
 
     const config = toRunConfig(state, stampWith({ authoredBy: "model_assisted" }));
 
-    expect(config?.name).toBe("(agent) Grover search");
+    expect(config?.name).toBe("Grover search");
   });
 
-  /**
-   * The half a handoff-time prefix would have missed: the model proposes a
-   * draft with a null name, so the form is blank and `generateName` derives one
-   * at Run-click. Those runs would have looked like a human's.
-   */
-  it("tags a name the app derived", () => {
+  it("uses the app-derived name as-is when the model left it blank", () => {
     const state = { ...validGateBasedDraft(), name: "" };
 
-    const config = toRunConfig(state, stampWith({ authoredBy: "model_assisted" }));
+    const modelAuthored = toRunConfig(
+      state,
+      stampWith({ authoredBy: "model_assisted" }),
+    );
+    const humanAuthored = toRunConfig(state, stampWith());
 
-    expect(config?.name.startsWith("(agent) ")).toBe(true);
-    expect(config?.name.length).toBeGreaterThan("(agent) ".length);
+    // Same derived name regardless of authorship — the name carries no marker.
+    expect(modelAuthored?.name).toBe(humanAuthored?.name);
+    expect(modelAuthored?.name).not.toContain("(agent)");
+    expect(modelAuthored?.name.length).toBeGreaterThan(0);
   });
 
   it("leaves a configuration the analyst authored alone", () => {
@@ -406,14 +408,5 @@ describe("toRunConfig — marking a model-authored run", () => {
     expect(toRunConfig(state, stampWith({ authoredBy: "human" }))?.name).toBe(
       "Grover search",
     );
-  });
-
-  /** A Rerun stamps provenance again over a name that already carries it. */
-  it("does not stack the marker across a rerun", () => {
-    const state = { ...validGateBasedDraft(), name: "(agent) Grover search" };
-
-    const config = toRunConfig(state, stampWith({ authoredBy: "model_assisted" }));
-
-    expect(config?.name).toBe("(agent) Grover search");
   });
 });

@@ -12,6 +12,13 @@ interface DefinitionTipProps {
   /** The field's own label, used to name the trigger for screen readers. */
   label: string;
   /**
+   * Overrides the trigger's accessible name. Defaults to `${label} definition`,
+   * which reads well for a field ("QEC Code definition") but not for everything
+   * — a Settings section wants "About AI providers", not "AI providers
+   * definition". Callers outside the config forms pass the whole name here.
+   */
+  triggerLabel?: string;
+  /**
    * Id given to the tooltip bubble. **The CONTROL must carry
    * `aria-describedby={id}`**, not just this trigger — otherwise a screen-reader
    * user who tabs to the input hears nothing, and only hears the definition if
@@ -44,6 +51,7 @@ interface DefinitionTipProps {
  */
 export function DefinitionTip({
   label,
+  triggerLabel,
   id,
   children,
   portal = false,
@@ -178,7 +186,7 @@ export function DefinitionTip({
         ref={triggerRef}
         type="button"
         className="definition-tip__trigger"
-        aria-label={`${label} definition`}
+        aria-label={triggerLabel ?? `${label} definition`}
         aria-expanded={open}
         aria-controls={id}
         // Click OPENS rather than toggles. A toggle fights the hover handler:

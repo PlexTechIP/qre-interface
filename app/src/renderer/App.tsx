@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   AgentProviderStatus,
@@ -17,9 +17,10 @@ import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
 import { describeRunForAgent } from "./agent/agentRunReport";
 import { formContextFromState } from "./agent/formContext";
+import { Modal } from "./Modal";
 import { RunConfiguration, type FormSnapshot } from "./RunConfiguration";
 import { SettingsButton } from "./settings/SettingsButton";
-import { SettingsPage } from "./settings/SettingsPage";
+import { AI_PROVIDERS_TAB_INDEX, SettingsPage } from "./settings/SettingsPage";
 import {
   DARK_QUERY,
   readStoredPreference,
@@ -32,7 +33,7 @@ import { ThemeToggle } from "./ThemeToggle";
 const THEME_STORAGE_KEY = "qre-theme";
 const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
 
-type Page = "config" | "agent" | "results" | "history" | "comparison" | "settings";
+type Page = "config" | "agent" | "results" | "history" | "comparison";
 
 const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
   available: false,
@@ -108,11 +109,11 @@ interface NavItem {
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
-  { page: "config", label: "Run Configuration", icon: <TargetIcon /> },
+  { page: "agent", label: "AI Agent", icon: <SparkIcon /> },
+  { page: "config", label: "Configure", icon: <TargetIcon /> },
   { page: "results", label: "Results", icon: <ActivityIcon /> },
   { page: "history", label: "Run History", icon: <ClockIcon /> },
   { page: "comparison", label: "Comparison", icon: <BarsIcon /> },
-  { page: "agent", label: "Describe a Run", icon: <SparkIcon /> },
 ];
 
 /**
@@ -192,6 +193,34 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   }, []);
 
   /**
+   * The AI agent's inline configuration editor, owned by the shell.
+   *
+   * The agent is a separate way to configure a run — a proposal is edited in
+   * place on that page rather than on the Configure tab — but the AI agent page
+   * unmounts on any sidebar click, so the editor and its edits are held here to
+   * survive that. `agentEditorOpen` is what re-renders on open/close;
+   * `agentEditorSnapshotRef` holds the live edit WITHOUT re-rendering the shell
+   * on every keystroke, and is read back when the editor remounts. Kept wholly
+   * separate from the Configure tab's `formSnapshotRef` — two editors, two
+   * states.
+   */
+  const [agentEditorOpen, setAgentEditorOpen] = useState(false);
+  const agentEditorSnapshotRef = useRef<FormSnapshot | null>(null);
+  const rememberAgentEditorState = useCallback((snapshot: FormSnapshot): void => {
+    agentEditorSnapshotRef.current = snapshot;
+  }, []);
+  const openAgentEditor = useCallback((snapshot: FormSnapshot): void => {
+    // Seed from the proposal (or whatever the caller hands in) before the editor
+    // mounts and reads the snapshot back.
+    agentEditorSnapshotRef.current = snapshot;
+    setAgentEditorOpen(true);
+  }, []);
+  const closeAgentEditor = useCallback((): void => {
+    agentEditorSnapshotRef.current = null;
+    setAgentEditorOpen(false);
+  }, []);
+
+  /**
    * What the analyst has already decided, computed when somebody asks.
    *
    * Handed to the chat page as a function so that page can read it on arrival
@@ -228,7 +257,16 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatComposer, setChatComposer] = useState("");
   const [chatView, setChatView] = useState<ChatView>("conversation");
-  /** Which Settings section is open. Outlives that page's unmounting. */
+  /**
+   * Whether the Settings overlay is open, and which section it shows.
+   *
+   * Settings is a modal layered over whatever page is active rather than a page
+   * of its own, so it has its own open/closed flag instead of a value in
+   * `activePage`. The tab is held here too because the overlay unmounts on
+   * close — a selection kept inside it would send the analyst back to General
+   * every time they reopened it.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState(0);
 
   /**
@@ -445,6 +483,11 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const handleRunComplete = useCallback(
     (config: RunConfig, result: RunResult, conversationId?: string): void => {
       setDraftHandoff(null);
+      // The run has happened; the agent's inline editor has done its job. Closing
+      // it means a trip back to the AI agent lands on the conversation — with the
+      // composer for follow-ups and the "ask about this run" round trip — rather
+      // than on a stale editor for a configuration that has already run.
+      closeAgentEditor();
       setLatestRun({ config, result });
       setRunOrigin(
         conversationId === undefined ? null : { runId: config.id, conversationId },
@@ -452,7 +495,7 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
       // Surface the finished run on the Results page (and move the sidebar there).
       setActivePage("results");
     },
-    [],
+    [closeAgentEditor],
   );
 
   /**
@@ -553,10 +596,35 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           </button>
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
+              <svg viewBox="0 0 24 24" fill="none" role="img">
+                <circle cx="12" cy="12" r="2.1" fill="currentColor" />
+                <ellipse
+                  cx="12"
+                  cy="12"
+                  rx="10"
+                  ry="4.2"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                />
+                <ellipse
+                  cx="12"
+                  cy="12"
+                  rx="10"
+                  ry="4.2"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  transform="rotate(60 12 12)"
+                />
+                <ellipse
+                  cx="12"
+                  cy="12"
+                  rx="10"
+                  ry="4.2"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  transform="rotate(120 12 12)"
+                />
+              </svg>
             </span>
             <span>Quantum Resource Estimator</span>
           </div>
@@ -575,8 +643,8 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             status={agentStatus}
             provider={agentSelection.provider}
             model={agentSelection.model}
-            active={activePage === "settings"}
-            onOpen={() => setActivePage("settings")}
+            active={settingsOpen}
+            onOpen={() => setSettingsOpen(true)}
           />
           {/*
             A quick binary override. It pins the opposite of what is CURRENTLY
@@ -599,19 +667,25 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             {NAV_ITEMS.map((item) => {
               const active = item.page === activePage;
               return (
-                <button
-                  key={item.page}
-                  type="button"
-                  className={`nav-item${active ? " nav-item--active" : ""}`}
-                  title={item.label}
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => setActivePage(item.page)}
-                >
-                  <span className="nav-item__icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <span className="nav-item__label">{item.label}</span>
-                </button>
+                <Fragment key={item.page}>
+                  <button
+                    type="button"
+                    className={`nav-item${active ? " nav-item--active" : ""}`}
+                    title={item.label}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setActivePage(item.page)}
+                  >
+                    <span className="nav-item__icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span className="nav-item__label">{item.label}</span>
+                  </button>
+                  {/* Split the two model/config entries from the results-oriented
+                      trio with a hairline rule. */}
+                  {item.page === "config" ? (
+                    <hr className="nav-separator" aria-hidden="true" />
+                  ) : null}
+                </Fragment>
               );
             })}
           </nav>
@@ -649,13 +723,29 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               view={chatView}
               onViewChange={setChatView}
               onSelectionChange={chooseSelection}
-              onOpenSettings={() => setActivePage("settings")}
-              getFormContext={getFormContext}
-              onReviewDraft={(handoff) => {
-                setRerunConfig(null);
-                setDraftHandoff(handoff);
-                setActivePage("config");
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenProviderSettings={() => {
+                setSettingsTab(AI_PROVIDERS_TAB_INDEX);
+                setSettingsOpen(true);
               }}
+              getFormContext={getFormContext}
+              /*
+                Running a proposal from the AI agent lands on Results and Run
+                History exactly like the Configure tab — the two tabs are
+                separate ways to build a run, not separate destinations for it.
+              */
+              onRunComplete={handleRunComplete}
+              /*
+                The inline editor lives in the shell so it, and any edits in it,
+                survive leaving the AI agent page and coming back. Read during
+                render, safe for the same reason `restoredState` below is: the ref
+                is written only by a child effect and consumed only at mount.
+              */
+              editorOpen={agentEditorOpen}
+              editorSnapshot={agentEditorSnapshotRef.current ?? undefined}
+              onOpenEditor={openAgentEditor}
+              onCloseEditor={closeAgentEditor}
+              onEditorStateChange={rememberAgentEditorState}
             />
           ) : null}
           {activePage === "results" ? (
@@ -683,38 +773,6 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               }
             />
           ) : null}
-          {activePage === "settings" ? (
-            <SettingsPage
-              service={resolvedAgentService}
-              status={agentStatus}
-              chats={window.chats}
-              appInfo={window.appInfo}
-              provider={agentSelection.provider}
-              model={agentSelection.model}
-              onSelectionChange={chooseSelection}
-              onCredentialConfigured={handleCredentialConfigured}
-              onCredentialCleared={handleCredentialCleared}
-              onCatalogRefreshed={handleCatalogRefreshed}
-              /*
-                The open conversation was just deleted. Without this the id
-                survives and ChatPage's `send` appends to a row the store no
-                longer has, which it rejects — so the next message, and every
-                one after it, fails to save.
-              */
-              onConversationsCleared={() => {
-                setActiveConversationId(null);
-                // The origin points at a conversation that no longer exists.
-                // Left standing, Results keeps offering a way back to it and
-                // the analyst lands in a blank thread whose id the store has
-                // already forgotten — the next send then fails on append.
-                setRunOrigin(null);
-              }}
-              themePreference={themePreference}
-              onThemePreferenceChange={setThemePreference}
-              activeTab={settingsTab}
-              onActiveTabChange={setSettingsTab}
-            />
-          ) : null}
           {showHistorySurface ? (
             <RunHistoryContainer
               store={window.store}
@@ -729,6 +787,52 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           ) : null}
         </section>
       </main>
+
+      {/*
+        Settings opens over whatever page is active rather than replacing it, so
+        a trip to change a key or the theme no longer unmounts a half-filled form
+        or the open conversation underneath. The page keeps its own <h1>, so the
+        overlay is headerless and labelled by that heading's text instead of
+        stamping a second title above it.
+      */}
+      {settingsOpen ? (
+        <Modal
+          ariaLabel="Settings"
+          className="modal-settings"
+          onClose={() => setSettingsOpen(false)}
+        >
+          <SettingsPage
+            service={resolvedAgentService}
+            status={agentStatus}
+            chats={window.chats}
+            appInfo={window.appInfo}
+            provider={agentSelection.provider}
+            model={agentSelection.model}
+            onSelectionChange={chooseSelection}
+            onCredentialConfigured={handleCredentialConfigured}
+            onCredentialCleared={handleCredentialCleared}
+            onCatalogRefreshed={handleCatalogRefreshed}
+            /*
+              The open conversation was just deleted. Without this the id
+              survives and ChatPage's `send` appends to a row the store no
+              longer has, which it rejects — so the next message, and every
+              one after it, fails to save.
+            */
+            onConversationsCleared={() => {
+              setActiveConversationId(null);
+              // The origin points at a conversation that no longer exists.
+              // Left standing, Results keeps offering a way back to it and
+              // the analyst lands in a blank thread whose id the store has
+              // already forgotten — the next send then fails on append.
+              setRunOrigin(null);
+            }}
+            themePreference={themePreference}
+            onThemePreferenceChange={setThemePreference}
+            activeTab={settingsTab}
+            onActiveTabChange={setSettingsTab}
+          />
+        </Modal>
+      ) : null}
     </div>
   );
 }

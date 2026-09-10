@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  buildEngineEnv,
   execute,
   interpretProcessCompletion,
   processDiagnosticsRaw,
@@ -174,4 +175,18 @@ describe("execute", () => {
       expect(result.raw).toBeNull();
     }
   }, 15_000);
+
+  describe("buildEngineEnv", () => {
+    it("drops everything from the parent env except the allowlist", () => {
+      const env = buildEngineEnv({ PATH: "/usr/bin", AWS_SECRET_ACCESS_KEY: "leaked" });
+      expect(env["PATH"]).toBe("/usr/bin");
+      expect(env["AWS_SECRET_ACCESS_KEY"]).toBeUndefined();
+    });
+
+    it("always sets the QDK-specific overrides", () => {
+      const env = buildEngineEnv({});
+      expect(env["PYTHONUTF8"]).toBe("1");
+      expect(env["QDK_PYTHON_TELEMETRY"]).toBe("none");
+    });
+  });
 });

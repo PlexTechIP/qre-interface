@@ -13,6 +13,7 @@ import {
   type McpSetup,
 } from "../../shared/appInfoTypes";
 import type { ChatStore } from "../../shared/chatTypes";
+import { DefinitionTip, definitionId } from "../components/DefinitionTip";
 import { ProviderModelSelect } from "../components/ProviderModelSelect";
 import { CopyButton } from "../CopyButton";
 import { QRE_VERSION } from "../constants/staticOptions";
@@ -99,6 +100,21 @@ const STORAGE_COPY: Record<
 
 const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+/**
+ * The one security guarantee that holds for every provider key, so it is stated
+ * once above all the cards rather than repeated inside each. Every key input
+ * points its `aria-describedby` here.
+ */
+const PROVIDER_KEY_SECURITY_NOTE_ID = "provider-key-security-note";
+
+/**
+ * Index of the "AI providers" tab in `TABS` below (general, providers, storage,
+ * about). Exported so surfaces that send the analyst here to manage a key — the
+ * chat page's model bar — can open Settings on the right tab. Keep in sync with
+ * the `TABS` order.
+ */
+export const AI_PROVIDERS_TAB_INDEX = 1;
 
 /**
  * Everything that configures the app rather than a run.
@@ -279,7 +295,22 @@ export function SettingsPage({
           <section className="form-section">
             <h2 className="form-section__title">Appearance</h2>
             <fieldset className="settings-fieldset">
-              <legend className="settings-subhead">Theme</legend>
+              <legend
+                className="settings-subhead settings-subhead--tip"
+                aria-describedby={definitionId("settings-theme")}
+              >
+                Theme
+                <DefinitionTip
+                  id={definitionId("settings-theme")}
+                  label="Theme"
+                  triggerLabel="About the Theme options"
+                  portal
+                >
+                  “System” matches your operating system and changes with it,
+                  including while the app is open. “Light” and “Dark” pin the app
+                  to that theme regardless of the system.
+                </DefinitionTip>
+              </legend>
               {THEME_CHOICES.map((choice) => (
                 <label key={choice.value} className="settings-radio">
                   <input
@@ -293,12 +324,6 @@ export function SettingsPage({
                 </label>
               ))}
             </fieldset>
-            {themePreference === "system" ? (
-              <p className="agent-note settings-note">
-                The app matches your operating system and changes with it, including
-                while it is open.
-              </p>
-            ) : null}
           </section>
         </>
       ),
@@ -320,6 +345,38 @@ export function SettingsPage({
               validated once, then encrypted by your operating system's key store —
               the app can use a key but can never read one back.
             </p>
+            <div id={PROVIDER_KEY_SECURITY_NOTE_ID} className="settings-security-note">
+              <svg
+                className="settings-security-note__icon"
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="4.75"
+                  y="10.5"
+                  width="14.5"
+                  height="9"
+                  rx="2.2"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                />
+                <path
+                  d="M8 10.5V8a4 4 0 0 1 8 0v2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+                <circle cx="12" cy="14.6" r="1.3" fill="currentColor" />
+              </svg>
+              <span>
+                The key goes straight to the app's main process and is stored
+                encrypted outside the run database. No screen, export, or log can
+                display it afterwards.
+              </span>
+            </div>
 
             {anyConfigured ? null : (
               <p className="agent-note">
@@ -329,10 +386,35 @@ export function SettingsPage({
             )}
 
             <div className="settings-active-model">
-              <h3 className="settings-subhead">Active provider and model</h3>
-              <p className="agent-note">
-                What Describe a Run sends to next. The same control sits on that page.
-              </p>
+              <h3
+                className="settings-active-model__title"
+                aria-describedby={definitionId("settings-active-model")}
+              >
+                <svg
+                  className="settings-active-model__icon"
+                  viewBox="0 0 24 24"
+                  width="17"
+                  height="17"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M13 2 4 14h6l-1 8 10-13h-7l1-7Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                Active provider and model
+                <DefinitionTip
+                  id={definitionId("settings-active-model")}
+                  label="Active provider and model"
+                  triggerLabel="About the active provider and model"
+                  portal
+                >
+                  Every Describe a Run request is sent to this provider and model —
+                  it is the final say on what runs. The same control sits on that
+                  page.
+                </DefinitionTip>
+              </h3>
               <ProviderModelSelect
                 providers={status.providers}
                 provider={provider}
@@ -351,6 +433,7 @@ export function SettingsPage({
                   service={service}
                   onConfigured={onCredentialConfigured}
                   onCleared={onCredentialCleared}
+                  keyInputDescribedBy={PROVIDER_KEY_SECURITY_NOTE_ID}
                 >
                   {/*
                     Only providers that actually keep a catalogue get the controls
@@ -452,17 +535,30 @@ export function SettingsPage({
               <div className="storage-list">
                 {locations.map((location) => {
                   const copy = STORAGE_COPY[location.id];
+                  const storageTipId = definitionId(`settings-storage-${location.id}`);
                   return (
                     <div className="storage-row" key={location.id}>
                       <div className="storage-row__head">
-                        <h3 className="settings-subhead">{copy.label}</h3>
+                        <h3
+                          className="settings-subhead settings-subhead--tip"
+                          aria-describedby={storageTipId}
+                        >
+                          {copy.label}
+                          <DefinitionTip
+                            id={storageTipId}
+                            label={copy.label}
+                            triggerLabel={`About the ${copy.label.toLowerCase()}`}
+                            portal
+                          >
+                            {copy.description}
+                          </DefinitionTip>
+                        </h3>
                         {location.overridden ? (
                           <span className="storage-row__badge">
                             Set by {copy.envVar}
                           </span>
                         ) : null}
                       </div>
-                      <p className="storage-row__description">{copy.description}</p>
                       <p className="storage-row__path">{location.path}</p>
                       <div className="agent-actions">
                         <button
@@ -499,11 +595,21 @@ export function SettingsPage({
               </p>
             ) : null}
 
-            <h3 className="settings-subhead settings-subhead--spaced">Chat history</h3>
-            <p className="form-section__intro">
-              Conversations from Describe a Run are stored separately from your run
-              history. Deleting them here does not touch saved runs.
-            </p>
+            <h3
+              className="settings-subhead settings-subhead--spaced settings-subhead--tip"
+              aria-describedby={definitionId("settings-chat-history")}
+            >
+              Chat history
+              <DefinitionTip
+                id={definitionId("settings-chat-history")}
+                label="Chat history"
+                triggerLabel="About chat history"
+                portal
+              >
+                Conversations from Describe a Run are stored separately from your
+                run history. Deleting them here does not touch saved runs.
+              </DefinitionTip>
+            </h3>
             <div className="agent-actions">
               {confirmingClear ? (
                 <>

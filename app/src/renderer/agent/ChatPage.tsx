@@ -12,6 +12,9 @@ import type {
   Conversation,
   ConversationSummary,
 } from "../../shared/chatTypes";
+import type { RunConfig, RunResult } from "../../shared/types";
+import { RunConfiguration, type FormSnapshot } from "../RunConfiguration";
+import { ChatRunPanel } from "./ChatRunPanel";
 import { ChatTranscript } from "./ChatTranscript";
 import { CopyButton } from "../CopyButton";
 import {
@@ -27,13 +30,40 @@ import { ConversationExportDialog } from "./ConversationExportDialog";
 import { draftToFormState, type DraftHandoff } from "./draftToFormState";
 import { ProviderModelSelect } from "../components/ProviderModelSelect";
 import { charsToReveal, minCommitIntervalMs } from "./streamReveal";
+import { useRunFlow } from "../state/useRunFlow";
 
 interface ChatPageProps {
   service: AgentService;
   /** Persistence. Reaches the chat database and never a provider. */
   store: ChatStore;
   status: AgentProviderStatus;
-  onReviewDraft: (handoff: DraftHandoff) => void;
+  /**
+   * A run finished — running a proposal from here behaves exactly like the
+   * Configure page: the shell persists it to Run History and shows it on the
+   * Results page. The AI agent and Configure are two separate ways to configure
+   * and run; they share the same Results and History downstream.
+   */
+  onRunComplete: (config: RunConfig, result: RunResult, conversationId?: string) => void;
+  /**
+   * The inline configuration editor, held by the shell so it survives this
+   * page's unmounting.
+   *
+   * Every page here is a conditional render, so the editor — and any edits in it
+   * — would die on a sidebar click if it lived in this component. The shell owns
+   * whether it is open and keeps its live state, exactly as it does for the
+   * chat's own composer and conversation, so "edit a proposal, look at History,
+   * come back" keeps the work.
+   */
+  editorOpen: boolean;
+  /** The editor's state to seed from — the proposal on first open, then the
+   *  running edit. Read once, when the editor mounts. */
+  editorSnapshot?: FormSnapshot | undefined;
+  /** Open the editor on a proposal (its handoff doubles as the first snapshot). */
+  onOpenEditor: (snapshot: FormSnapshot) => void;
+  /** Close the editor and return to the conversation. */
+  onCloseEditor: () => void;
+  /** Report the editor's state upward so an edit outlives a remount. */
+  onEditorStateChange: (snapshot: FormSnapshot) => void;
   /**
    * Take the analyst to Settings, where provider keys now live.
    *
@@ -43,6 +73,12 @@ interface ChatPageProps {
    * dead end on the only page that surfaces the problem.
    */
   onOpenSettings: () => void;
+  /**
+   * Take the analyst straight to the AI providers tab in Settings — where keys
+   * are added and changed. Distinct from `onOpenSettings` (which opens wherever
+   * they last were) so the model bar's "Manage keys" lands on the right tab.
+   */
+  onOpenProviderSettings: () => void;
   provider: ProviderId;
   model: string;
   onSelectionChange: (provider: ProviderId, model: string) => void;
@@ -127,8 +163,19 @@ const NO_THREAD: Thread = { conversationId: null, title: "", messages: [] };
 /** Stable identity, so deriving an empty transcript does not churn memos. */
 const NO_MESSAGES: readonly ChatMessage[] = [];
 
-const describeError = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+const describeError = (error: unknown): string => {
+  const raw = error instanceof Error ? error.message : String(error);
+  // Electron wraps a thrown main-process error as
+  // "Error invoking remote method 'agent:reply': Error: <original>". That prefix
+  // names an IPC channel the analyst has no use for; strip it and any leading
+  // "Error:" left behind so a genuinely unexpected failure still reads as prose.
+  // Expected failures never reach here — they resolve as typed AgentChatResult
+  // data with their own messages.
+  return raw
+    .replace(/^Error invoking remote method '[^']*':\s*/, "")
+    .replace(/^Error:\s*/, "")
+    .trim();
+};
 
 const SETTLE_MS = 200;
 
@@ -173,8 +220,14 @@ export function ChatPage({
   service,
   store,
   status,
-  onReviewDraft,
+  onRunComplete,
+  editorOpen,
+  editorSnapshot,
+  onOpenEditor,
+  onCloseEditor,
+  onEditorStateChange,
   onOpenSettings,
+  onOpenProviderSettings,
   provider,
   model,
   onSelectionChange,
@@ -194,6 +247,27 @@ export function ChatPage({
   const [draftError, setDraftError] = useState<{ messageId: string; message: string } | null>(
     null,
   );
+  /**
+   * Running a proposal AS DRAFTED, without opening the editor first.
+   *
+   * The same run flow the Configure path uses — it stamps a RunConfig, runs it
+   * over the estimator bridge, and persists the finished run to history. On
+   * completion the shell moves to the Results page (via `onRunComplete`), so a
+   * run started here lands exactly where a Configure run does. The in-flight
+   * spinner shows via `ChatRunPanel` until then.
+   */
+  const { runState, start: startRun, edit: clearRun } = useRunFlow();
+  /** The conversation the in-flight run came from, for the Results back-link. */
+  const runConversationId = useRef<string | undefined>(undefined);
+  /** Fire `onRunComplete` once per finished run, not on every re-render. */
+  const reportedRunId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (runState.phase !== "done") return;
+    if (reportedRunId.current === runState.config.id) return;
+    reportedRunId.current = runState.config.id;
+    onRunComplete(runState.config, runState.result, runConversationId.current);
+  }, [runState, onRunComplete]);
   // The conversation whose export preview is open (null = closed). Holding the
   // loaded conversation itself means the dialog can never be open with nothing
   // to render.
@@ -612,16 +686,24 @@ export function ChatPage({
     }
   };
 
-  const useDraft = (message: ChatMessage): void => {
-    if (message.draft === null) return;
+  /**
+   * Turn a proposal message into a runnable handoff, or report why it cannot be.
+   *
+   * Shared by the two things a proposal can do — run here, or open in Configure
+   * to edit — so the same guards (an open conversation to return to, a recorded
+   * model to attribute the run, a mapping the form accepts) apply to both.
+   * Returns `null` and sets the card's error on any failure.
+   */
+  const resolveDraft = (message: ChatMessage): DraftHandoff | null => {
+    if (message.draft === null) return null;
     /*
-     * A proposal can only be opened from the conversation showing it, so this
-     * is not expected — but the handoff has to name a real conversation for the
-     * analyst to get back to after the run.
+     * A proposal can only be acted on from the conversation showing it, so this
+     * is not expected — but a run has to name a real conversation for the
+     * analyst to get back to afterwards.
      *
      * Reported rather than returned silently, like the attribution guard below
-     * it. A bare return leaves "Use this configuration" doing nothing at all:
-     * no navigation, no message, nothing to distinguish it from a dead button.
+     * it. A bare return leaves the button doing nothing at all: no run, no
+     * message, nothing to distinguish it from a dead control.
      */
     if (activeConversationId === null) {
       setDraftError({
@@ -629,33 +711,50 @@ export function ChatPage({
         message:
           "This proposal is not attached to an open conversation, so there would be no thread to return to after the run. Reopen the conversation and try again.",
       });
-      return;
+      return null;
     }
     /**
-     * No attribution, no handoff. This read `message.model ?? "model"`, and
-     * that fallback went straight into `RunProvenance.model` — which the
-     * canonical schema constrains only with `minLength: 1`, so the literal
-     * string "model" passed the gate and was written onto an IMMUTABLE run
-     * record claiming a model by that name had authored it. Refusing is the
-     * only option that does not put a lie in history.
+     * No attribution, no run. This read `message.model ?? "model"`, and that
+     * fallback went straight into `RunProvenance.model` — which the canonical
+     * schema constrains only with `minLength: 1`, so the literal string "model"
+     * passed the gate and was written onto an IMMUTABLE run record claiming a
+     * model by that name had authored it. Refusing is the only option that does
+     * not put a lie in history.
      */
     if (message.model === null) {
       setDraftError({
         messageId: message.id,
         message:
-          "This proposal has no model recorded against it, so it cannot be carried into the form — a run has to say which model authored it. Ask for the configuration again.",
+          "This proposal has no model recorded against it, so it cannot be run — a run has to say which model authored it. Ask for the configuration again.",
       });
-      return;
+      return null;
     }
     const mapped = draftToFormState(message.draft, message.model, activeConversationId);
     if (!mapped.ok) {
       // On the card it belongs to, not in the page-level note: the analyst is
-      // being told this proposal cannot be opened, and which one matters.
+      // being told this proposal cannot be used, and which one matters.
       setDraftError({ messageId: message.id, message: mapped.message });
-      return;
+      return null;
     }
     setDraftError(null);
-    onReviewDraft(mapped.handoff);
+    return mapped.handoff;
+  };
+
+  /** Run the proposal as drafted — the shell moves to Results on completion. */
+  const runDraft = (message: ChatMessage): void => {
+    const handoff = resolveDraft(message);
+    if (handoff === null) return;
+    runConversationId.current = handoff.conversationId;
+    startRun(handoff.state, handoff.provenance);
+  };
+
+  /** Open the proposal in the editor, in place on this page, to change it first. */
+  const editDraft = (message: ChatMessage): void => {
+    const handoff = resolveDraft(message);
+    if (handoff === null) return;
+    // A handoff carries exactly the snapshot fields (state, provenance, proposed,
+    // conversationId), so it seeds the editor as its first state.
+    onOpenEditor(handoff);
   };
 
   /**
@@ -766,6 +865,34 @@ export function ChatPage({
         cannot be true on one surface and not the other.
       */}
       <div className="chat-model-bar">
+        <div className="chat-model-bar__head">
+          <div className="chat-model-bar__heading">
+            <h2 className="chat-model-bar__title">Model for this conversation</h2>
+          </div>
+          <button
+            type="button"
+            className="agent-secondary chat-model-bar__manage"
+            onClick={onOpenProviderSettings}
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+              <circle
+                cx="8"
+                cy="15"
+                r="4"
+                stroke="currentColor"
+                strokeWidth="1.7"
+              />
+              <path
+                d="m11 12 8-8M17 6l2 2M14.5 8.5l2 2"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Manage keys
+          </button>
+        </div>
         <ProviderModelSelect
           providers={status.providers}
           provider={provider}
@@ -823,7 +950,38 @@ export function ChatPage({
         </p>
       ) : null}
 
-      {view === "list" ? (
+      {editorOpen ? (
+        <section className="chat-editor" aria-label="Edit proposed configuration">
+          <div className="chat-editor__bar">
+            <button
+              type="button"
+              className="chat-thread__back"
+              onClick={onCloseEditor}
+            >
+              <span aria-hidden="true">←</span> Back to conversation
+            </button>
+            <p className="chat-editor__hint">
+              Edit the proposed configuration below. Running it works exactly like
+              the Configure tab — the result opens on the Results page and is saved
+              to Run History.
+            </p>
+          </div>
+          {/*
+            The same editor the Configure tab uses, embedded here so a proposal
+            is reviewed and edited in place rather than by leaving for that tab.
+            Seeded and mirrored through the shell (`editorSnapshot` /
+            `onEditorStateChange`) — its OWN snapshot, kept separate from the
+            Configure tab's — so an edit survives leaving this page and coming
+            back. The proposal's provenance and proposed-field list travel inside
+            that snapshot, so a run stays marked model-authored after an edit.
+          */}
+          <RunConfiguration
+            onRunComplete={onRunComplete}
+            restoredState={editorSnapshot}
+            onStateChange={onEditorStateChange}
+          />
+        </section>
+      ) : view === "list" ? (
         <ConversationList
           conversations={conversations}
           activeId={activeConversationId}
@@ -960,10 +1118,18 @@ export function ChatPage({
               messages={messages}
               sending={sending}
               streamed={streaming.text}
-              onUseDraft={useDraft}
+              onRunDraft={runDraft}
+              onEditDraft={editDraft}
               draftError={draftError}
             />
           )}
+
+          {/*
+            The in-flight run started from a proposal card. On completion the
+            shell moves to the Results page (and saves the run to history), so
+            this only ever paints the spinner before that hand-off.
+          */}
+          <ChatRunPanel runState={runState} onDismiss={clearRun} />
 
           {/*
             The analyst's message stays in the transcript when a turn fails —
@@ -996,60 +1162,69 @@ export function ChatPage({
             <label className="sr-only" htmlFor="chat-composer">
               Your message
             </label>
-            <textarea
-              id="chat-composer"
-              ref={composerBox}
-              className="agent-prompt"
-              rows={2}
-              value={composer}
-              onChange={(event) => {
-                onComposerChange(event.target.value);
-                setNote(null);
-              }}
-              onKeyDown={(event) => {
-                // Enter sends, Shift+Enter breaks the line. A multi-paragraph
-                // description is normal here, so the newline has to stay
-                // reachable — but making the analyst leave the keyboard for
-                // every turn is what makes a chat feel like a form.
-                //
-                // `isComposing` is the third case and the one that is easy to
-                // miss: an analyst typing Japanese, Chinese or Korean presses
-                // Enter to ACCEPT an IME conversion candidate. That keydown is
-                // indistinguishable from a send unless this is checked, so
-                // without it the commit is swallowed and a half-composed
-                // message goes to the provider.
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder="Estimate Grover search for a 20-qubit search space on a gate-based QPU with 50 ns gates…"
-            />
+            <div className="chat-composer__box">
+              <textarea
+                id="chat-composer"
+                ref={composerBox}
+                className="agent-prompt"
+                rows={2}
+                value={composer}
+                onChange={(event) => {
+                  onComposerChange(event.target.value);
+                  setNote(null);
+                }}
+                onKeyDown={(event) => {
+                  // Enter sends, Shift+Enter breaks the line. A multi-paragraph
+                  // description is normal here, so the newline has to stay
+                  // reachable — but making the analyst leave the keyboard for
+                  // every turn is what makes a chat feel like a form.
+                  //
+                  // `isComposing` is the third case and the one that is easy to
+                  // miss: an analyst typing Japanese, Chinese or Korean presses
+                  // Enter to ACCEPT an IME conversion candidate. That keydown is
+                  // indistinguishable from a send unless this is checked, so
+                  // without it the commit is swallowed and a half-composed
+                  // message goes to the provider.
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder="Estimate Grover search for a 20-qubit search space on a gate-based QPU with 50 ns gates…"
+              />
 
-            <div className="agent-actions">
-              <button
-                type="submit"
-                className="run-button agent-primary"
-                disabled={!selectedIsConfigured || composer.trim().length === 0 || sending}
-              >
-                {sending ? "Sending…" : "Send"}
-              </button>
-              {sending ? (
-                <button
-                  type="button"
-                  className="agent-secondary"
-                  onClick={() => void service.cancelReply()}
-                >
-                  Cancel
-                </button>
-              ) : null}
-              <span className="chat-composer__hint">
-                Enter to send · Shift+Enter for a new line
-              </span>
+              <div className="chat-composer__bar">
+                <span className="chat-composer__hint">
+                  Enter to send · Shift+Enter for a new line
+                </span>
+                <div className="chat-composer__buttons">
+                  {sending ? (
+                    <button
+                      type="button"
+                      className="agent-secondary"
+                      onClick={() => void service.cancelReply()}
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                  <button
+                    type="submit"
+                    className="run-button agent-primary"
+                    // The send is NOT gated on a configured provider: the analyst
+                    // can point the picker at a provider they have not set up, and
+                    // the clearer feedback is to let them send and surface the
+                    // typed NOT_CONFIGURED failure than to leave a dead button
+                    // with no explanation of what pressing it would do.
+                    disabled={composer.trim().length === 0 || sending}
+                  >
+                    {sending ? "Sending…" : "Send"}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/*
@@ -1061,8 +1236,8 @@ export function ChatPage({
               <div className="chat-needs-key">
                 {status.available ? (
                   <p className="agent-note">
-                    No key is configured for {selected?.displayName ?? provider}, so there
-                    is nothing to send this to. Add one in Settings, or switch to a
+                    No key is configured for {selected?.displayName ?? provider}, so a
+                    send will fail until you add one in Settings, or switch to a
                     provider that has one.
                   </p>
                 ) : (
