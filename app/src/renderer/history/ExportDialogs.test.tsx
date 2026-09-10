@@ -256,25 +256,26 @@ describe("export dialogs — CSV", () => {
 });
 
 /**
- * The "(agent)" marker exists because `RunProvenance` is invisible on the
- * surfaces an analyst actually reads — and an export is the one that leaves the
- * app entirely. These run the real builders rather than asserting string
- * interpolation, so a future change that derived a title instead of using the
- * stored name would be caught here.
+ * A model-authored run is denoted by provenance and a UI symbol, not by a name
+ * prefix — so an export must carry the run's stored name verbatim, untouched by
+ * authorship. These run the real builders rather than asserting string
+ * interpolation, so a future change that derived or decorated the title instead
+ * of using the stored name would be caught here.
  */
 describe("a model-authored run, exported", () => {
   const marked = buildRunRecord({
     config: buildRunConfig({
-      name: "(agent) Grover search",
+      name: "Grover search",
       provenance: { authoredBy: "model_assisted", model: "Anthropic/claude-sonnet-5" },
     }),
   });
 
-  it("titles the Markdown with the marked name", () => {
-    expect(buildRunExportMarkdown(marked)).toContain("# (agent) Grover search");
+  it("titles the Markdown with the stored name, unmarked", () => {
+    expect(buildRunExportMarkdown(marked)).toContain("# Grover search");
+    expect(buildRunExportMarkdown(marked)).not.toContain("(agent)");
   });
 
-  it("carries the marked name into a comparison export", () => {
-    expect(buildComparisonExportMarkdown([marked])).toContain("(agent) Grover search");
+  it("carries the stored name into a comparison export", () => {
+    expect(buildComparisonExportMarkdown([marked])).toContain("Grover search");
   });
 });

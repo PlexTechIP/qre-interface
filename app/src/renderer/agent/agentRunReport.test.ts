@@ -11,7 +11,7 @@ import {
 import { describeRunForAgent } from "./agentRunReport";
 
 describe("describeRunForAgent — a run that failed", () => {
-  const config = buildRunConfig({ name: "(agent) Grover search" });
+  const config = buildRunConfig({ name: "Grover search" });
 
   it("hands the model the error it has no other way to see", () => {
     const result = buildRunResult({
@@ -23,7 +23,7 @@ describe("describeRunForAgent — a run that failed", () => {
     const message = describeRunForAgent(config, result);
 
     expect(message).toContain("failed");
-    expect(message).toContain("(agent) Grover search");
+    expect(message).toContain("Grover search");
     expect(message).toContain("ENGINE_CRASH");
     expect(message).toContain("The engine exited unexpectedly.");
     expect(message).toMatch(/what should I change/i);
@@ -41,7 +41,7 @@ describe("describeRunForAgent — a run that failed", () => {
 });
 
 describe("describeRunForAgent — a run that succeeded", () => {
-  const config = buildRunConfig({ name: "(agent) Grover search" });
+  const config = buildRunConfig({ name: "Grover search" });
 
   /**
    * A frontier has no "the" answer, so reporting one row would be this function
@@ -108,7 +108,7 @@ describe("describeRunForAgent — a run that succeeded", () => {
  */
 describe("describeRunForAgent — what it deliberately leaves out", () => {
   it("does not restate the configuration", () => {
-    const config = buildRunConfig({ name: "(agent) Grover search" });
+    const config = buildRunConfig({ name: "Grover search" });
     const message = describeRunForAgent(config, buildSuccessResult());
 
     expect(message).not.toContain(config.id);
