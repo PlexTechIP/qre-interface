@@ -8,6 +8,32 @@ const WRAPPER_SCRIPT = path.join(__dirname, "python", "estimate.py");
 const MATPLOTLIB_CONFIG = path.join(__dirname, "python", ".matplotlib");
 const liveEngineProcesses = new Set<ChildProcess>();
 
+// Explicit allowlist instead of spreading the full parent env, so secrets in
+// the launching shell aren't handed to the subprocess. These specific keys
+// are runtime needs of Python itself (temp dirs, home dir, Windows sockets).
+const ALLOWED_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "SystemRoot",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+] as const;
+
+export function buildEngineEnv(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    MPLCONFIGDIR: MATPLOTLIB_CONFIG,
+    PYTHONUTF8: "1",
+    QDK_PYTHON_TELEMETRY: "none",
+  };
+  for (const key of ALLOWED_ENV_KEYS) {
+    const value = parentEnv[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 export function killLiveEngineProcesses(): void {
   for (const child of liveEngineProcesses) child.kill("SIGKILL");
   liveEngineProcesses.clear();
@@ -129,12 +155,7 @@ export function execute(
 ): Promise<ExecuteResult> {
   return new Promise((resolve) => {
     const child = spawn(pythonBin, [WRAPPER_SCRIPT], {
-      env: {
-        ...process.env,
-        MPLCONFIGDIR: MATPLOTLIB_CONFIG,
-        PYTHONUTF8: "1",
-        QDK_PYTHON_TELEMETRY: "none",
-      },
+      env: buildEngineEnv(process.env),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
