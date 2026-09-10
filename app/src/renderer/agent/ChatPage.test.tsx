@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,9 +15,12 @@ import {
 import { InMemoryChatStore } from "../../shared/chatStore";
 import type { ChatStore } from "../../shared/chatTypes";
 import { PROVIDER_MODELS } from "../../shared/providerModels";
+import { InMemoryRunStore } from "../../shared/runStore";
+import type { RunConfig, RunResult } from "../../shared/types";
+import { buildSuccessResult, fakeEstimator } from "../../shared/testing";
 import { fakeAgentService, FAKE_GENERATED_DRAFT } from "../../shared/testing/fakeAgentService";
 import { ChatPage, type ChatView } from "./ChatPage";
-import type { DraftHandoff } from "./draftToFormState";
+import type { FormSnapshot } from "../RunConfiguration";
 
 function statusWith(configured: readonly ProviderId[]): AgentProviderStatus {
   const providers = PROVIDER_IDS.map((provider) => ({
@@ -41,10 +44,11 @@ interface HarnessOptions {
   store?: ChatStore;
   status?: AgentProviderStatus;
   provider?: ProviderId;
-  onReviewDraft?: (handoff: DraftHandoff) => void;
+  onRunComplete?: (config: RunConfig, result: RunResult, conversationId?: string) => void;
   /** Which view to land on. The shell owns this, so the harness does too. */
   view?: ChatView;
   onOpenSettings?: () => void;
+  onOpenProviderSettings?: () => void;
   onSelectionChange?: (provider: ProviderId, model: string) => void;
   formContext?: readonly FormContextEntry[];
 }
@@ -57,8 +61,9 @@ interface HarnessOptions {
 function renderChat(options: HarnessOptions = {}) {
   const store = options.store ?? new InMemoryChatStore();
   const service = options.service ?? fakeAgentService();
-  const onReviewDraft = options.onReviewDraft ?? vi.fn();
+  const onRunComplete = options.onRunComplete ?? vi.fn();
   const onOpenSettings = options.onOpenSettings ?? vi.fn();
+  const onOpenProviderSettings = options.onOpenProviderSettings ?? vi.fn();
   const onSelectionChange = options.onSelectionChange ?? vi.fn();
   const provider = options.provider ?? "anthropic";
 
@@ -66,6 +71,10 @@ function renderChat(options: HarnessOptions = {}) {
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     const [composer, setComposer] = useState("");
     const [view, setView] = useState<ChatView>(options.view ?? "conversation");
+    // Mirror the shell's ownership of the inline editor, so the harness exercises
+    // the real open/seed/close wiring rather than a fake.
+    const [editorOpen, setEditorOpen] = useState(false);
+    const editorSnapshot = useRef<FormSnapshot | null>(null);
     return (
       <ChatPage
         view={view}
@@ -81,14 +90,35 @@ function renderChat(options: HarnessOptions = {}) {
         onComposerChange={setComposer}
         onSelectionChange={onSelectionChange}
         onOpenSettings={onOpenSettings}
+        onOpenProviderSettings={onOpenProviderSettings}
         getFormContext={() => options.formContext ?? []}
-        onReviewDraft={onReviewDraft}
+        onRunComplete={onRunComplete}
+        editorOpen={editorOpen}
+        editorSnapshot={editorSnapshot.current ?? undefined}
+        onOpenEditor={(snapshot) => {
+          editorSnapshot.current = snapshot;
+          setEditorOpen(true);
+        }}
+        onCloseEditor={() => {
+          editorSnapshot.current = null;
+          setEditorOpen(false);
+        }}
+        onEditorStateChange={(snapshot) => {
+          editorSnapshot.current = snapshot;
+        }}
       />
     );
   }
 
   render(<Harness />);
-  return { store, service, onReviewDraft, onOpenSettings, onSelectionChange };
+  return {
+    store,
+    service,
+    onRunComplete,
+    onOpenSettings,
+    onOpenProviderSettings,
+    onSelectionChange,
+  };
 }
 
 /*
@@ -187,7 +217,7 @@ describe("ChatPage — a turn", () => {
       await screen.findByText("Here is a starting point for that estimate."),
     ).toBeVisible();
     expect(within(transcript()).getByText("Estimate Grover search")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Use this configuration" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run this configuration" })).toBeVisible();
 
     const [conversation] = await store.list();
     if (!conversation) throw new Error("Expected the conversation to be stored.");
@@ -214,7 +244,7 @@ describe("ChatPage — a turn", () => {
 
     expect(await screen.findByText("Which error budget do you want?")).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Use this configuration" }),
+      screen.queryByRole("button", { name: "Run this configuration" }),
     ).not.toBeInTheDocument();
   });
 
@@ -223,8 +253,7 @@ describe("ChatPage — a turn", () => {
    * literal string "model" cleared the schema's `minLength: 1` and was written
    * onto an immutable run record as the model that authored it.
    */
-  it("refuses to carry a proposal that has no model recorded against it", async () => {
-    const onReviewDraft = vi.fn();
+  it("refuses to open a proposal that has no model recorded against it", async () => {
     const store = new InMemoryChatStore();
     await store.create({ id: "c1", title: "Grover", createdAt: "2026-08-10T09:00:00.000Z" });
     await store.append("c1", {
@@ -235,30 +264,66 @@ describe("ChatPage — a turn", () => {
       model: null,
       createdAt: "2026-08-10T09:01:00.000Z",
     });
-    renderChat({ store, onReviewDraft });
+    renderChat({ store });
 
     await openConversation("Grover");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Use this configuration" }),
+      await screen.findByRole("button", { name: "View / edit configuration" }),
     );
 
-    expect(onReviewDraft).not.toHaveBeenCalled();
+    // No editor opens, and the reason is on the card.
     expect(await screen.findByRole("alert")).toHaveTextContent(/which model authored it/);
+    expect(
+      screen.queryByRole("region", { name: "Edit proposed configuration" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("hands a proposal to the form and runs nothing", async () => {
-    const onReviewDraft = vi.fn();
-    renderChat({ onReviewDraft });
+  it("opens the proposal in an editor on this page, and runs nothing", async () => {
+    const estimatorRun = vi.fn(() => Promise.resolve(buildSuccessResult()));
+    window.estimator = { run: estimatorRun };
+    window.store = new InMemoryRunStore();
+    renderChat();
 
     await sendMessage("Estimate Grover search");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Use this configuration" }),
+      await screen.findByRole("button", { name: "View / edit configuration" }),
     );
 
-    expect(onReviewDraft).toHaveBeenCalledTimes(1);
-    const handoff = onReviewDraft.mock.calls[0]?.[0] as DraftHandoff;
-    expect(handoff.provenance).toMatchObject({ authoredBy: "model_assisted" });
-    expect(handoff.state.name).toBe("Model-assisted Grover estimate");
+    // The editable configuration is shown in place, seeded with the draft.
+    const editor = await screen.findByRole("region", {
+      name: "Edit proposed configuration",
+    });
+    expect(
+      within(editor).getByDisplayValue("Model-assisted Grover estimate"),
+    ).toBeVisible();
+    // Opening the editor runs nothing.
+    expect(estimatorRun).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Running a proposal AS DRAFTED behaves like the Configure tab: the run is
+   * persisted to history and the shell is told to move to Results — the AI agent
+   * and Configure are separate ways to build a run, sharing what happens after.
+   */
+  it("runs a proposal as drafted, saves it, and reports the finished run", async () => {
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    const runStore = new InMemoryRunStore();
+    window.store = runStore;
+    const onRunComplete = vi.fn();
+    renderChat({ onRunComplete });
+
+    await sendMessage("Estimate Grover search");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Run this configuration" }),
+    );
+
+    // The shell is handed the finished run (which is how it moves to Results).
+    await waitFor(() => expect(onRunComplete).toHaveBeenCalledTimes(1));
+    const [config, result] = onRunComplete.mock.calls[0] ?? [];
+    expect((config as RunConfig).provenance?.authoredBy).toBe("model_assisted");
+    expect((result as RunResult).status).toBe("succeeded");
+    // And it is saved to history, like any run.
+    await waitFor(async () => expect(await runStore.list()).toHaveLength(1));
   });
 
   /**
@@ -549,12 +614,14 @@ describe("ChatPage — the outbound request", () => {
     expect(requestReply).not.toHaveBeenCalled();
   });
 
-  it("disables Send when the selected provider holds no key, and says why", async () => {
+  it("still lets you send when the selected provider holds no key, and says why", async () => {
     renderChat({ status: statusWith(["openai"]), provider: "anthropic" });
 
     await userEvent.type(composer(), "Estimate Grover search");
 
-    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    // The send is deliberately not gated: the analyst can try it and get the
+    // typed NOT_CONFIGURED failure, rather than face a dead button.
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
     expect(screen.getByText(/No key is configured for Anthropic/)).toBeVisible();
   });
 
@@ -580,6 +647,14 @@ describe("ChatPage — the outbound request", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open Settings" }));
 
     expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  it("sends the analyst to the AI providers tab from the model bar", async () => {
+    const { onOpenProviderSettings } = renderChat();
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage keys" }));
+
+    expect(onOpenProviderSettings).toHaveBeenCalledOnce();
   });
 
   /** Nothing on this page may accept a key any more — Settings owns that. */
@@ -1077,31 +1152,32 @@ describe("ChatPage — audit regressions", () => {
     await openConversation("Two proposals");
     const turns = within(transcript());
 
-    expect(await turns.findByRole("button", { name: "Use this earlier proposal" })).toBeVisible();
-    expect(turns.getAllByRole("button", { name: "Use this configuration" })).toHaveLength(1);
+    expect(await turns.findByRole("button", { name: "View this earlier proposal" })).toBeVisible();
+    expect(turns.getAllByRole("button", { name: "Run this configuration" })).toHaveLength(1);
     expect(turns.getByText(/a later one follows in this conversation/)).toBeVisible();
   });
 
   /** Superseded is not disabled — going back for the one you refused is real. */
-  it("still hands off an earlier proposal when it is asked for", async () => {
-    const onReviewDraft = vi.fn();
-    renderChat({ store: await seedTwoProposals(), onReviewDraft });
+  it("still opens an earlier proposal in the editor when it is asked for", async () => {
+    renderChat({ store: await seedTwoProposals() });
     await openConversation("Two proposals");
 
     await userEvent.click(
-      await within(transcript()).findByRole("button", { name: "Use this earlier proposal" }),
+      await within(transcript()).findByRole("button", { name: "View this earlier proposal" }),
     );
 
-    expect(onReviewDraft).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByRole("region", { name: "Edit proposed configuration" }),
+    ).toBeVisible();
   });
 
   /** Worth reading once. Under every card it is furniture. */
-  it("explains the handoff once, not under every proposal", async () => {
+  it("explains the live proposal once, not under every proposal", async () => {
     renderChat({ store: await seedTwoProposals() });
     await openConversation("Two proposals");
-    await within(transcript()).findByRole("button", { name: "Use this configuration" });
+    await within(transcript()).findByRole("button", { name: "Run this configuration" });
 
-    expect(within(transcript()).getAllByText(/Nothing runs until you say so/)).toHaveLength(1);
+    expect(within(transcript()).getAllByText(/saves it to Run History/)).toHaveLength(1);
   });
 
   it("copies a proposal's JSON rather than making it a drag-select", async () => {
@@ -1265,11 +1341,11 @@ describe("ChatPage — a reply arriving", () => {
 
     // Mid-flight: the fragments are on screen and nothing has been stored yet.
     expect(await screen.findByText(/Gate-based suits this best\./)).toBeVisible();
-    expect(screen.queryByRole("button", { name: /use this configuration/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /run this configuration/i })).toBeNull();
 
     release();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /use this configuration/i })).toBeVisible(),
+      expect(screen.getByRole("button", { name: /run this configuration/i })).toBeVisible(),
     );
   });
 

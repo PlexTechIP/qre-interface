@@ -17,7 +17,10 @@ interface ChatTranscriptProps {
    * the old static "Thinking…" was telling the truth.
    */
   streamed: string;
-  onUseDraft: (message: ChatMessage) => void;
+  /** Run the proposal as drafted — the primary action on the live proposal. */
+  onRunDraft: (message: ChatMessage) => void;
+  /** Open the proposal in the editor, in place on this page, to change it first. */
+  onEditDraft: (message: ChatMessage) => void;
   /** A proposal this mapping refuses, reported on the card it belongs to. */
   draftError: { messageId: string; message: string } | null;
 }
@@ -52,7 +55,8 @@ export function ChatTranscript({
   messages,
   sending,
   streamed,
-  onUseDraft,
+  onRunDraft,
+  onEditDraft,
   draftError,
 }: ChatTranscriptProps): React.JSX.Element {
   const list = useRef<HTMLOListElement>(null);
@@ -178,27 +182,42 @@ export function ChatTranscript({
                     <button
                       type="button"
                       className="agent-secondary"
-                      onClick={() => onUseDraft(message)}
+                      onClick={() => onEditDraft(message)}
                     >
-                      Use this earlier proposal
+                      View this earlier proposal
                     </button>
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      className="run-button agent-primary"
-                      onClick={() => onUseDraft(message)}
-                    >
-                      Use this configuration
-                    </button>
+                    <div className="chat-draft__actions">
+                      <button
+                        type="button"
+                        className="run-button agent-primary"
+                        onClick={() => onRunDraft(message)}
+                      >
+                        Run this configuration
+                      </button>
+                      {/*
+                        Review and edit the proposal in place on this page, rather
+                        than handing off to the Configure tab — the two are
+                        separate ways to configure the same kind of run.
+                      */}
+                      <button
+                        type="button"
+                        className="agent-secondary"
+                        onClick={() => onEditDraft(message)}
+                      >
+                        View / edit configuration
+                      </button>
+                    </div>
                     {/*
                       On the live proposal only. Repeated under every card it was
                       six identical lines in a six-proposal thread, which is how a
                       sentence worth reading becomes furniture.
                     */}
                     <p className="chat-draft__note">
-                      Opens it in Run Configuration for review. Nothing runs until you say so.
+                      Running opens the result on the Results page and saves it to
+                      Run History, just like the Configure tab.
                     </p>
                   </>
                 )}

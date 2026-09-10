@@ -44,14 +44,14 @@ describe("App shell wiring", () => {
 
   /** One turn on the chat page, ending with the proposal handed to the form. */
   async function proposeViaChat(): Promise<void> {
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(
       screen.getByRole("textbox", { name: "Your message" }),
       "Estimate Grover search",
     );
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Use this configuration" }),
+      await screen.findByRole("button", { name: "View / edit configuration" }),
     );
   }
 
@@ -62,10 +62,10 @@ describe("App shell wiring", () => {
     ).toBeVisible();
   });
 
-  it("places Describe a Run after Comparison in the sidebar", () => {
+  it("places AI Agent above Configure in the sidebar", () => {
     render(<App />);
     const labels = screen.getAllByRole("button").map((button) => button.textContent);
-    expect(labels.indexOf("Describe a Run")).toBeGreaterThan(labels.indexOf("Comparison"));
+    expect(labels.indexOf("AI Agent")).toBeLessThan(labels.indexOf("Configure"));
   });
 
   it("moves a model proposal into the existing editable form without running", async () => {
@@ -390,23 +390,37 @@ describe("App shell — Settings", () => {
 
     const nav = screen.getByLabelText("Primary navigation");
     expect(within(nav).queryByRole("button", { name: /^Settings/ })).toBeNull();
-    expect(within(nav).getByRole("button", { name: "Describe a Run" })).toBeVisible();
+    expect(within(nav).getByRole("button", { name: "AI Agent" })).toBeVisible();
   });
 
-  it("opens the Settings page from the header", async () => {
+  it("opens the Settings overlay from the header", async () => {
     window.agent = fakeAgentService();
     render(<App />);
 
     await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
+    // A dialog layered over the page, not a route that replaced it.
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  });
+
+  it("dismisses the Settings overlay on Escape", async () => {
+    window.agent = fakeAgentService();
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
   });
 
   it("reaches Settings from the chat page when nothing is configured", async () => {
     window.agent = agentServiceWithKeys(new Set());
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.click(await screen.findByRole("button", { name: "Open Settings" }));
 
     expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
@@ -499,20 +513,23 @@ describe("App shell — Settings", () => {
     window.appInfo = fakeAppInfoService();
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(
       screen.getByRole("textbox", { name: "Your message" }),
       "Estimate Grover search",
     );
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByRole("button", { name: "Use this configuration" });
+    await screen.findByRole("button", { name: "Run this configuration" });
 
     await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
     await userEvent.click(screen.getByRole("tab", { name: "Data & storage" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete all conversations" }));
     await userEvent.click(screen.getByRole("button", { name: "Yes, delete everything" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    // Settings is an overlay now, so it is dismissed rather than navigated away
+    // from before returning to the chat underneath.
+    await userEvent.click(screen.getByRole("button", { name: "Close dialog" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(
       screen.getByRole("textbox", { name: "Your message" }),
       "Estimate Shor factoring",
@@ -520,7 +537,7 @@ describe("App shell — Settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(
-      await screen.findByRole("button", { name: "Use this configuration" }),
+      await screen.findByRole("button", { name: "Run this configuration" }),
     ).toBeVisible();
     expect(screen.queryByText(/could not be saved/i)).toBeNull();
   });
@@ -894,7 +911,7 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
 
     // Navigating remounts Settings; the shell's record must outlive that.
     await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await userEvent.click(screen.getByRole("button", { name: "Configure" }));
     await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
     expect(refreshCatalog).toHaveBeenCalledOnce();
@@ -979,8 +996,8 @@ describe("App shell — the run form across navigation", () => {
     render(<App />);
 
     await userEvent.type(nameField(), "Shor at scale");
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
-    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
+    await userEvent.click(screen.getByRole("button", { name: "Configure" }));
 
     expect(nameField()).toHaveValue("Shor at scale");
   });
@@ -1002,7 +1019,7 @@ describe("App shell — the run form across navigation", () => {
     render(<App />);
 
     await userEvent.type(nameField(), "Shor at scale");
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(
       await screen.findByLabelText("Your message"),
       "size this for me",
@@ -1026,7 +1043,7 @@ describe("App shell — the run form across navigation", () => {
     };
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(
       await screen.findByLabelText("Your message"),
       "size this for me",
@@ -1057,11 +1074,11 @@ describe("App shell — the agent round trip", () => {
 
   /** Chat → proposal → form. Leaves the analyst on Run Configuration. */
   async function carryProposalIntoForm(): Promise<void> {
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(await screen.findByLabelText("Your message"), "Grover, 20 qubits");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: /use this configuration/i }),
+      await screen.findByRole("button", { name: "View / edit configuration" }),
     );
   }
 
@@ -1081,18 +1098,21 @@ describe("App shell — the agent round trip", () => {
     );
   };
 
-  it("names a model-authored run so the list says where it came from", async () => {
+  it("marks a model-authored run in history without tagging its name", async () => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
     render(<App />);
     await carryProposalIntoForm();
 
     await runIt();
+    await screen.findByRole("heading", { name: "Estimation Results" });
 
-    // Results is where the shell lands after a run. The marker rides the name,
-    // which is what Run History, the comparison table and an export all show.
-    await waitFor(() =>
-      expect(document.body.textContent).toContain("(agent) "),
-    );
+    // Run History denotes the model's authorship with a symbol beside the name
+    // (read off provenance), not a "(agent)" tag baked into the name itself.
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+    expect(
+      await screen.findByRole("img", { name: /AI-generated configuration/i }),
+    ).toBeVisible();
+    expect(document.body.textContent).not.toContain("(agent)");
   });
 
   it("leads a failed run back to the conversation that proposed it", async () => {
@@ -1115,7 +1135,7 @@ describe("App shell — the agent round trip", () => {
     // only exists on a turn carrying a draft, so its presence is proof the
     // original conversation was reopened rather than a new one started.
     expect(
-      screen.getByRole("button", { name: /use this configuration/i }),
+      screen.getByRole("button", { name: /run this configuration/i }),
     ).toBeVisible();
   });
 
@@ -1190,10 +1210,12 @@ describe("App shell — the agent round trip", () => {
 });
 
 /**
- * The form-state lift added in M3 has to work for MODEL-authored configurations
- * too — they are the ones the round trip sends the analyst away from and back.
+ * A proposal is reviewed and edited IN PLACE on the AI agent page — the agent
+ * and Configure are separate ways to build a run. Editing a model-authored
+ * configuration must keep its provenance and lead back to its conversation, the
+ * same as when the analyst has not touched it.
  */
-describe("App shell — editing a proposal across navigation", () => {
+describe("App shell — editing a proposal in place", () => {
   beforeEach(() => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
     window.store = new InMemoryRunStore();
@@ -1202,56 +1224,91 @@ describe("App shell — editing a proposal across navigation", () => {
     window.localStorage.clear();
   });
 
-  const acceptProposal = async (): Promise<void> => {
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
+  /** Open the proposal's editor, in place on the agent page. */
+  const openEditor = async (): Promise<void> => {
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
     await userEvent.type(await screen.findByLabelText("Your message"), "Grover, 20 qubits");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: /use this configuration/i }),
+      await screen.findByRole("button", { name: "View / edit configuration" }),
     );
   };
 
-  it("keeps an edit to a proposal after a trip back to the chat", async () => {
+  const renameTo = async (name: string): Promise<void> => {
+    const field = screen.getByRole("textbox", { name: /Run Name.*optional/i });
+    await userEvent.clear(field);
+    await userEvent.type(field, name);
+  };
+
+  it("edits and runs the proposal without leaving the agent page for Configure", async () => {
     render(<App />);
-    await acceptProposal();
+    await openEditor();
 
-    const name = screen.getByRole("textbox", { name: /Run Name.*optional/i });
-    await userEvent.clear(name);
-    await userEvent.type(name, "My own name");
-
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
-    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
-
+    await renameTo("My own name");
+    // The editor is on the agent page, not the Configure tab.
     expect(
-      screen.getByRole("textbox", { name: /Run Name.*optional/i }),
+      screen.getByRole("region", { name: "Edit proposed configuration" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+
+    // Running behaves like Configure: the result opens on the Results page.
+    await screen.findByRole("heading", { name: "Estimation Results" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Results" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      ),
+    );
+  });
+
+  it("keeps the open editor and its edits across a trip to another tab", async () => {
+    render(<App />);
+    await openEditor();
+    await renameTo("My own name");
+
+    // Leave the AI agent page and come back.
+    await userEvent.click(screen.getByRole("button", { name: "Configure" }));
+    expect(
+      screen.queryByRole("region", { name: "Edit proposed configuration" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "AI Agent" }));
+
+    // The editor is still open, and the edit survived.
+    const editor = screen.getByRole("region", { name: "Edit proposed configuration" });
+    expect(
+      within(editor).getByRole("textbox", { name: /Run Name.*optional/i }),
     ).toHaveValue("My own name");
   });
 
   /**
-   * The edit has to survive without costing the provenance that rides with the
-   * draft — a run the model authored is still model-authored after a rename.
+   * The edit must not cost the provenance that rides with the draft — a run the
+   * model authored is still model-authored after a rename.
    */
-  it("still marks the run as model-authored after that edit", async () => {
+  it("keeps the edited name and model authorship in history", async () => {
     render(<App />);
-    await acceptProposal();
+    await openEditor();
 
-    const name = screen.getByRole("textbox", { name: /Run Name.*optional/i });
-    await userEvent.clear(name);
-    await userEvent.type(name, "My own name");
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
-    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await renameTo("My own name");
     await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+    await screen.findByRole("heading", { name: "Estimation Results" });
 
-    await waitFor(() => expect(document.body.textContent).toContain("(agent) My own name"));
+    // The analyst's name is kept verbatim — no "(agent)" prefix — and the run is
+    // still marked model-authored in history via the AI-generated symbol.
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+    expect(screen.getByText("My own name")).toBeVisible();
+    expect(document.body.textContent).not.toContain("(agent)");
+    expect(
+      await screen.findByRole("img", { name: /AI-generated configuration/i }),
+    ).toBeVisible();
   });
 
   /** …and the thread it came from is still reachable from the outcome. */
   it("still leads back to the conversation after that edit", async () => {
     render(<App />);
-    await acceptProposal();
+    await openEditor();
 
-    await userEvent.click(screen.getByRole("button", { name: "Describe a Run" }));
-    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    await renameTo("My own name");
     await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
 
     expect(
@@ -1270,16 +1327,18 @@ describe("App shell — Settings remembers where you were", () => {
   });
 
   /**
-   * Every page here is a conditional render, so a tab selection kept inside the
-   * Settings page sent the analyst back to General each time they looked at
-   * something else and came back.
+   * The Settings overlay unmounts when it closes, so a tab selection kept
+   * inside it would send the analyst back to General every time they reopened
+   * it — which is why the shell holds the open tab instead.
    */
   it("returns to the tab that was open, not to the first one", async () => {
     render(<App />);
     await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
     await userEvent.click(screen.getByRole("tab", { name: "Data & storage" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Run Configuration" }));
+    // Close and reopen — the overlay is gone from the tree in between.
+    await userEvent.click(screen.getByRole("button", { name: "Close dialog" }));
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /^Settings/ }));
 
     expect(screen.getByRole("tab", { name: "Data & storage" })).toHaveAttribute(
