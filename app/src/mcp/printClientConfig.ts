@@ -197,7 +197,7 @@ export function buildConfigReport(): ConfigReport {
   if (databasePath === null) {
     problems.push(
       "No run history has been published yet, so the agent will only be able " +
-        "to list benchmarks. Launch the QRE Dashboard once, then run this " +
+        "to list benchmarks. Launch the QRE Interface once, then run this " +
         "again — or set QRE_DB_PATH to a database you already have.",
     );
   } else if (!existsSync(databasePath)) {
@@ -249,7 +249,7 @@ function render(report: ConfigReport): string {
   const { config } = report;
   const lines: string[] = [
     "",
-    "QRE Dashboard — MCP server configuration",
+    "QRE Interface — MCP server configuration",
     "",
     `  node          ${config.command}${report.node ? ` (${report.node.version})` : ""}`,
     `  server        ${config.args[0]}`,

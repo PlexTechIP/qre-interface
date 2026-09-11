@@ -220,7 +220,7 @@ describe("getRunStore", () => {
     expect(thrown?.code).toBe("DB_NOT_CONFIGURED");
     // Naming the variable is not enough — a first-time user has no idea what
     // to set it to. Point them at the two things that produce an answer.
-    expect(thrown?.message).toMatch(/QRE Dashboard/);
+    expect(thrown?.message).toMatch(/QRE Interface/);
     expect(thrown?.message).toMatch(/QRE_DB_PATH/);
   });
 

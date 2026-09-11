@@ -127,7 +127,7 @@ describe("buildConversationMarkdown — when", () => {
   it("dates the transcript it produced", () => {
     const md = buildConversationMarkdown(conversation(), EXPORTED_AT);
 
-    expect(md).toContain(`> Exported from the QRE Dashboard on ${EXPORTED_AT}.`);
+    expect(md).toContain(`> Exported from the QRE Interface on ${EXPORTED_AT}.`);
     // The note about what a proposal is survives alongside the date.
     expect(md).toContain("a run is only created when an analyst opens one");
   });
@@ -135,7 +135,7 @@ describe("buildConversationMarkdown — when", () => {
   it("keeps the note undated when it was not told the time", () => {
     const md = buildConversationMarkdown(conversation());
 
-    expect(md).toContain("> Exported from the QRE Dashboard.");
-    expect(md).not.toMatch(/Exported from the QRE Dashboard on/);
+    expect(md).toContain("> Exported from the QRE Interface.");
+    expect(md).not.toMatch(/Exported from the QRE Interface on/);
   });
 });

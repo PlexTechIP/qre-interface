@@ -48,11 +48,26 @@ export function hardenWebContents(
  * `http://localhost:5173` on reload and HMR, and pinning the exact URL would
  * make every reload look like an attack. Anything unparseable is refused —
  * a URL this cannot read is not one it can vouch for.
+ *
+ * The packaged renderer is served over the custom `app://` scheme, whose origin
+ * the URL parser reports as the opaque `"null"` — which would compare EQUAL to
+ * every other opaque-origin URL (`file:`, `data:`), waving them through. So when
+ * either origin is opaque, fall back to matching scheme, host, and path exactly:
+ * a reload of `app://local/index.html` passes; `file:///…` or `data:…` does not.
  */
 function isSameDocument(url: string, allowedUrl?: string): boolean {
   if (allowedUrl === undefined) return false;
   try {
-    return new URL(url).origin === new URL(allowedUrl).origin;
+    const target = new URL(url);
+    const allowed = new URL(allowedUrl);
+    if (target.origin !== "null" && allowed.origin !== "null") {
+      return target.origin === allowed.origin;
+    }
+    return (
+      target.protocol === allowed.protocol &&
+      target.host === allowed.host &&
+      target.pathname === allowed.pathname
+    );
   } catch {
     return false;
   }

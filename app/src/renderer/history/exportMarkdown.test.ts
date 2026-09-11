@@ -252,7 +252,7 @@ describe("exports — when and against what", () => {
   it("dates the run export", () => {
     const markdown = buildRunExportMarkdown(buildRunRecord(), EXPORTED_AT);
 
-    expect(markdown).toContain(`> Exported from the QRE Dashboard on ${EXPORTED_AT}.`);
+    expect(markdown).toContain(`> Exported from the QRE Interface on ${EXPORTED_AT}.`);
   });
 
   it("dates the comparison export", () => {
@@ -263,7 +263,7 @@ describe("exports — when and against what", () => {
       EXPORTED_AT,
     );
 
-    expect(markdown).toContain(`> Exported from the QRE Dashboard on ${EXPORTED_AT}.`);
+    expect(markdown).toContain(`> Exported from the QRE Interface on ${EXPORTED_AT}.`);
   });
 
   it("records the contract version the run export's numbers came from", () => {

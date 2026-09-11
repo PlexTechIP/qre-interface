@@ -15,7 +15,7 @@ import { useState } from "react";
  * generators' own output and have no business inventing a clock.
  */
 export function exportedOnLine(exportedAt?: string): string | null {
-  return exportedAt === undefined ? null : `> Exported from the QRE Dashboard on ${exportedAt}.`;
+  return exportedAt === undefined ? null : `> Exported from the QRE Interface on ${exportedAt}.`;
 }
 
 /**

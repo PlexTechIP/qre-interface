@@ -30,7 +30,7 @@ export const FAKE_STORAGE_LOCATIONS: readonly StorageLocation[] = [
  * returned would still pass against a fixture that contradicted itself.
  */
 const FAKE_ENTRY: McpClientEntry = {
-  command: "/fixture/Applications/QRE Dashboard",
+  command: "/fixture/Applications/QRE Interface",
   args: ["/fixture/resources/mcp-server.mjs"],
   env: {
     ELECTRON_RUN_AS_NODE: "1",

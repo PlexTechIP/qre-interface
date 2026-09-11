@@ -1,11 +1,11 @@
-# QRE Dashboard
+# QRE Interface
 
 A cross-platform desktop application that wraps Microsoft's open-source
 **Quantum Resource Estimator (QRE v3)** in a structured, analyst-facing
 interface. QRE is powerful but is normally driven through VS Code or the command
 line — a workflow built for quantum researchers, not for the government and
 industry analysts who use resource estimation as a benchmarking and evaluation
-tool. The QRE Dashboard gives those users a way to **configure**, **run**,
+tool. QRE Interface gives those users a way to **configure**, **run**,
 **save**, **compare**, and **export** resource estimates without writing code.
 
 Built as a PlexTech × Microsoft engagement.
@@ -36,6 +36,22 @@ Built as a PlexTech × Microsoft engagement.
 - **Offline and reproducible by design** — no network is required for any core
   workflow, and the exact QRE engine version is recorded on every run so results
   stay reproducible as QRE evolves.
+
+## Download
+
+Prebuilt, self-contained installers for macOS and Windows are published on the
+[**latest release**](https://github.com/PlexTechIP/qre-interface/releases/latest).
+The QRE engine ships inside the app — there is nothing else to install.
+
+| Platform | Download |
+|---|---|
+| macOS (Apple Silicon) | [`QRE-Interface-arm64.dmg`](https://github.com/PlexTechIP/qre-interface/releases/latest/download/QRE-Interface-arm64.dmg) |
+| macOS (Intel) | [`QRE-Interface-x64.dmg`](https://github.com/PlexTechIP/qre-interface/releases/latest/download/QRE-Interface-x64.dmg) |
+| Windows (x64) | [`QRE-Interface-Setup.exe`](https://github.com/PlexTechIP/qre-interface/releases/latest/download/QRE-Interface-Setup.exe) |
+
+The current builds are **unsigned**, so the first launch shows an OS warning —
+[`docs/installing.md`](docs/installing.md) has the one-time steps to open it on
+each platform.
 
 ## Who it's for
 
@@ -156,6 +172,33 @@ commit path (run them via `npm run test:engine` or CI).
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same typecheck
 and unit tests on every pull request and push, on the pinned Node version.
+
+### Building installers / releasing
+
+Installers are built and published by
+[`.github/workflows/release.yml`](.github/workflows/release.yml), triggered by
+pushing a version tag:
+
+```sh
+cd app && npm version 0.1.0   # bumps package.json and creates the tag
+git push origin main --tags   # the tag push starts the release build
+```
+
+A matrix of macOS (Apple Silicon + Intel) and Windows runners each bundles a
+platform-matched standalone Python with `qdk[qre]`
+([`scripts/bundlePython.mjs`](app/scripts/bundlePython.mjs)), builds the app, and
+uploads the installer to a **draft** GitHub Release for the tag. Review the draft,
+then publish it — only then do the README's "latest" download links resolve.
+
+To produce an installer locally for your own platform:
+
+```sh
+cd app
+npm run bundle:python   # stage the standalone engine (downloads ~a few hundred MB)
+npm run dist            # build + package into app/release/ (no publishing)
+```
+
+Builds are currently **unsigned** (see [`docs/installing.md`](docs/installing.md)).
 
 ## Repository layout
 

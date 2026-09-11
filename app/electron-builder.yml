@@ -1,0 +1,71 @@
+appId: com.plextechip.qre-interface
+productName: QRE Interface
+copyright: Copyright © 2026 PlexTechIP
+
+directories:
+  # buildResources (icons, entitlements) stays at its default `build/`; the
+  # staged Python engine lives under build/qre-engine and is picked up by
+  # extraResources below, not as a build resource.
+  output: release
+
+# The main/preload/MCP bundles are produced by Vite and inline their own
+# dependencies (only `electron` is externalized), so the packaged app needs the
+# compiled output and the manifest — not node_modules.
+files:
+  - package.json
+  - dist/**
+  - dist-electron/**
+
+# The self-contained QRE engine — a relocatable standalone CPython with
+# qdk[qre] installed, plus the estimate.py wrapper and benchmarks — is staged
+# by scripts/bundlePython.mjs into build/qre-engine and shipped BESIDE the asar.
+# A subprocess cannot execute an interpreter or read a script from inside an
+# asar, so the engine must live in the unpacked resources directory. The main
+# process resolves it at process.resourcesPath/qre-engine.
+extraResources:
+  - from: build/qre-engine
+    to: qre-engine
+    filter:
+      - "**/*"
+
+asar: true
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build-resources/icon.icns
+  # Builds for the host architecture; the release matrix runs one arm64 and one
+  # x64 macOS runner to produce both. The bundled Python must match the arch,
+  # which is why each arch is built on its own runner rather than as a universal.
+  target:
+    - dmg
+    - zip
+  # Version-less names so README links to releases/latest/download/<name> stay
+  # stable across versions. arch keeps the two macOS builds from colliding.
+  artifactName: QRE-Interface-${arch}.${ext}
+  # Unsigned build: skip signing and notarization so a machine without an Apple
+  # Developer certificate still produces artifacts. Users open the app via the
+  # documented Gatekeeper bypass (see docs/installing.md). When certificates are
+  # available, remove `identity: null` and add notarize config here.
+  identity: null
+
+win:
+  icon: build-resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: QRE-Interface-Setup.${ext}
+
+publish:
+  provider: github
+  owner: PlexTechIP
+  repo: qre-interface
+  # Publishes into a DRAFT release for the tag. Review the artifacts, then
+  # publish the draft — only then does releases/latest (and the README's
+  # download links) resolve to it.
+  releaseType: draft

@@ -11,6 +11,12 @@ export default tseslint.config(
       "coverage/**",
       "node_modules/**",
       "src/main/engine/python/**",
+      // Packaging outputs: the staged Python engine and electron-builder output
+      // contain vendored third-party .js that is not ours to lint.
+      "build/**",
+      "release/**",
+      // Machine-generated Ajv validators (scripts/compileSchemas.mjs).
+      "src/**/*.generated.js",
     ],
   },
   js.configs.recommended,

@@ -14,6 +14,10 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 export class QreEngine implements EstimatorService {
   constructor(
     private readonly pythonBin: string,
+    // The directory holding the `python/` wrapper + interpreter. Omitted in
+    // tests (execute falls back to its own module directory); the main process
+    // passes it explicitly so the packaged app reaches the bundled engine.
+    private readonly engineDir?: string,
     private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
   ) {}
 
@@ -62,6 +66,7 @@ export class QreEngine implements EstimatorService {
       const executeResult = await execute(
         invocationResult.invocation,
         this.pythonBin,
+        this.engineDir,
       );
       return outputToResult(
         config,

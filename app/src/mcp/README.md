@@ -156,7 +156,7 @@ needs — and can execute the bundle directly:
 
 ```json
 {
-  "command": "/Applications/QRE Dashboard.app/Contents/MacOS/QRE Dashboard",
+  "command": "/Applications/QRE Interface.app/Contents/MacOS/QRE Interface",
   "args": ["<resources>/dist-electron/mcp-server.mjs"],
   "env": { "ELECTRON_RUN_AS_NODE": "1", "QRE_DB_PATH": "…" }
 }

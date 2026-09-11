@@ -1,0 +1,62 @@
+name: Release
+
+# Build the self-contained desktop installers and publish them to a GitHub
+# Release. Triggered by pushing a version tag (e.g. `v0.1.0`), or manually.
+#
+# Each target OS/architecture builds on its own runner: the engine bundles a
+# standalone Python for that exact platform, and a venv/interpreter built on one
+# OS does not run on another. macOS Apple Silicon (arm64) and Intel (x64) build
+# on macos-14 and macos-13 respectively; Windows x64 on windows-latest.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple Silicon)
+            os: macos-14
+          - name: macOS (Intel)
+            os: macos-13
+          - name: Windows (x64)
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `release` = bundle the standalone Python engine, build the app, then let
+      # electron-builder publish the installer to this tag's GitHub Release.
+      - name: Build and publish installer
+        run: npm run release
+        env:
+          # Authenticated calls to the python-build-standalone release API (avoids
+          # the low unauthenticated rate limit) AND electron-builder's publish.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned build — do not try to auto-discover a signing identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"

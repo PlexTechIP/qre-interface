@@ -16,8 +16,8 @@ import { describe, expect, it } from "vitest";
 import { buildMcpSetup } from "./mcpSetup.js";
 
 const PATHS = {
-  executablePath: "/Applications/QRE Dashboard.app/Contents/MacOS/QRE Dashboard",
-  serverBundlePath: "/Applications/QRE Dashboard.app/Contents/Resources/mcp-server.mjs",
+  executablePath: "/Applications/QRE Interface.app/Contents/MacOS/QRE Interface",
+  serverBundlePath: "/Applications/QRE Interface.app/Contents/Resources/mcp-server.mjs",
   runDatabasePath: "/Users/an analyst/Library/Application Support/qre/run-history.sqlite",
   hasSavedRuns: true,
 };
@@ -111,7 +111,7 @@ describe("the MCP setup block", () => {
 
   describe("when the app is packaged into an asar archive", () => {
     const ARCHIVED =
-      "/Applications/QRE Dashboard.app/Contents/Resources/app.asar/dist-electron/mcp-server.mjs";
+      "/Applications/QRE Interface.app/Contents/Resources/app.asar/dist-electron/mcp-server.mjs";
     const UNPACKED = ARCHIVED.replace("app.asar/", "app.asar.unpacked/");
 
     it("points at the unpacked twin when packaging left one", () => {

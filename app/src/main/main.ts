@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron";
+import { app, BrowserWindow, ipcMain, protocol, safeStorage, shell } from "electron";
+import { mkdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAgentHandlers } from "./agentHandler.js";
@@ -20,7 +22,7 @@ import {
   OpenRouterCredentialValidator,
 } from "./credentialValidator.js";
 import { killLiveEngineProcesses } from "./engine/execute.js";
-import { resolvePythonBin } from "./engine/pythonBin.js";
+import { packagedPythonBin, resolvePythonBin } from "./engine/pythonBin.js";
 import { QreEngine } from "./engine/qreEngine.js";
 import { registerEstimatorHandler } from "./estimatorHandler.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
@@ -30,6 +32,62 @@ import { registerUploadHandler } from "./uploadHandler.js";
 import { hardenWebContents } from "./windowSecurity.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
+
+// The packaged renderer is served over a privileged `app://` scheme instead of
+// `file://`. Under `file://` the document origin is opaque, so the renderer's
+// strict CSP (`script-src 'self'`) matches none of its own bundled assets and
+// the window paints blank. A standard, secure scheme gives the document a real
+// origin (`app://local`) that `'self'` resolves against, keeping the CSP intact.
+const APP_SCHEME = "app";
+const APP_INDEX_URL = `${APP_SCHEME}://local/index.html`;
+const RENDERER_DIST = path.join(currentDir, "../dist");
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".mjs": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".map": "application/json",
+};
+
+// Must run before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
+]);
+
+/** Serve the built renderer from RENDERER_DIST over app://, with correct MIME. */
+function registerAppProtocol(): void {
+  protocol.handle(APP_SCHEME, async (request) => {
+    const { pathname } = new URL(request.url);
+    const relative = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
+    const filePath = path.join(RENDERER_DIST, relative);
+    // Never serve outside the bundle, whatever the request path claims.
+    if (relative.includes("\0") || path.relative(RENDERER_DIST, filePath).startsWith("..")) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    try {
+      const body = await readFile(filePath);
+      const type = MIME_TYPES[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
+      return new Response(body, { headers: { "content-type": type } });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
+}
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -45,27 +103,34 @@ function createWindow(): void {
 
   const devServerUrl = process.env["VITE_DEV_SERVER_URL"];
   // Guards applied BEFORE the first load, so there is no window in which the
-  // page exists unguarded. The dev server is allowed to navigate within its own
-  // origin (reload and HMR do exactly that); the packaged build is allowed
-  // nothing — a `file://` URL has origin "null", which would compare equal to
-  // every other `file://` URL and wave through the whole filesystem.
-  hardenWebContents(window.webContents, devServerUrl);
-
-  if (devServerUrl) {
-    void window.loadURL(devServerUrl);
-  } else {
-    void window.loadFile(path.join(currentDir, "../dist/index.html"));
-  }
+  // page exists unguarded. Each origin is allowed to navigate within itself
+  // (reload, and HMR in dev do exactly that): the dev server on its localhost
+  // origin, the packaged build on app://local. Anything off-origin is denied.
+  const startUrl = devServerUrl ?? APP_INDEX_URL;
+  hardenWebContents(window.webContents, startUrl);
+  void window.loadURL(startUrl);
 }
 
-const engineDir = app.isPackaged
-  ? currentDir
-  : path.resolve(process.cwd(), "src/main/engine");
 // The real QRE engine (qdk[qre] Python subprocess) is the only estimator.
-// resolvePythonBin locates the venv interpreter under engineDir.
-const engine = new QreEngine(
-  resolvePythonBin(process.env, process.platform, engineDir),
-);
+//
+// Packaged, the engine ships as an extraResources bundle beside the asar (a
+// subprocess cannot read the interpreter or the wrapper script from inside an
+// asar), and the interpreter is a relocatable standalone build. In dev the
+// engine lives in the source tree with a developer-created `.venv`. Both cases
+// resolve the same `<engineDir>/python` layout, so `engineDir` is the only knob.
+const engineDir = app.isPackaged
+  ? path.join(process.resourcesPath, "qre-engine")
+  : path.resolve(process.cwd(), "src/main/engine");
+const pythonBin = app.isPackaged
+  ? packagedPythonBin(engineDir, process.platform)
+  : resolvePythonBin(process.env, process.platform, engineDir);
+// Point the benchmark registry at the bundled Q# sources. Only in the packaged
+// app; in dev they resolve from the source tree. Set before the first run so
+// resolveBenchmark (which reads this at call time) sees it.
+if (app.isPackaged) {
+  process.env["QRE_BENCHMARKS_DIR"] = path.join(engineDir, "benchmarks");
+}
+const engine = new QreEngine(pythonBin, engineDir);
 registerEstimatorHandler(ipcMain, engine);
 // Form-level pre-flight for uploaded programs (main-process filesystem access).
 registerUploadHandler(ipcMain);
@@ -78,6 +143,19 @@ let runStore: SqliteRunStore | null = null;
 let chatStore: SqliteChatStore | null = null;
 
 app.whenReady().then(() => {
+  // Serve the renderer over app:// before any window loads it.
+  registerAppProtocol();
+
+  // matplotlib (a qdk dependency) writes a cache; the packaged engine sits in a
+  // read-only resources dir, so point it at a writable per-user location. Only
+  // packaged — dev uses the writable dir beside the source. userData is valid
+  // only after whenReady, and execute() reads this env at run time.
+  if (app.isPackaged) {
+    const mplConfigDir = path.join(app.getPath("userData"), "matplotlib");
+    mkdirSync(mplConfigDir, { recursive: true });
+    process.env["QRE_MPLCONFIGDIR"] = mplConfigDir;
+  }
+
   const dbOverride = process.env["QRE_DB_PATH"];
   const dbPath =
     dbOverride && dbOverride.length > 0

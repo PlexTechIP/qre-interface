@@ -7,7 +7,7 @@ import {
   buildBenchmarkEntryExpr,
 } from "../../shared/benchmarkParams.js";
 import type { BenchmarkId } from "../../shared/types.js";
-import { BENCHMARK_REGISTRY } from "./benchmarkRegistry.js";
+import { BENCHMARK_REGISTRY, resolveBenchmark } from "./benchmarkRegistry.js";
 
 function readSource(file: string): string {
   return readFileSync(file, "utf8");
@@ -47,6 +47,34 @@ describe("benchmark registry", () => {
       const source = path.join(entry.sourcePath, "src", `${namespace!}.qs`);
       expect(existsSync(source)).toBe(true);
       expect(readSource(source)).toContain(`operation ${name!}(`);
+    }
+  });
+
+  it("redirects benchmark sources to the packaged bundle when overridden", () => {
+    // The packaged app sets QRE_BENCHMARKS_DIR to the extraResources location,
+    // since the Q# sources cannot be read from inside the asar.
+    const previous = process.env["QRE_BENCHMARKS_DIR"];
+    process.env["QRE_BENCHMARKS_DIR"] = path.join("bundle", "qre-engine", "benchmarks");
+    try {
+      const entry = resolveBenchmark("shors-factoring");
+      expect(entry?.sourcePath).toBe(
+        path.join("bundle", "qre-engine", "benchmarks", "qsharp-project"),
+      );
+    } finally {
+      if (previous === undefined) delete process.env["QRE_BENCHMARKS_DIR"];
+      else process.env["QRE_BENCHMARKS_DIR"] = previous;
+    }
+  });
+
+  it("uses the source-tree benchmarks when no override is set", () => {
+    const previous = process.env["QRE_BENCHMARKS_DIR"];
+    delete process.env["QRE_BENCHMARKS_DIR"];
+    try {
+      expect(resolveBenchmark("shors-factoring")?.sourcePath).toBe(
+        BENCHMARK_REGISTRY["shors-factoring"]?.sourcePath,
+      );
+    } finally {
+      if (previous !== undefined) process.env["QRE_BENCHMARKS_DIR"] = previous;
     }
   });
 
