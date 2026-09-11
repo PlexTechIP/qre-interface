@@ -5,6 +5,12 @@
  * Filtering runs through the store's own query semantics; only the coarse
  * application-type filter, which `RunFilter` cannot express, is applied here.
  * Pagination is keyset-based using base64-encoded composite keys.
+ *
+ * A page costs a page. The store answers the filter with KEYS — five columns
+ * per run, no JSON — and only the runs on the page are read in full. The
+ * earlier version read and parsed every matching record to slice one page from
+ * it (design note F-4), so paging deeper cost the same as paging shallowly and
+ * both grew with the history; the README's numbers recorded that limit.
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -12,6 +18,7 @@ import { logError } from "../logger.js";
 import { runTool, toolFailure, toolSuccess } from "../toolResult.js";
 import { toRunSummary } from "../projections.js";
 import { getRunStore } from "../runStoreAccess.js";
+import type { RunKey, RunKeyFilter } from "../../main/sqliteRunStoreReader.js";
 import { validateStoredRunRecord } from "../../shared/runRecordValidation.js";
 import {
   BENCHMARK_IDS,
@@ -20,8 +27,6 @@ import {
   type ArchitectureType,
   type MagicStateFactoryId,
   type QecCodeId,
-  type RunFilter,
-  type RunRecord,
   type RunSummary,
 } from "../../shared/types.js";
 
@@ -104,8 +109,8 @@ function isKnownBenchmark(id: string): id is BenchmarkId {
   return (BENCHMARK_IDS as readonly string[]).includes(id);
 }
 
-function toStoreFilter(filter: ListRunsInput["filter"]): RunFilter {
-  const storeFilter: RunFilter = {};
+function toStoreFilter(filter: ListRunsInput["filter"]): RunKeyFilter {
+  const storeFilter: RunKeyFilter = {};
   if (filter === undefined) return storeFilter;
 
   if (filter.nameSearch !== undefined) storeFilter.nameSearch = filter.nameSearch;
@@ -130,17 +135,28 @@ function toStoreFilter(filter: ListRunsInput["filter"]): RunFilter {
 }
 
 /**
- * The part of the application filter `RunFilter` cannot carry.
+ * The part of the application filter `RunFilter` cannot carry, decided on the
+ * application KEY the store indexes: a benchmark id, `uploaded:<path>`, or the
+ * manual-counts marker. Those three shapes are `applicationKey`'s whole range,
+ * so the key says the type without the record.
  *
  * Also what makes a contradictory filter behave: asking for `manualCounts` runs
  * of a benchmark matches nothing, rather than quietly ignoring one of the two.
  */
 function matchesApplicationType(
-  record: RunRecord,
+  key: RunKey,
   filter: ListRunsInput["filter"],
 ): boolean {
-  if (filter?.applicationType === undefined) return true;
-  return record.config.application.type === filter.applicationType;
+  switch (filter?.applicationType) {
+    case undefined:
+      return true;
+    case "manualCounts":
+      return key.application === MANUAL_COUNTS_APPLICATION_KEY;
+    case "uploaded":
+      return key.application.startsWith("uploaded:");
+    case "benchmark":
+      return isKnownBenchmark(key.application);
+  }
 }
 
 /**
@@ -158,12 +174,12 @@ export async function handleListRuns(
       return toolFailure("STORE_READ_FAILED", "limit must be at least 1");
     }
 
-    // NOTE (design F-4): the page is sliced in memory. `RunStore` cannot
-    // express a seek predicate, so the whole matching set is read even when one
-    // page is wanted. Filed as a store-level change; recorded here so the cost
-    // is visible rather than assumed away.
-    const matching = (await getRunStore().query(toStoreFilter(input.filter)))
-      .filter((record) => matchesApplicationType(record, input.filter));
+    // Keys only: the whole matching set is still walked — a count and a cursor
+    // position need it — but as five columns per run, with no JSON parsed and
+    // no record upgraded for anything that is not on the page.
+    const store = getRunStore();
+    const matching = (await store.queryKeys(toStoreFilter(input.filter)))
+      .filter((key) => matchesApplicationType(key, input.filter));
     const totalMatched = matching.length;
 
     let startIndex = 0;
@@ -175,10 +191,10 @@ export async function handleListRuns(
 
       const [cursorCreatedAt, cursorSavedAt, cursorId] = decoded;
       const position = matching.findIndex(
-        (record) =>
-          record.config.createdAt === cursorCreatedAt &&
-          record.savedAt === cursorSavedAt &&
-          record.id === cursorId,
+        (key) =>
+          key.createdAt === cursorCreatedAt &&
+          key.savedAt === cursorSavedAt &&
+          key.id === cursorId,
       );
       // Silently restarting here hands the agent page one again together with a
       // fresh cursor, so it re-reads runs it has already seen and believes it
@@ -193,7 +209,8 @@ export async function handleListRuns(
       startIndex = position + 1;
     }
 
-    const page = matching.slice(startIndex, startIndex + limit);
+    const pageKeys = matching.slice(startIndex, startIndex + limit);
+    const page = await store.getMany(pageKeys.map((key) => key.id));
 
     // Validate only what is about to be returned. Validating the whole history
     // meant one unreadable record made every page fail.
@@ -216,11 +233,21 @@ export async function handleListRuns(
       totalMatched,
     };
 
-    if (page.length > 0 && startIndex + limit < matching.length) {
-      const lastOnPage = page[page.length - 1];
+    // The cursor names the last KEY on the page, not the last record: a run
+    // deleted between the two reads leaves the page one short, and resuming
+    // from the key still lands on the run after it.
+    //
+    // So it is emitted whenever more keys matched, even if the page came back
+    // shorter than asked for — `nextCursor`, not the page length, is what the
+    // tool's description tells a caller to stop on. The alternative is a
+    // snapshot: both reads inside one deferred transaction, which needs them
+    // in a single synchronous store call, since a transaction spanning an
+    // await could interleave with another handler on the same connection.
+    if (pageKeys.length > 0 && startIndex + limit < matching.length) {
+      const lastOnPage = pageKeys[pageKeys.length - 1];
       if (lastOnPage) {
         output.nextCursor = encodeCursor(
-          lastOnPage.config.createdAt,
+          lastOnPage.createdAt,
           lastOnPage.savedAt,
           lastOnPage.id,
         );

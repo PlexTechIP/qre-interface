@@ -141,8 +141,17 @@ export const LIST_BENCHMARKS_OUTPUT = {
 
 export const LIST_RUNS_OUTPUT = {
   runs: z.array(runSummary),
-  totalMatched: z.number(),
-  nextCursor: z.string().optional(),
+  totalMatched: z
+    .number()
+    .describe("How many runs match the filter, counted at the time of this call."),
+  nextCursor: z
+    .string()
+    .optional()
+    .describe(
+      "Pass as `cursor` for the next page. Absent means there are no more " +
+        "runs — it is the only end-of-history signal, because a page can be " +
+        "shorter than `limit` while more remain.",
+    ),
 };
 
 export const GET_RUN_OUTPUT = {

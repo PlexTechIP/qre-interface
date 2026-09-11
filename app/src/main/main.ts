@@ -131,11 +131,7 @@ app.whenReady().then(() => {
         executablePath: process.execPath,
         serverBundlePath: path.join(currentDir, "mcp-server.mjs"),
         runDatabasePath: dbPath,
-        // `RunStore` has no count, so this reads the history to answer a
-        // yes/no. Settings is opened deliberately and rarely, which is what
-        // makes that acceptable; a `count()` on the store is the cheaper
-        // answer if this ever sits anywhere warmer.
-        hasSavedRuns: (await store.list()).length > 0,
+        hasSavedRuns: (await store.count()) > 0,
       }),
     (target) => shell.showItemInFolder(target),
   );

@@ -21,7 +21,11 @@ import {
   DATABASE_SCHEMA_VERSION,
   selectAllRecords,
   selectRecordById,
+  selectRecordKeysByFilter,
   selectRecordsByFilter,
+  selectRecordsByIds,
+  type RunKey,
+  type RunKeyFilter,
 } from "./sqliteRunStoreReader.js";
 
 /**
@@ -92,6 +96,38 @@ export class SqliteReadOnlyRunStore implements ReadableRunStore {
 
   async query(filter: RunFilter): Promise<RunRecord[]> {
     return selectRecordsByFilter(this.database, filter);
+  }
+
+  /**
+   * The keys of every matching record, newest first, for a caller that will
+   * page: count them, find a cursor in them, and fetch only the page with
+   * `getMany`. Reads no record JSON. See `selectRecordKeysByFilter`.
+   */
+  async queryKeys(filter: RunKeyFilter): Promise<RunKey[]> {
+    return selectRecordKeysByFilter(this.database, filter);
+  }
+
+  /** The records for these ids, in this order; ids with no record are skipped. */
+  async getMany(ids: readonly string[]): Promise<RunRecord[]> {
+    return selectRecordsByIds(this.database, ids);
+  }
+
+  /**
+   * The schema version the database reports NOW, on this connection.
+   *
+   * The constructor's check guards the first read; this is for a caller that
+   * keeps the connection open while the dashboard may migrate the file in
+   * place. Throws if the connection is closed or the file is unreadable.
+   */
+  schemaVersion(): number {
+    const row = this.database.prepare("PRAGMA user_version").get() as
+      | { user_version?: unknown }
+      | undefined;
+    const actual = row?.user_version;
+    if (typeof actual !== "number") {
+      throw new Error("Could not read the SQLite run-store schema version.");
+    }
+    return actual;
   }
 
   /** Close the underlying connection. Safe to call more than once. */

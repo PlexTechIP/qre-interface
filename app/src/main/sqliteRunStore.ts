@@ -6,6 +6,7 @@ import { RunRecordExistsError } from "../shared/runStore.js";
 import {
   DATABASE_SCHEMA_VERSION,
   FACTORY_SET_DELIMITER,
+  countRecords,
   encodeFactorySet,
   selectAllRecords,
   selectRecordById,
@@ -144,6 +145,15 @@ export class SqliteRunStore implements RunStore {
 
   async query(filter: RunFilter): Promise<RunRecord[]> {
     return selectRecordsByFilter(this.database, filter);
+  }
+
+  /**
+   * How many runs are saved. Not part of `RunStore`: the History surface
+   * always wants the records, and this exists for the caller that asked
+   * `list().length > 0` and paid for every record to learn a boolean.
+   */
+  async count(): Promise<number> {
+    return countRecords(this.database);
   }
 
   /** Close the underlying connection during application shutdown or test cleanup. */
