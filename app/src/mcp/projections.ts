@@ -5,7 +5,7 @@
  * properly-escaped user-authored text and no sensitive internal fields.
  */
 
-import { boundedText } from "./toolResult.js";
+import { boundedText, setOwnProperty } from "./toolResult.js";
 import type {
   FieldMetric,
   NumericMetric,
@@ -215,11 +215,13 @@ function boundedFrontierSample(row: FrontierRow): {
     }
     const bounded = boundedMetricValue(metric.value);
     if (bounded.flattened) lost += 1;
-    kept[boundedKey] = {
+    // Keys are engine-authored; see `setOwnProperty` for why plain assignment
+    // is not safe for a key named `__proto__`.
+    setOwnProperty(kept, boundedKey, {
       value: bounded.value,
       unit: boundedText(metric.unit, MAX_SHORT_FIELD),
       display: boundedText(metric.display, MAX_SHORT_FIELD),
-    };
+    } satisfies FieldMetric);
   }
 
   const sample: FrontierRow = {
@@ -326,16 +328,18 @@ function toBoundedSettings(
     const key = boundedText(prefix, MAX_SHORT_FIELD);
     if (Object.hasOwn(bounded, key)) return;
 
+    // Keys come from a stored config; `setOwnProperty` keeps a key named
+    // `__proto__` as data rather than letting it rewire the map.
     if (typeof value === "number" || typeof value === "boolean") {
-      bounded[key] = value;
+      setOwnProperty(bounded, key, value);
     } else if (typeof value === "string") {
-      bounded[key] = boundedText(value, MAX_SHORT_FIELD);
+      setOwnProperty(bounded, key, boundedText(value, MAX_SHORT_FIELD));
     } else if (value === null || value === undefined) {
       // A real null: the stage is off, the option is unset. Distinct from the
       // null below, which means "too deep to show".
-      bounded[key] = null;
+      setOwnProperty(bounded, key, null);
     } else if (depth >= MAX_SETTING_DEPTH) {
-      bounded[key] = null;
+      setOwnProperty(bounded, key, null);
     } else if (Array.isArray(value)) {
       value.forEach((item, index) => walk(item, `${prefix}.${index}`, depth + 1));
     } else {

@@ -10,17 +10,19 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readdirSync as readdirRecursive } from "node:fs";
 
 import { SqliteRunStore } from "../main/sqliteRunStore.js";
+import { resolveLocationPointerPath } from "../main/dataDir.js";
 import { publishRunDatabaseLocation } from "../main/publishDataLocation.js";
 import { buildRunRecord } from "../shared/testing/builders.js";
 import {
   closeRunStore,
   getRunStore,
+  isTransientLockFailure,
   resetRunStoreForTests,
   type StoreAccessError,
 } from "./runStoreAccess.js";
@@ -245,6 +247,138 @@ describe("getRunStore", () => {
     }
   });
 
+  /**
+   * SQLite keeps reading an unlinked file, so a server that opened the history
+   * before the analyst deleted it and relaunched the dashboard answered every
+   * list from the old inode — the runs they could see were not the runs it
+   * reported, for as long as the process lived.
+   */
+  it("notices when the database file has been replaced", async () => {
+    await expect(getRunStore().list()).resolves.toHaveLength(2);
+
+    rmSync(dbPath);
+    const replacement = new SqliteRunStore(dbPath);
+    await replacement.save(
+      buildRunRecord({
+        config: { id: "33333333-3333-4333-8333-333333333333", name: "fresh start" },
+      }),
+    );
+    replacement.close();
+
+    const runs = await getRunStore().list();
+
+    expect(runs.map((run) => run.config.name)).toEqual(["fresh start"]);
+  });
+
+  it("follows QRE_DB_PATH when it changes between calls", async () => {
+    await expect(getRunStore().list()).resolves.toHaveLength(2);
+
+    const otherPath = join(directory, "other.sqlite");
+    const other = new SqliteRunStore(otherPath);
+    await other.save(
+      buildRunRecord({
+        config: { id: "44444444-4444-4444-8444-444444444444", name: "elsewhere" },
+      }),
+    );
+    other.close();
+    process.env.QRE_DB_PATH = otherPath;
+
+    const runs = await getRunStore().list();
+
+    expect(runs.map((run) => run.config.name)).toEqual(["elsewhere"]);
+  });
+
+  it("refuses to keep reading a database migrated under it", async () => {
+    await expect(getRunStore().list()).resolves.toHaveLength(2);
+
+    const bump = new DatabaseSync(dbPath);
+    bump.exec("PRAGMA user_version = 99");
+    bump.close();
+
+    expect(() => getRunStore()).toThrowError(
+      expect.objectContaining({ code: "DB_SCHEMA_MISMATCH" }),
+    );
+  });
+
+  it("reports a database that disappeared as DB_NOT_FOUND on the next call", async () => {
+    await expect(getRunStore().list()).resolves.toHaveLength(2);
+
+    rmSync(dbPath);
+
+    expect(() => getRunStore()).toThrowError(
+      expect.objectContaining({ code: "DB_NOT_FOUND" }),
+    );
+  });
+
+  /**
+   * `getRunStore()` is synchronous, but a handler holds what it returned across
+   * awaits — `listRuns` reads the keys, awaits, then reads the page — and two
+   * requests arriving in one stdin chunk interleave at microtask granularity.
+   * Closing a replaced connection here therefore closed the one another
+   * handler was about to use, whose next read threw `ERR_INVALID_STATE` and
+   * reached the client as a generic `STORE_READ_FAILED` naming nothing.
+   */
+  it("does not close a connection a caller is still holding", async () => {
+    const held = getRunStore();
+    await expect(held.list()).resolves.toHaveLength(2);
+
+    rmSync(dbPath);
+    const replacement = new SqliteRunStore(dbPath);
+    await replacement.save(
+      buildRunRecord({
+        config: { id: "55555555-5555-4555-8555-555555555555", name: "fresh start" },
+      }),
+    );
+    replacement.close();
+
+    const reopened = getRunStore();
+    expect(reopened).not.toBe(held);
+    await expect(reopened.list()).resolves.toHaveLength(1);
+    await expect(held.list(), "the retired connection was closed under its holder")
+      .resolves.toHaveLength(2);
+  });
+
+  it("closes a retired connection at shutdown", async () => {
+    const held = getRunStore();
+    rmSync(dbPath);
+    const replacement = new SqliteRunStore(dbPath);
+    replacement.close();
+    getRunStore();
+
+    closeRunStore();
+
+    await expect(held.list()).rejects.toThrowError(/not open/);
+  });
+
+  /**
+   * Not knowing where the database is says nothing about where it went. The
+   * pointer file is rewritten by the dashboard, and a reader that caught it
+   * mid-write read "" — so a server that had just answered a query reported
+   * `DB_NOT_CONFIGURED` ("Launch the QRE Dashboard once…") and dropped the
+   * connection it was answering from.
+   */
+  it("keeps an open connection when the pointer cannot be read", async () => {
+    delete process.env.QRE_DB_PATH;
+    process.env.HOME = home;
+    publishRunDatabaseLocation(dbPath);
+    resetRunStoreForTests();
+
+    const store = getRunStore();
+    await expect(store.list()).resolves.toHaveLength(2);
+
+    // What a truncate-then-write looks like to a reader that arrives between
+    // the two halves.
+    writeFileSync(resolveLocationPointerPath(), "", "utf8");
+
+    expect(() => getRunStore()).toThrowError(
+      expect.objectContaining({ code: "DB_NOT_CONFIGURED" }),
+    );
+    await expect(store.list()).resolves.toHaveLength(2);
+
+    publishRunDatabaseLocation(dbPath);
+    expect(getRunStore()).toBe(store);
+  });
+
   it("closes the connection when the cache is reset", async () => {
     const store = getRunStore();
     await store.list();
@@ -281,5 +415,31 @@ describe("the MCP layer's store access", () => {
     walk(join(process.cwd(), "src", "mcp"));
 
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Which SQLite failures mean "not now" rather than "not ever".
+ *
+ * The per-call schema re-check treats a throw as a dead connection and reopens.
+ * A busy database is neither: SQLite has already waited out the five-second
+ * timeout, and the connection that reported it still works — so discarding it
+ * paid the timeout twice, once in the call that failed and once in the reopen,
+ * and threw away a handle that would have answered the next call.
+ */
+describe("isTransientLockFailure", () => {
+  it("recognises a busy or locked database, including extended result codes", () => {
+    expect(isTransientLockFailure({ errcode: 5 })).toBe(true);
+    expect(isTransientLockFailure({ errcode: 6 })).toBe(true);
+    // SQLITE_BUSY_RECOVERY: the primary code lives in the low byte.
+    expect(isTransientLockFailure({ errcode: 261 })).toBe(true);
+  });
+
+  it("does not excuse a failure that will not pass on its own", () => {
+    expect(isTransientLockFailure({ errcode: 1544 })).toBe(false); // READONLY_DIRECTORY
+    expect(isTransientLockFailure({ errcode: 14 })).toBe(false); // CANTOPEN
+    expect(isTransientLockFailure({ errcode: 11 })).toBe(false); // CORRUPT
+    expect(isTransientLockFailure(new Error("database is not open"))).toBe(false);
+    expect(isTransientLockFailure(undefined)).toBe(false);
   });
 });

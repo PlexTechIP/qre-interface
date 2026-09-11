@@ -80,8 +80,30 @@ export interface ValidateConfigOutput {
 
 const MAX_ERRORS = 50;
 const MAX_MESSAGE = 500;
+/**
+ * A structural failure gets more room, because it is ONE item that enumerates
+ * a contract rather than one complaint about one field.
+ *
+ * `validateGeneratedDraft` reports up to five failures and spells out the
+ * values each allows — the `parameters` variant listing alone is ~330
+ * characters — so a draft with several problems produced a 598-character
+ * reason that the 500 cap cut with an ellipsis, losing two of the six variants
+ * the caller then had to choose between. The reason is budgeted at its source
+ * to stay under this, so nothing is truncated on the way out.
+ */
+const MAX_STRUCTURE_MESSAGE = 1200;
 /** Each side of a "you asked for X, it would run as Y" message. */
 const MAX_REPAIR_VALUE = 160;
+/**
+ * How much draft this tool will read.
+ *
+ * A real draft serialises to a couple of kilobytes; the largest the contract
+ * can express is a neutral-atom architecture, still a fraction of this. The
+ * gate is here so that the schema walk, the form adapters, and the round trip
+ * are never asked to prove it the slow way — it is a bound on WORK, which is
+ * why `name` does not count towards it (see `measureDraft`).
+ */
+const MAX_DRAFT_CHARS = 32 * 1024;
 
 /**
  * Bound the list itself. Escaping and path redaction happen below, in
@@ -90,8 +112,60 @@ const MAX_REPAIR_VALUE = 160;
 function boundErrors(errors: ValidationErrorItem[]): ValidationErrorItem[] {
   return errors.slice(0, MAX_ERRORS).map((error) => ({
     ...error,
-    message: boundedText(error.message, MAX_MESSAGE),
+    message: boundedText(
+      error.message,
+      error.source === "structure" ? MAX_STRUCTURE_MESSAGE : MAX_MESSAGE,
+    ),
   }));
+}
+
+/** A single structural complaint, bounded and shaped like every other result. */
+function structuralFailure(message: string): CallToolResult {
+  return toolSuccess({
+    valid: false,
+    errors: boundErrors([{ field: "draft", source: "structure", message }]),
+  } satisfies ValidateConfigOutput);
+}
+
+type DraftMeasurement =
+  | { readonly kind: "measured"; readonly chars: number }
+  | { readonly kind: "unreadable" };
+
+/**
+ * How big the draft is, for the purpose of refusing to work on it.
+ *
+ * Two things this must not do, both learned the hard way.
+ *
+ * It must not count `name`. `name` is the one field no schema bounds — the
+ * generation contract says `string | null`, `RunConfig` sets only
+ * `minLength: 1`, the form's input has no `maxLength` — so a run saved with a
+ * 33,000-character name produced a draft from `qre_draft_from_run` that this
+ * tool then refused as "not a draft", contradicting its own description. A
+ * long string is also the cheapest thing here to validate, so it is not what
+ * the gate is defending against.
+ *
+ * And it must not throw. `JSON.stringify` recurses, so a value nested about
+ * ten thousand deep overflows the stack — while `JSON.parse` on the way in
+ * accepts it happily and zod's loose object does not look inside. That turned a
+ * draft the contract would have rejected with "name must be string or null"
+ * into an `isError` VALIDATION_FAILED, which is exactly what this tool
+ * promises never to do with a bad draft.
+ */
+function measureDraft(draft: unknown): DraftMeasurement {
+  const measurable =
+    typeof draft === "object" && draft !== null && !Array.isArray(draft)
+      ? { ...(draft as Record<string, unknown>), name: undefined }
+      : draft;
+
+  try {
+    const serialized = JSON.stringify(measurable);
+    return {
+      kind: "measured",
+      chars: typeof serialized === "string" ? serialized.length : 0,
+    };
+  } catch {
+    return { kind: "unreadable" };
+  }
 }
 
 /**
@@ -309,27 +383,31 @@ export async function handleValidateConfig(
     "validateConfig",
     { code: "VALIDATION_FAILED", message: "Failed to validate the draft." },
     async () => {
+      // 0. Is it small enough to be worth reading? The registered input schema
+      //    accepts any object, so this is where the work is bounded.
+      const size = measureDraft(input.draft);
+      if (size.kind === "unreadable") {
+        return structuralFailure(
+          "The draft could not be read as a run draft: it is nested too deeply.",
+        );
+      }
+      if (size.chars > MAX_DRAFT_CHARS) {
+        return structuralFailure(
+          `The draft is too large to be a run draft (over ${MAX_DRAFT_CHARS / 1024} KiB, not counting its name).`,
+        );
+      }
+
       // 1. Does it look like a draft at all? The committed generation schema
       //    decides, so this rejects exactly what the app's own gate rejects.
       const structural = validateGeneratedDraft(input.draft);
       if (!structural.ok) {
-        return toolSuccess({
-          valid: false,
-          errors: boundErrors([
-            { field: "draft", source: "structure", message: structural.reason },
-          ]),
-        } satisfies ValidateConfigOutput);
+        return structuralFailure(structural.reason);
       }
 
       // 2. Raise it into a form, through the same adapter the chat path uses.
       const mapped = formStateFromGeneratedDraft(structural.draft);
       if (!mapped.ok) {
-        return toolSuccess({
-          valid: false,
-          errors: boundErrors([
-            { field: "draft", source: "structure", message: mapped.message },
-          ]),
-        } satisfies ValidateConfigOutput);
+        return structuralFailure(mapped.message);
       }
 
       // 3. Couplings, against what was ASKED rather than what the adapter kept.

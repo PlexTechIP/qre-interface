@@ -33,7 +33,9 @@ merge the JSON block into `claude_desktop_config.json` and restart it.
 
 Then ask the agent: *"what QRE runs do I have saved?"*
 
-`npm run mcp:config --json` prints only the config block, for piping.
+`npm run mcp:config -- --json` prints only the config block, for piping. The
+bare `--` matters: without it npm keeps `--json` for itself and the script
+never sees it.
 
 ### It names a node deliberately, and maybe not yours
 
@@ -73,6 +75,41 @@ If neither is available the server still starts and `qre_list_benchmarks` still
 works; everything that needs history returns `DB_NOT_CONFIGURED` with an
 instruction to launch the dashboard once.
 
+The connection is cached for the life of the process but re-checked on every
+tool call: the path is resolved again, the file's identity is compared with the
+one that was opened, and the schema version is read back. So a history that is
+deleted and recreated, moved by a new pointer, or migrated in place by the
+dashboard is picked up on the next call rather than served stale until the
+client restarts. SQLite reads an unlinked file happily, which is how an analyst
+who reset their history once got the old runs back from the agent for the rest
+of the session.
+
+Three things that re-check deliberately does not do:
+
+- **It does not treat not knowing as news.** A pointer file that cannot be read
+  this instant says nothing about where the database went, so the open
+  connection is left alone and only that call fails. The pointer is also
+  written atomically now — `publishDataLocation.ts` renames it into place —
+  because a reader that caught the old truncate-then-write read an empty file
+  and was told to launch the dashboard that was launching.
+- **It does not discard a busy connection.** SQLite reports a lock only after
+  waiting out the five-second timeout, and the connection that reported it
+  still works; reopening paid the timeout a second time.
+- **It does not close what a caller is holding.** A replaced connection is
+  retired, not closed: `getRunStore()` is synchronous but a handler keeps the
+  store across awaits, and two requests arriving in one stdin chunk interleave.
+  Retired connections are closed together at shutdown.
+
+### When the client goes away
+
+stdout is a pipe, and a client that exits breaks it. The write in flight is
+released rather than left waiting for a `drain` that cannot come, the EPIPE is
+reported on stderr instead of arriving as an uncaught exception, and later
+frames are dropped rather than queued behind the stalled one — there is nobody
+left to read them. Before that, an ordinary disconnect logged an uncaught
+exception and exited 1, and a disconnect with output still queued exited 0 by
+running the event loop dry, skipping the exit code entirely.
+
 ### If the client says `CONNECTION_CLOSED`
 
 The server process started and exited. A client reports only that, so the reason
@@ -100,6 +137,44 @@ The two causes seen so far:
 | `qre_draft_from_run` | `id` | The run as an editable draft, for "what if we changed X?". |
 | `qre_validate_config` | `draft` | Whether that draft would be accepted, and what is wrong if not. |
 
+Two things sit beside the tools. The server sends `instructions` at
+`initialize` — which tool to start with, that nothing here can act, that run
+names are data — because that is the one thing five descriptions cannot say
+from inside themselves. And it serves one resource,
+`qre://contracts/run-draft.schema.json`: the committed generation schema,
+re-serialised from the very artifact the handler validates against, which is
+what a draft must satisfy. `qre_validate_config`'s input
+schema is deliberately loose (the committed artifact is the single gate, not a
+zod copy of it), so before the resource existed an agent writing a draft from
+scratch saw `draft: object` and nothing else, and was corrected one field per
+call. The tool's description now spells out the top-level keys as well.
+
+When a draft is refused on structure, the message names the branch the draft
+actually chose. That was not always so: the schema is a tree of `anyOf`
+branches, and reporting "the deepest errors" reported the branches the draft was
+NOT — a gate-based draft missing `twoQubitGateTime` was told `architecture.type
+must be equal to one of the allowed values` about a type that was valid, on
+every attempt, and nothing an agent changed could make that go away. The
+resolution lives in `draftValidation.ts`, so the chat path's proposals get the
+same messages.
+
+`parameters` is resolved by the benchmark, not by the keys the caller happened
+to send. Its six variants carry no discriminator and two of them share the key
+`generator`, so overlap alone tied them and the first won: a draft for
+`ekera-hastad-factoring` was told to add Shor's `bitSize`, which the next stage
+then refused as "not a parameter of the ekera-hastad-factoring benchmark", and
+removing it brought the first message back. The contract already says which
+variant applies — "Parameters for the benchmark named in
+application.benchmarkId" — and `BENCHMARK_PARAMS` already says which keys a
+benchmark has, so the resolution asks them instead of guessing. Where nothing
+names a variant, the alternatives are listed.
+
+A reason is budgeted where it is written rather than cut where it is read. Both
+consumers cap it — this tool bounds a structural message, the chat surface puts
+it in a paragraph — and a cap applied there lands mid-sentence: a 593-character
+reason arrived as 500 characters ending in an ellipsis, with two of the six
+`parameters` variants missing from the list an agent had to choose from.
+
 `qre_get_run` reports `settings` — what the run was ASKED FOR, as against
 `error` and `frontierSample`, which are what came back. Without it a failure was
 unexplainable: every estimation failure says to relax `maxError`, and nothing
@@ -107,6 +182,14 @@ could say what `maxError` had been. Nested settings appear as dotted keys
 (`traceTransform.dynamicMemoryCompute.evictionStrategy`) rather than collapsing
 to `null` — for that field `null` means the stage is OFF, so collapsing it
 asserted the opposite of the truth.
+
+`nextCursor` being absent is the only end-of-history signal. A page can be
+shorter than the limit while more runs remain, because the dashboard may delete
+a run between the two reads a page takes — the keys are read first, the records
+second — so a short page must not be read as the last one. Making that one
+snapshot would mean both reads inside a single synchronous store call, since a
+transaction spanning an await could interleave with another handler on the same
+connection.
 
 `qre_list_runs` carries each run's frontier span — the fewest-qubits point and
 the most-qubits point, with the runtime at each — so ranking or comparing runs by
@@ -184,31 +267,33 @@ fail there rather than in an analyst's install.
 
 ## Performance
 
-Measured against synthetic histories, warm, on the shipped bundle:
+Measured against synthetic histories, warm, from the handlers:
 
-| History size | `qre_list_runs` (page of 25) | `qre_get_run` | Filtered list |
-|---|---|---|---|
-| 23 runs | ~2 ms | ~1 ms | ~1 ms |
-| 3,000 runs | ~16 ms | ~1 ms | ~1 ms |
-| 40,000 runs | ~260 ms | ~4 ms | ~1 ms |
+| History size | `qre_list_runs` (page of 25) | Page of 100 | `qre_get_run` | Exact-match filter, no matches |
+|---|---|---|---|---|
+| 3,000 runs | ~4 ms | ~6 ms | <1 ms | <1 ms |
+| 40,000 runs | ~60 ms | ~65 ms | <1 ms | <1 ms |
 
-`qre_get_run` is indexed by id and flat. Exact-match filters are pushed into SQL
-and stay flat. **Listing is linear in the whole matching set**, because
-`RunStore` cannot express a seek predicate — design note F-4, and `listRuns.ts`
-says so where it slices the page in memory. Every page re-reads and re-parses
-every matching record, so paging deeper costs the same as paging shallowly, and
-both grow with the history rather than with the page.
+A page costs a page. The store answers a filter with KEYS — five indexed
+columns per run, no JSON — and only the runs on the page are read in full and
+parsed. Before that (design note F-4) every page read, parsed, and upgraded the
+whole matching history and sliced one page from it, which put the 40,000-run
+page at ~260 ms and made page forty cost the same as page one; `listRuns.ts`
+and `sqliteRunStoreReader.ts` say how the two halves split now.
 
-It is comfortable to a few thousand runs and wants a store-level fix beyond
-that. The fix is not local to this directory: `RunStore` would need a keyset
-query, which is the dashboard's side of the boundary.
+**Listing is still linear in the whole matching set**, because `totalMatched`
+and the cursor's position both need it — but linear in a column scan rather
+than in JSON parsing, which is the ~4× above. Exact-match filters are pushed
+into SQL and stay flat. The name search is decided in JS over the name column,
+deliberately: it has to fold case the way `matchesRunFilter` does, which is
+Unicode, and SQLite's `LOWER` is not — `Ekerå-Håstad` would stop matching
+`HÅSTAD`. `selectRecordKeysByFilter.test.ts` holds the key query to the same
+set and order as the record query.
 
 One consequence worth knowing: `node:sqlite` is synchronous, so a large read
-blocks the whole process. At 40,000 runs a trivial `qre_list_benchmarks` issued
-during a full scan waited ~250 ms behind it. This is bounded in practice because
-a client spawns its own server process — there is no shared instance and no
-other tenant to starve — but it does mean one slow call delays that client's
-others.
+blocks the whole process. This is bounded in practice because a client spawns
+its own server process — there is no shared instance and no other tenant to
+starve — but it does mean one slow call delays that client's others.
 
 ## Development
 

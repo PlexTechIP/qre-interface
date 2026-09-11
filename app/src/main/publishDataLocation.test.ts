@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,22 @@ afterEach(() => {
 });
 
 describe("publishRunDatabaseLocation", () => {
+  /**
+   * The MCP server resolves this pointer on every tool call, so the rewrite
+   * has a reader. `writeFileSync` truncates and then writes: a reader in that
+   * window got an empty file, read it as "no run history is configured", and
+   * told the analyst to launch the dashboard that was at that moment
+   * launching. A rename within one directory is atomic, so a reader sees
+   * either the old pointer or the new one.
+   */
+  it("replaces an existing pointer without leaving a partial file behind", () => {
+    publishRunDatabaseLocation("/first/run-history.sqlite");
+    publishRunDatabaseLocation("/second/run-history.sqlite");
+
+    expect(readPublishedRunDatabasePath()).toBe("/second/run-history.sqlite");
+    expect(readdirSync(join(home, ".qre-dashboard"))).toEqual(["location.json"]);
+  });
+
   it("records where the dashboard's run history actually lives", () => {
     publishRunDatabaseLocation("/Users/someone/Library/run-history.sqlite");
 

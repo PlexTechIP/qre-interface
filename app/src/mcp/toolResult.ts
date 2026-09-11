@@ -172,6 +172,30 @@ export function boundedText(text: string, maxCodePoints: number): string {
   return capText(escapeControlChars(redactPaths(text)), maxCodePoints);
 }
 
+/**
+ * Set an OWN property, whatever the key is called.
+ *
+ * `target[key] = value` is not that: when `key` is `"__proto__"` it reaches the
+ * accessor on `Object.prototype` and rewires the object's prototype instead of
+ * storing anything. Every map this server builds is keyed by text it did not
+ * choose — an engine's `additional` metric names, a stored config's setting
+ * names — so a record carrying that key had its value silently dropped from
+ * the result and left an object with a prototype nobody asked for. Defining
+ * the property directly stores it as data, which is all a key ever is here.
+ */
+export function setOwnProperty(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
 /** Apply the boundary rules to every string in a result, however deep. */
 function sanitize<T>(value: T): T {
   if (typeof value === "string") {
@@ -183,7 +207,7 @@ function sanitize<T>(value: T): T {
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
-      result[key] = sanitize(item);
+      setOwnProperty(result, key, sanitize(item));
     }
     return result as unknown as T;
   }
