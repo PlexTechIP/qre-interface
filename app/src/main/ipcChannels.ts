@@ -11,6 +11,19 @@ export const STORE_LIST_CHANNEL = "store:list";
 export const STORE_GET_CHANNEL = "store:get";
 export const STORE_DELETE_CHANNEL = "store:delete";
 export const STORE_QUERY_CHANNEL = "store:query";
+/**
+ * Main -> renderer: somebody else committed to the run database.
+ *
+ * Push-only, and deliberately NOT registered by `registerStoreHandlers`: every
+ * other channel above is an `ipcMain.handle` the renderer invokes, and this one
+ * has no handler at all — main sends it, the renderer listens. Putting it in
+ * that function would mean registering a handler for a channel nobody invokes.
+ *
+ * It carries no payload. What changed is a question History answers by
+ * re-querying; a diff over IPC would be a second, smaller copy of the store's
+ * contents to keep correct.
+ */
+export const STORE_CHANGED_CHANNEL = "store:changed";
 
 // Provider credential storage. Three channels: whether a key is configured,
 // configuring one, and removing one. There is still no channel that reads a key

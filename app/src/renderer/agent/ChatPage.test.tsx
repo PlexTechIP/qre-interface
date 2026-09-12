@@ -15,7 +15,7 @@ import {
 import { InMemoryChatStore } from "../../shared/chatStore";
 import type { ChatStore } from "../../shared/chatTypes";
 import { PROVIDER_MODELS } from "../../shared/providerModels";
-import { InMemoryRunStore } from "../../shared/runStore";
+import { InMemoryRunStore, withNoChangeSource } from "../../shared/runStore";
 import type { RunConfig, RunResult } from "../../shared/types";
 import { buildSuccessResult, fakeEstimator } from "../../shared/testing";
 import { fakeAgentService, FAKE_GENERATED_DRAFT } from "../../shared/testing/fakeAgentService";
@@ -283,7 +283,7 @@ describe("ChatPage — a turn", () => {
   it("opens the proposal in an editor on this page, and runs nothing", async () => {
     const estimatorRun = vi.fn(() => Promise.resolve(buildSuccessResult()));
     window.estimator = { run: estimatorRun };
-    window.store = new InMemoryRunStore();
+    window.store = withNoChangeSource(new InMemoryRunStore());
     renderChat();
 
     await sendMessage("Estimate Grover search");
@@ -310,7 +310,7 @@ describe("ChatPage — a turn", () => {
   it("runs a proposal as drafted, saves it, and reports the finished run", async () => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
     const runStore = new InMemoryRunStore();
-    window.store = runStore;
+    window.store = withNoChangeSource(runStore);
     const onRunComplete = vi.fn();
     renderChat({ onRunComplete });
 

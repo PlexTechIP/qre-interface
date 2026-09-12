@@ -32,6 +32,7 @@ import type {
   RunRecord,
   RunResult,
   RunStore,
+  RunStoreChangeSource,
   UploadedProgramFormat,
 } from "../shared/types.js";
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
@@ -61,6 +62,7 @@ import {
   STORE_GET_CHANNEL,
   STORE_LIST_CHANNEL,
   STORE_QUERY_CHANNEL,
+  STORE_CHANGED_CHANNEL,
   STORE_SAVE_CHANNEL,
 } from "./ipcChannels.js";
 
@@ -73,7 +75,7 @@ const estimator: Pick<EstimatorService, "run"> = {
 // The RunStore, reached over IPC. Each method is a thin `invoke` wrapper — the
 // renderer consumes the same async `RunStore` interface the mock did, so the
 // History/Comparison UI swaps onto real SQLite with no shape change.
-const store: RunStore = {
+const store: RunStore & RunStoreChangeSource = {
   save(record: RunRecord): Promise<void> {
     return ipcRenderer.invoke(STORE_SAVE_CHANNEL, record) as Promise<void>;
   },
@@ -147,8 +149,9 @@ const agent: AgentService = {
     return ipcRenderer.invoke(AGENT_CATALOG_CHANNEL, provider) as Promise<ProviderCatalogResult>;
   },
   /*
-   * The one listener on this surface, and the only place `ipcRenderer.on`
-   * appears in the preload at all.
+   * The one listener on THIS surface. There is one other in the preload —
+   * `store.onChanged`, which is how History learns that an agent saved a run —
+   * and both follow the same rule.
    *
    * The IpcRendererEvent is deliberately not forwarded: it carries `sender` and
    * `ports`, which are handles into the main process, and handing those to the

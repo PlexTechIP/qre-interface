@@ -817,6 +817,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           {showHistorySurface ? (
             <RunHistoryContainer
               store={window.store}
+              // An agent can save a run through the MCP server while this page
+              // is open. Only History lists runs, so only History needs to hear
+              // about it — Results shows one run the analyst already chose.
+              changes={window.store}
               view={activePage === "comparison" ? "comparison" : "history"}
               onViewChange={setActivePage}
               onNavigateToConfig={() => setActivePage("config")}
@@ -869,6 +873,8 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             }}
             themePreference={themePreference}
             onThemePreferenceChange={setThemePreference}
+            allowAgentRuns={allowAgentRuns}
+            onAllowAgentRunsChange={setAllowAgentRuns}
             activeTab={settingsTab}
             onActiveTabChange={setSettingsTab}
           />

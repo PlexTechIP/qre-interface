@@ -26,6 +26,8 @@ import { registerEstimatorHandler } from "./estimatorHandler.js";
 import { SqliteRunStore } from "./sqliteRunStore.js";
 import { publishRunDatabaseLocation } from "./publishDataLocation.js";
 import { registerStoreHandlers } from "./storeHandler.js";
+import { startStoreWatcher, type StoreWatcher } from "./storeWatcher.js";
+import { STORE_CHANGED_CHANNEL } from "./ipcChannels.js";
 import { registerUploadHandler } from "./uploadHandler.js";
 import { hardenWebContents } from "./windowSecurity.js";
 
@@ -79,6 +81,7 @@ registerUploadHandler(ipcMain);
 // constructed and wired there (not at module top-level like the engine).
 // QRE_DB_PATH / QRE_CHAT_DB_PATH override.
 let runStore: SqliteRunStore | null = null;
+let storeWatcher: StoreWatcher | null = null;
 let chatStore: SqliteChatStore | null = null;
 
 app.whenReady().then(() => {
@@ -90,6 +93,34 @@ app.whenReady().then(() => {
   const store = new SqliteRunStore(dbPath);
   runStore = store;
   registerStoreHandlers(ipcMain, store);
+
+  /*
+   * The dashboard is no longer the only writer of this database: with agent
+   * runs enabled, the MCP server appends to it while the app sits open. A
+   * History list that silently disagrees with the file is worse than a stale
+   * one that says so, and nothing about it would look stale.
+   *
+   * `PRAGMA data_version` changes only when ANOTHER connection commits, so the
+   * dashboard's own saves do not trigger this — those already update the UI
+   * through the path that made them.
+   */
+  storeWatcher = startStoreWatcher({
+    readVersion: () => store.dataVersion(),
+    broadcast: () => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        // Tolerates zero windows: on macOS the app lives on with none open.
+        if (!window.isDestroyed()) window.webContents.send(STORE_CHANGED_CHANNEL);
+      }
+    },
+    // Without this the watcher fails in perfect silence: `onError` is optional
+    // and every failed read returns early, so a connection that starts throwing
+    // every tick simply stops History updating with nothing anywhere saying
+    // why. The symptom — "the agent saved a run and the dashboard never showed
+    // it" — is otherwise undiagnosable.
+    onError: (error) => {
+      console.error("[store-watcher] could not check for external changes", error);
+    },
+  });
 
   // Tell non-Electron processes where that resolved to. The MCP server cannot
   // call app.getPath(), and a second copy of Electron's per-platform rule would
@@ -205,6 +236,8 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   killLiveEngineProcesses();
+  // Before the store, so a tick in flight cannot read a closed connection.
+  storeWatcher?.stop();
   runStore?.close();
   chatStore?.close();
 });

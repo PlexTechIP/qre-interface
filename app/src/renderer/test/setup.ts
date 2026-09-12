@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach } from "vitest";
 
 import { InMemoryChatStore } from "../../shared/chatStore";
-import { InMemoryRunStore } from "../../shared/runStore";
+import { InMemoryRunStore, withNoChangeSource } from "../../shared/runStore";
 import { installMatchMedia } from "./matchMedia";
 
 // jsdom implements no matchMedia, and the theme now SUBSCRIBES to it rather
@@ -20,7 +20,7 @@ beforeEach(() => {
 // is exercised against. Tests that inject their own store (via props) or assert
 // on saved records override these.
 beforeEach(() => {
-  window.store = new InMemoryRunStore();
+  window.store = withNoChangeSource(new InMemoryRunStore());
   window.chats = new InMemoryChatStore();
 });
 

@@ -1,6 +1,7 @@
 import type {
   EstimatorService,
   RunStore,
+  RunStoreChangeSource,
   UploadedProgramFormat,
 } from "../shared/types";
 import type { AgentService } from "../shared/agentTypes";
@@ -15,7 +16,14 @@ export type UploadPreflightResult =
 declare global {
   interface Window {
     estimator: Pick<EstimatorService, "run">;
-    store: RunStore;
+    /**
+     * The run history, plus a subscription to changes another process made.
+     *
+     * The change source is on `window.store` rather than on `RunStore` itself
+     * because only this one has a process on the other side of it to hear
+     * from; see `RunStoreChangeSource`.
+     */
+    store: RunStore & RunStoreChangeSource;
     files?: {
       getPathForFile(file: File): string;
     };

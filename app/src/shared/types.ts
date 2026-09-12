@@ -631,6 +631,19 @@ export function isSucceeded(
  * Week 3+: `cancel(runId)` / `onProgress(...)` will be added via contract
  * change when scheduled — do not build them speculatively.
  */
+/**
+ * Being told the run history changed underneath you.
+ *
+ * Deliberately NOT part of `RunStore`. An in-memory store and every test double
+ * would have to grow a subscription that never fires, and the one consumer —
+ * History, in Electron — can ask for this separately. `window.store` is both;
+ * everything else stays a plain `RunStore`.
+ */
+export interface RunStoreChangeSource {
+  /** Subscribe. Returns the unsubscribe function. */
+  onChanged(listener: () => void): () => void;
+}
+
 export interface EstimatorService {
   run(config: RunConfig): Promise<RunResult>;
 }

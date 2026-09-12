@@ -5,6 +5,7 @@ import {
   type RunFilter,
   type RunRecord,
   type RunStore,
+  type RunStoreChangeSource,
 } from "../../shared/types";
 import { RunHistoryList } from "./RunHistoryList";
 import { RunHistoryFilters } from "./RunHistoryFilters";
@@ -38,6 +39,15 @@ interface RunHistoryContainerProps {
    *  shell injects the shared store its Run flow saves into, and tests inject a
    *  seeded one. */
   store?: RunStore;
+  /**
+   * Where to hear that the history changed in another process.
+   *
+   * Optional and separate from `store` because only `window.store` has one —
+   * an in-memory store has nobody to hear from. The shell passes it; a
+   * standalone render simply does not update by itself, which is what it did
+   * before this existed.
+   */
+  changes?: RunStoreChangeSource;
   /** Controlled view. When provided, the internal History/Comparison tab strip
    *  is replaced by shell-level navigation (sidebar + header cross-nav). */
   view?: "history" | "comparison";
@@ -57,6 +67,7 @@ interface RunHistoryContainerProps {
 
 export function RunHistoryContainer({
   store: providedStore,
+  changes,
   view: controlledView,
   onViewChange,
   onNavigateToConfig,
@@ -153,28 +164,51 @@ export function RunHistoryContainer({
    * state (post-delete especially). Runs the active filter server-side, exactly
    * as the real SQLite store will.
    */
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    // A silent load is a refresh the analyst did not ask for — an agent saved a
+    // run through the MCP server. It therefore touches NOTHING it cannot
+    // improve: no loading state to replace the rows they are reading, and, on
+    // failure, no clearing of those rows either. A background read that loses a
+    // race with the dashboard's write lock must not blank a History list over
+    // an error the analyst did not cause and cannot act on; what is on screen
+    // is still the last good answer, and the next real load will report the
+    // problem if it persists.
+    if (!silent) {
+      setIsLoading(true);
+      setLoadError(null);
+    }
     try {
       // Filtered set feeds the table; full set feeds the filter-bar options.
       const [filtered, all] = await Promise.all([store.query(filter), store.list()]);
       setRecords(filtered);
       setAllRecords(all);
+      // A success clears a stale error either way: the rows are current now.
+      setLoadError(null);
     } catch (error) {
+      if (silent) return;
       setLoadError(error instanceof Error ? error.message : "Failed to load runs.");
       setRecords([]);
       setAllRecords([]);
     } finally {
-      setIsLoading(false);
+      // Only the load that RAISED the spinner may lower it. A silent load
+      // settling mid-flight would otherwise clear the spinner belonging to a
+      // filter change still in progress.
+      if (!silent) setIsLoading(false);
       setHasLoaded(true);
     }
   }, [store, filter]);
+
+  /** What every existing caller meant: reload, showing that it is reloading. */
+  const refresh = useCallback(async () => load(), [load]);
 
   // Reload whenever the filter changes (initial load included).
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Somebody else wrote a run — an agent, through the MCP server. Reload
+  // quietly; the unsubscribe is what keeps a listener from outliving the page.
+  useEffect(() => changes?.onChanged(() => void load({ silent: true })), [changes, load]);
 
   // Drop the open selection if its record leaves the visible set (deleted, or
   // hidden by a filter). The comparison set self-heals separately: comparisonRecords
