@@ -40,7 +40,7 @@ import {
   digestArguments,
   type InvocationRecord,
 } from "../invocationLog.js";
-import { toRunSummary } from "../projections.js";
+import { toFrontierSpan, toRunDetail } from "../projections.js";
 import {
   getAppendStore,
   isStoreAccessError,
@@ -270,8 +270,14 @@ export async function handleRunEstimate(
         ...(warning === undefined ? {} : { code: warning.code }),
       });
 
+      // The run IN FULL — the same projection `qre_get_run` returns, plus the
+      // span. The first live test came back with qubits and runtime and
+      // nothing else, because the summary was all this carried; an agent that
+      // has just spent the analyst's two minutes should be able to report the
+      // whole result from this reply.
       return toolSuccess({
-        run: toRunSummary(record),
+        run: toRunDetail(record),
+        frontier: toFrontierSpan(record.result.frontier),
         saved,
         ...(warning === undefined ? {} : { warning }),
       });

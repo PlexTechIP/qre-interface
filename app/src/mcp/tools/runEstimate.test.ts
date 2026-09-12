@@ -32,6 +32,7 @@ import { generatedDraftFromFormState } from "../../renderer/state/generatedDraft
 import { formStateFromRunConfig } from "../../renderer/state/formState.js";
 import { createMcpServer } from "../createServer.js";
 import { resetEngineAccessForTests, setEstimatorForTests } from "../engineAccess.js";
+import type { RunDetail } from "../projections.js";
 import { RunGate } from "../runBudget.js";
 import { resetRunStoreForTests } from "../runStoreAccess.js";
 import { readToolFailure } from "../toolResult.js";
@@ -54,7 +55,8 @@ const DRAFT = (): GeneratedRunDraft =>
   );
 
 interface RunEstimateOutput {
-  run: RunSummary;
+  run: RunDetail;
+  frontier: RunSummary["frontier"];
   saved: boolean;
   warning?: { code: string; message: string };
 }
@@ -138,7 +140,17 @@ describe("a run that works", () => {
 
     expect(output.saved).toBe(true);
     expect(output.run.status).toBe("succeeded");
-    expect(output.run.frontier).not.toBeNull();
+    expect(output.frontier).not.toBeNull();
+
+    // The run IN FULL, so the model can report it without a second call: the
+    // settings it ran with, the representative row with every metric, and the
+    // curve. The first live test came back with two numbers because the
+    // summary was all this carried.
+    expect(output.run.settings.maxError).toBe(DRAFT().maxError);
+    expect(typeof output.run.frontierSample?.physicalQubits.value).toBe("number");
+    expect(typeof output.run.frontierSample?.codeDistance.value).toBe("number");
+    expect(output.run.frontierPoints).toHaveLength(output.run.frontierRowCount ?? -1);
+    expect(output.run.frontierPointsOmitted).toBe(0);
 
     const store = new SqliteReadOnlyRunStore(dbPath);
     try {
@@ -173,6 +185,9 @@ describe("a run that works", () => {
     const output = successOf(await callRun(DRAFT()));
 
     expect(output.run.status).toBe("failed");
+    expect(output.run.error).not.toBeNull();
+    expect(output.frontier).toBeNull();
+    expect(output.run.frontierPoints).toEqual([]);
     expect(output.saved).toBe(true);
     expect(await countRows()).toBe(1);
   });

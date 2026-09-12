@@ -30,6 +30,68 @@ describe("toRunDetail with an engine metric named __proto__", () => {
   });
 });
 
+/**
+ * The curve travels with the detail so an agent that ran an estimate can
+ * report the whole frontier from one reply. Bare numbers, cheapest in qubits
+ * first, capped — the cap is for an engine configuration nobody has written
+ * yet, and `frontierPointsOmitted` is how a reader knows it fired.
+ */
+describe("toRunDetail's frontier points", () => {
+  function point(qubits: number, runtime: number) {
+    return buildFrontierRow({
+      physicalQubits: { value: qubits, unit: "qubits", display: `${qubits}` },
+      runtime: { value: runtime, unit: "ns", display: `${runtime}` },
+    });
+  }
+
+  it("carries every point of an ordinary frontier, fewest qubits first", () => {
+    const record = buildRunRecord({
+      result: { frontier: [point(300, 10), point(100, 30), point(200, 20)] },
+    });
+
+    const detail = toRunDetail(record);
+
+    expect(detail.frontierPoints).toEqual([
+      { physicalQubits: 100, runtime: 30 },
+      { physicalQubits: 200, runtime: 20 },
+      { physicalQubits: 300, runtime: 10 },
+    ]);
+    expect(detail.frontierPointsOmitted).toBe(0);
+    expect(detail.frontierRowCount).toBe(3);
+  });
+
+  it("caps the curve at 32 points and counts the rest as omitted", () => {
+    const rows = Array.from({ length: 40 }, (_, index) =>
+      point(1_000 + index, 40 - index),
+    );
+    const record = buildRunRecord({ result: { frontier: rows } });
+
+    const detail = toRunDetail(record);
+
+    expect(detail.frontierPoints).toHaveLength(32);
+    expect(detail.frontierPoints[0]).toEqual({ physicalQubits: 1_000, runtime: 40 });
+    expect(detail.frontierPoints[31]).toEqual({ physicalQubits: 1_031, runtime: 9 });
+    expect(detail.frontierPointsOmitted).toBe(8);
+    // The uncapped count is still reported beside the capped list.
+    expect(detail.frontierRowCount).toBe(40);
+  });
+
+  it("is empty for a failed estimate", () => {
+    const record = buildRunRecord({
+      result: {
+        status: "failed",
+        frontier: null,
+        error: { code: "ENGINE_CRASH", message: "boom" },
+      },
+    });
+
+    const detail = toRunDetail(record);
+
+    expect(detail.frontierPoints).toEqual([]);
+    expect(detail.frontierPointsOmitted).toBe(0);
+  });
+});
+
 describe("toRunDetail with a stored setting named __proto__", () => {
   it("reports it like any other setting", () => {
     const record = buildRunRecord();

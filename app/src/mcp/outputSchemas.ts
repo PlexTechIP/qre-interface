@@ -127,6 +127,8 @@ const runDetail = z.object({
   frontierSample: frontierRow.nullable(),
   frontierRowCount: z.number().nullable(),
   frontierSampleOmitted: z.number(),
+  frontierPoints: z.array(frontierEndpoint),
+  frontierPointsOmitted: z.number(),
 });
 
 export const LIST_BENCHMARKS_OUTPUT = {
@@ -173,8 +175,25 @@ export const SAVE_WARNING_CODES = [
   "SAVE_FAILED",
 ] as const;
 
+/**
+ * The run IN FULL, not the list summary.
+ *
+ * The first live test reported only qubits and runtime, because that was all
+ * the summary shape carried and the model did not go on to call `qre_get_run`.
+ * An agent that just spent the analyst's two minutes should be able to report
+ * everything the Results page would show from this one reply — settings,
+ * timings, the representative row with every metric, and the curve — so the
+ * shape is `qre_get_run`'s, plus the span for ranking against saved runs.
+ */
 export const RUN_ESTIMATE_OUTPUT = {
-  run: runSummary,
+  run: runDetail,
+  frontier: frontierSpan
+    .nullable()
+    .describe(
+      "The span of the frontier, in the shape qre_list_runs uses, so this run " +
+        "can be ranked against saved ones without another call. Null when the " +
+        "estimate failed.",
+    ),
   saved: z
     .boolean()
     .describe("Whether the run was appended to the dashboard's history."),

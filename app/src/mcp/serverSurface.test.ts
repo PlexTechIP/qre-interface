@@ -123,6 +123,9 @@ describe("the run tool's registration", () => {
   it("changes what the server says it can do, in both directions", async () => {
     expect(client.getInstructions()).toContain(READ_ONLY_SENTENCE);
     expect(client.getInstructions()).not.toContain("qre_run_estimate");
+    // And says how runs get turned on: the model is the one party talking to
+    // the analyst when it reports "read-only", so it is told what to say next.
+    expect(client.getInstructions()).toMatch(/Settings > MCP Server/);
 
     const enabled = await connect({ QRE_MCP_ALLOW_RUNS: "1" });
     try {

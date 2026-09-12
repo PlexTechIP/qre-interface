@@ -244,6 +244,14 @@ npm run mcp:config -- --allow-runs
 3. **Opens the history for writing** — a preflight, because spending two minutes
    on a database that will refuse the row is the one failure this can see coming.
 4. **Takes a slot**, then runs the engine and saves.
+5. **Returns the run in full** — the same projection `qre_get_run` gives
+   (settings, timings, engine version, one representative frontier row with
+   every metric, and the curve as qubit/runtime points) plus the frontier span
+   and `saved`. The first live test came back with qubits and runtime and
+   nothing else, because the tool then returned the list summary and the model
+   did not go on to call `qre_get_run`; an agent that has just spent the
+   analyst's two minutes should be able to report the whole result from one
+   reply, and its description now tells it to.
 
 Identity is minted by the server at execution: a fresh v4 `id` and `createdAt`,
 never taken from the draft. Provenance is `{ authoredBy: "model_assisted" }`

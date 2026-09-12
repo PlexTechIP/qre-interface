@@ -43,7 +43,13 @@ const savedDbPath = process.env.QRE_DB_PATH;
 const savedPythonBin = process.env.QRE_PYTHON_BIN;
 
 interface RunEstimateOutput {
-  run: { id: string; status: string; frontier: { points: number } | null };
+  run: {
+    id: string;
+    status: string;
+    frontierSample: { physicalQubits: { value: number } } | null;
+    frontierPoints: { physicalQubits: number; runtime: number }[];
+  };
+  frontier: { points: number } | null;
   saved: boolean;
   warning?: { code: string; message: string };
 }
@@ -104,7 +110,11 @@ describe.skipIf(!QRE_AVAILABLE)("qre_run_estimate against the real engine", () =
       expect(output.run.status).toBe("succeeded");
       expect(output.saved).toBe(true);
       expect(output.warning).toBeUndefined();
-      expect(output.run.frontier?.points ?? 0).toBeGreaterThan(0);
+      expect(output.frontier?.points ?? 0).toBeGreaterThan(0);
+      // The full result, from the real engine: a representative row and the
+      // curve, so the model can report the estimate without another call.
+      expect(output.run.frontierSample?.physicalQubits.value ?? 0).toBeGreaterThan(0);
+      expect(output.run.frontierPoints.length).toBeGreaterThan(0);
 
       // Read back through the read-only store's own tool, on its own
       // connection: the append really landed in the analyst's history.
