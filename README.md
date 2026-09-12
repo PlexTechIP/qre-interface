@@ -114,7 +114,7 @@ npm run mcp:config
 
 The command prints a ready-to-use `claude mcp add` command and a Claude Desktop configuration block with paths resolved for the current machine.
 
-To let a connected agent also **run** estimates on this machine and save them to your history, add `--allow-runs` (or tick "Let connected agents run estimates" under Settings → MCP Server in the app, then copy the block again). A client reads these settings only when it starts the server, so re-add the server and restart the client after changing them.
+By default the block also lets a connected agent **run** estimates on this machine and save them to your history; your MCP client will ask before the first one. For a read-only block, add `--read-only` (or untick "Let connected agents run estimates" under Settings → MCP Server in the app, then copy the block again). A client reads these settings only when it starts the server, so re-add the server and restart the client after changing them.
 
 See [`app/src/mcp/README.md`](app/src/mcp/README.md) for the available tools, error codes, and database configuration.
 

@@ -185,23 +185,23 @@ describe("the printed configuration, actually run", () => {
   }, 30_000);
 });
 
-describe("--allow-runs", () => {
-  it("says nothing about runs unless it is asked for", () => {
+describe("agent runs in the emitted block", () => {
+  it("are on by default, matching the dashboard's block", () => {
     const report = buildConfigReport();
-
-    expect(report.allowRuns).toBe(false);
-    expect(report.config.env).not.toHaveProperty("QRE_MCP_ALLOW_RUNS");
-    expect(claudeCodeCommand(report.config)).not.toContain("QRE_MCP_ALLOW_RUNS");
-  });
-
-  it("emits the opt-in when it is", () => {
-    const report = buildConfigReport({ allowRuns: true });
 
     expect(report.allowRuns).toBe(true);
     expect(report.config.env.QRE_MCP_ALLOW_RUNS).toBe("1");
     expect(claudeCodeCommand(report.config)).toContain(
       "--env QRE_MCP_ALLOW_RUNS='1'",
     );
+  });
+
+  it("are left out of a read-only block", () => {
+    const report = buildConfigReport({ allowRuns: false });
+
+    expect(report.allowRuns).toBe(false);
+    expect(report.config.env).not.toHaveProperty("QRE_MCP_ALLOW_RUNS");
+    expect(claudeCodeCommand(report.config)).not.toContain("QRE_MCP_ALLOW_RUNS");
   });
 
   it("names the checkout's interpreter when there is one, and says so when there is not", () => {

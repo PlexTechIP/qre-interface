@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -13,7 +13,11 @@ import type {
 import type { AppInfoService } from "../../shared/appInfoTypes";
 import { InMemoryChatStore } from "../../shared/chatStore";
 import { fakeAgentService, fakeAppInfoService } from "../../shared/testing";
-import { FAKE_MCP_SETUP, FAKE_STORAGE_LOCATIONS } from "../../shared/testing/fakeAppInfo";
+import {
+  FAKE_MCP_SETUP,
+  FAKE_MCP_SETUP_WITH_RUNS,
+  FAKE_STORAGE_LOCATIONS,
+} from "../../shared/testing/fakeAppInfo";
 import { QRE_VERSION } from "../constants/staticOptions";
 import type { ThemePreference } from "../theme";
 import { SettingsPage } from "./SettingsPage";
@@ -86,8 +90,9 @@ function setup(
     const [activeTab, setActiveTab] = useState(0);
     // The harness holds the toggle the way the shell does, so a test can click
     // it and then assert on what the panel re-read.
+    // On unless a test says otherwise — the same default the shell applies.
     const [allowAgentRuns, setAllowAgentRuns] = useState(
-      overrides.allowAgentRuns ?? false,
+      overrides.allowAgentRuns ?? true,
     );
     return (
       <SettingsPage
@@ -703,24 +708,40 @@ describe("SettingsPage — the MCP Server tab", () => {
     expect(screen.getByRole("button", { name: /copy toml/i })).toBeVisible();
   });
 
-  it("says the access is read-only, because that is the question asked", async () => {
-    setup({ tab: "MCP Server" });
+  it("says the access is read-only when the analyst turned runs off", async () => {
+    setup({ tab: "MCP Server", allowAgentRuns: false });
 
-    const block = await screen.findByText(/read-only/i);
-    expect(block).toHaveTextContent(/cannot start a run/i);
+    const intro = await screen.findByText(/cannot start a run, change one/i);
+    expect(intro).toHaveTextContent(/read-only/i);
   });
 
-  it("offers the run opt-in unticked, and reports a tick to the shell", async () => {
+  it("offers agent runs ticked by default, and reports an untick to the shell", async () => {
     const { onAllowAgentRunsChange } = setup({ tab: "MCP Server" });
 
     const toggle = await screen.findByRole("checkbox", {
       name: /let connected agents run estimates/i,
     });
-    expect(toggle).not.toBeChecked();
+    // On by default: two live tests ended read-only because the block had been
+    // copied with this unticked.
+    expect(toggle).toBeChecked();
 
     fireEvent.click(toggle);
 
-    expect(onAllowAgentRunsChange).toHaveBeenCalledWith(true);
+    expect(onAllowAgentRunsChange).toHaveBeenCalledWith(false);
+  });
+
+  it("says which mode the block is in, right above it", async () => {
+    setup({ tab: "MCP Server" });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /lets connected agents run estimates/i,
+    );
+
+    cleanup();
+
+    setup({ tab: "MCP Server", allowAgentRuns: false });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /this block is read-only/i,
+    );
   });
 
   it("re-reads the block with the opt-in, and says what it says instead", async () => {
@@ -728,6 +749,7 @@ describe("SettingsPage — the MCP Server tab", () => {
     setup({
       tab: "MCP Server",
       appInfo: fakeAppInfoService({ onGetMcpSetup }),
+      allowAgentRuns: false,
     });
 
     fireEvent.click(
@@ -766,8 +788,13 @@ describe("SettingsPage — the MCP Server tab", () => {
   it("surfaces a problem rather than a block that will not work", async () => {
     setup({
       tab: "MCP Server",
+      // The default block is the runs-enabled one, so that is the fixture the
+      // panel will ask for.
       appInfo: fakeAppInfoService({
-        mcpSetup: { ...FAKE_MCP_SETUP, problems: ["No runs are saved yet."] },
+        mcpSetupWithRuns: {
+          ...FAKE_MCP_SETUP_WITH_RUNS,
+          problems: ["No runs are saved yet."],
+        },
       }),
     });
 

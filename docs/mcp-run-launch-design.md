@@ -272,10 +272,11 @@ tool that deletes or edits a run."
 - **Badge:** History already marks `model_assisted` rows and filters by author
   (`RunHistoryList.tsx:149`, `RunHistoryFilters.tsx:170`). Nothing to add.
 - **Settings › Agents:** the toggle *"Let connected agents run estimates"*
-  (default off) writes `QRE_MCP_ALLOW_RUNS=1` into the config block the panel
-  displays, with the note that the analyst must re-add the server for the
-  change to take effect (an MCP client reads `env` at spawn). The panel also
-  shows the interpreter path that will be used.
+  (default **on**, changed 2026-09-12 — see §10) writes `QRE_MCP_ALLOW_RUNS=1`
+  into the config block the panel displays, with the note that the analyst
+  must re-add the server for the change to take effect (an MCP client reads
+  `env` at spawn), and a line above the block saying which mode it is in. The
+  client's own first-use permission prompt is the per-install consent.
 
 ### 4.6 Long calls without Tasks
 
@@ -531,3 +532,19 @@ choice somebody will otherwise reopen; the reasoning is above, in §0, §4 and �
   own default resolves relative to its bundle.
 - **Out of scope, and still is:** delete and edit tools, uploaded programs
   through MCP, and the MCP Tasks extension (no client implements it).
+
+**After the first live tests (PM, 2026-09-12):**
+
+- **The toggle defaults ON**, in the dashboard and in `mcp:config` (now
+  `--read-only` to opt out). Two live tests in a row ended with the agent
+  correctly reporting "read-only", because the block had been copied with the
+  box unticked. The server-side gate is unchanged; the client's first-use
+  permission prompt is the per-install consent. Settings now shows which mode
+  the block is in directly above it, and the read-only instructions tell the
+  model where runs are turned on.
+- **`qre_run_estimate` returns the run in full** — `qre_get_run`'s `RunDetail`
+  plus the frontier span — instead of the list summary. The first successful
+  live run was reported as two numbers because the summary was all the tool
+  carried. `RunDetail` also gained `frontierPoints` (the curve as qubit/runtime
+  pairs, capped at 32) and `frontierPointsOmitted`, which `qre_get_run` picks
+  up through the same projection.

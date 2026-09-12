@@ -505,6 +505,18 @@ export function SettingsPage({
             so after changing this re-run the add command (or re-paste the
             block) and restart the client.
           </p>
+          {/*
+            Which mode the block below is in, said right above it. Two live
+            tests in a row ended with an agent reporting "read-only" because
+            the block had been copied with the box unticked and nothing in the
+            block itself showed that — the environment variable is one line
+            among several, and its absence is what "off" looks like.
+          */}
+          <p className="settings-mode" role="status">
+            {allowAgentRuns
+              ? "This block lets connected agents run estimates on this machine."
+              : "This block is read-only: agents can read your history but cannot start a run."}
+          </p>
 
           {mcpError !== null ? (
             <p className="agent-error" role="alert">

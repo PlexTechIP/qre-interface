@@ -18,7 +18,8 @@
  * graph, and `importGraph.test.ts` fails if it ever does.
  *
  * Run with: `npm run mcp:config` (add `--json` for the bare config block, or
- * `--allow-runs` to emit a block that lets the agent run estimates).
+ * `--read-only` for a block that lets the agent read history but not run
+ * estimates; runs are on by default, as they are in the dashboard's block).
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -232,7 +233,9 @@ export function buildConfigReport(
     );
   }
 
-  const allowRuns = options.allowRuns === true;
+  // On unless asked otherwise, matching the dashboard's default: the first
+  // live tests ended read-only because a block had been produced without it.
+  const allowRuns = options.allowRuns !== false;
   const pythonBin = resolveCheckoutPythonBin();
   if (allowRuns && pythonBin === null) {
     problems.push(
@@ -301,7 +304,7 @@ function render(report: ConfigReport): string {
     `  server        ${config.args[0]}`,
     `  run history   ${report.databasePath ?? "(none published yet)"}`,
     `  engine        ${report.pythonBin ?? "(no Python environment in this checkout)"}`,
-    `  agent runs    ${report.allowRuns ? "enabled" : "disabled (pass --allow-runs)"}`,
+    `  agent runs    ${report.allowRuns ? "enabled (pass --read-only for a read-only block)" : "disabled (--read-only)"}`,
     "",
   ];
 
@@ -337,8 +340,10 @@ function render(report: ConfigReport): string {
 
 /** Entry point. `--json` prints only the config block, for piping. */
 function main(): void {
+  // `--allow-runs` is still accepted, as a no-op: it was the spelling for a
+  // day, and a stale README line should not silently produce a read-only block.
   const report = buildConfigReport({
-    allowRuns: process.argv.includes("--allow-runs"),
+    allowRuns: !process.argv.includes("--read-only"),
   });
   const jsonOnly = process.argv.includes("--json");
 

@@ -5551,6 +5551,12 @@ button.danger:hover {
  * that row exists so a tooltip trigger inside the text is not folded into the
  * checkbox's own hit area, and there is no tooltip here.
  */
+/* Which mode the MCP block below is in — read-only, or agents may run. */
+.settings-mode {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+}
+
 .settings-checkbox {
   display: flex;
   align-items: center;

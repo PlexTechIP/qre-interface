@@ -68,12 +68,21 @@ function getInitialThemePreference(): ThemePreference {
   return readStoredPreference(window.localStorage.getItem(THEME_STORAGE_KEY));
 }
 
-/** Off unless the analyst has explicitly turned it on. Fails closed, like every other read of this. */
+/**
+ * On unless the analyst has explicitly turned it off.
+ *
+ * The default flipped after the first live tests: two attempts in a row ended
+ * with the agent correctly reporting "read-only", because the block had been
+ * copied with the box unticked. The block this decides is text the analyst
+ * pastes into their own client, and that client still asks before the first
+ * run — so "on" here costs one click at the client rather than none at all.
+ * The only off is an explicit `"0"`, which is what the effect below writes.
+ */
 function getInitialAllowAgentRuns(): boolean {
   try {
-    return window.localStorage.getItem(MCP_ALLOW_RUNS_STORAGE_KEY) === "1";
+    return window.localStorage.getItem(MCP_ALLOW_RUNS_STORAGE_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -329,9 +338,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
 
   useEffect(() => {
     try {
-      // "0" rather than removing the key: an explicit off is what an analyst
-      // who turned this on and then off again means, and it reads back the
-      // same.
+      // "0" is the value that matters: the default is on, so an explicit off
+      // is the only state that has to survive a relaunch, and it reads back
+      // the same.
       //
       // Guarded like the matching read: `localStorage` throws outright where
       // site data is blocked, and an exception raised in an effect unmounts the

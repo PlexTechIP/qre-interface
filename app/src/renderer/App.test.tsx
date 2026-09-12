@@ -384,6 +384,61 @@ describe("App shell — Settings", () => {
    * networked-features indicator — the badge used to report a state whose only
    * fix lived somewhere the badge did not point at.
    */
+  /**
+   * Agent runs are on unless the analyst turned them off. The default flipped
+   * after two live tests in a row ended with the agent reporting "read-only",
+   * because the block had been copied with the box unticked; the block is
+   * text the analyst pastes into a client that still asks before the first
+   * run, so "on" here costs one click there rather than none.
+   */
+  it("emits agent runs in the MCP block unless the analyst turned them off", async () => {
+    window.agent = fakeAgentService();
+    window.appInfo = fakeAppInfoService();
+    try {
+      render(<App />);
+      await userEvent.click(badge());
+      await userEvent.click(screen.getByRole("tab", { name: "MCP Server" }));
+
+      expect(
+        screen.getByRole("checkbox", { name: /let connected agents run estimates/i }),
+      ).toBeChecked();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("group", { name: /claude code setup/i }),
+        ).toHaveTextContent("QRE_MCP_ALLOW_RUNS='1'");
+      });
+      // Off is remembered as an explicit "0", and only that reads back as off.
+      await userEvent.click(
+        screen.getByRole("checkbox", { name: /let connected agents run estimates/i }),
+      );
+      expect(window.localStorage.getItem("qre-mcp-allow-runs")).toBe("0");
+    } finally {
+      delete window.appInfo;
+    }
+  });
+
+  it("starts with agent runs off when the analyst last turned them off", async () => {
+    window.agent = fakeAgentService();
+    window.appInfo = fakeAppInfoService();
+    window.localStorage.setItem("qre-mcp-allow-runs", "0");
+    try {
+      render(<App />);
+      await userEvent.click(badge());
+      await userEvent.click(screen.getByRole("tab", { name: "MCP Server" }));
+
+      expect(
+        screen.getByRole("checkbox", { name: /let connected agents run estimates/i }),
+      ).not.toBeChecked();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("group", { name: /claude code setup/i }),
+        ).not.toHaveTextContent("QRE_MCP_ALLOW_RUNS");
+      });
+    } finally {
+      delete window.appInfo;
+    }
+  });
+
   it("keeps Settings out of the primary navigation", () => {
     window.agent = fakeAgentService();
     render(<App />);

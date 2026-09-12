@@ -141,10 +141,10 @@ The two causes seen so far:
 |---|---|---|
 | `qre_list_benchmarks` | — | Every benchmark this build can estimate. Needs no history. |
 | `qre_list_runs` | `limit`, `cursor`, `filter` | Saved runs newest-first, each with the span of its Pareto frontier. The only source of run IDs. |
-| `qre_get_run` | `id` | One run in full: the settings it was configured with, timings, engine version, failure details, and one representative frontier point with every metric. |
+| `qre_get_run` | `id` | One run in full: the settings it was configured with, timings, engine version, failure details, one representative frontier point with every metric, and the frontier as qubit/runtime points (capped at 32). |
 | `qre_draft_from_run` | `id` | The run as an editable draft, for "what if we changed X?". |
 | `qre_validate_config` | `draft` | Whether that draft would be accepted, and what is wrong if not. |
-| `qre_run_estimate` | `draft` | **Only with agent runs enabled.** Runs that draft on this machine, saves it, and returns the run. See below. |
+| `qre_run_estimate` | `draft` | **Only with agent runs enabled.** Runs that draft on this machine, saves it, and returns the run in full — `qre_get_run`'s shape plus the frontier span and `saved`. See below. |
 
 Two things sit beside the tools. The server sends `instructions` at
 `initialize` — which tool to start with, whether anything here can act, that run
@@ -212,24 +212,32 @@ measurement, which would describe a configuration the engine never returned.
 
 ## Running estimates
 
-Off by default. The tool is **registered only when `QRE_MCP_ALLOW_RUNS=1` is in
-the server's environment** — not refused inside the handler, not gated on a
-prompt: with the variable absent, `qre_run_estimate` is not in `tools/list` at
-all, so a model never sees a tool it would be turned down for. That is also why
-there is no `RUNS_DISABLED` error code; the state it would name is unreachable.
+The **server** is off unless told otherwise: the tool is **registered only when
+`QRE_MCP_ALLOW_RUNS=1` is in the server's environment** — not refused inside the
+handler, not gated on a prompt: with the variable absent, `qre_run_estimate` is
+not in `tools/list` at all, so a model never sees a tool it would be turned
+down for. That is also why there is no `RUNS_DISABLED` error code; the state it
+would name is unreachable. With the variable absent, the server's instructions
+also tell the model where the analyst can turn runs on, so "read-only" comes
+with a next step rather than as a dead end.
 
-The variable is set where the MCP client is configured — a file on the analyst's
-machine that the model cannot reach and the server cannot change. The
+The **emitted configuration** is on by default. The dashboard's Settings block
+and `npm run mcp:config` both include the variable unless asked not to — the
+first live tests ended read-only twice because a block had been copied without
+it. The variable is set where the MCP client is configured — a file on the
+analyst's machine that the model cannot reach and the server cannot change. The
 dashboard's **Settings → MCP Server → "Let connected agents run estimates"**
-checkbox is a way of *producing* that configuration, not a second switch:
-ticking it changes the block you copy, and a client reads its environment only
-when it starts the server. **After changing it, re-run the add command (or
-re-paste the block) and restart the client.**
+checkbox (ticked by default) is a way of *producing* that configuration, not a
+second switch: unticking it changes the block you copy, and a line right above
+the block says which mode it is in. A client reads its environment only when it
+starts the server, so **after changing it, re-run the add command (or re-paste
+the block) and restart the client.**
 
 From a checkout:
 
 ```sh
-npm run mcp:config -- --allow-runs
+npm run mcp:config                 # agent runs enabled
+npm run mcp:config -- --read-only  # reads only
 ```
 
 ### What a call does
