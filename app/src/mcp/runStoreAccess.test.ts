@@ -1,16 +1,20 @@
 /**
- * The MCP server is specified to read the dashboard's run store and never to
- * change it: the design's CLOSED-1 rule is that the dashboard stays the sole
- * migration owner, and week 6's brief allows no write path at all.
+ * The MCP server reads the dashboard's run store, appends to it only through
+ * `getAppendStore()`, and migrates it never: CLOSED-1 now says the dashboard
+ * stays the sole MIGRATION owner rather than the sole writer.
  *
- * These tests hold that line at the connection, not at the call site. They
- * assert what the database looks like from the outside after the server has
- * used it, so a future tool cannot reintroduce a write by accident.
+ * These tests hold that line at the connection, not at the call site. The
+ * fingerprint tests assert what the database looks like from the outside after
+ * the READ path has used it — byte-for-byte unchanged, still in its own journal
+ * mode — so a future read tool cannot reintroduce a write by accident. The
+ * `getAppendStore` tests assert the other half: that the one caller allowed to
+ * write still cannot migrate, and still cannot bring a database into existence
+ * at a path nothing lives at.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readdirSync as readdirRecursive } from "node:fs";
@@ -21,6 +25,7 @@ import { publishRunDatabaseLocation } from "../main/publishDataLocation.js";
 import { buildRunRecord } from "../shared/testing/builders.js";
 import {
   closeRunStore,
+  getAppendStore,
   getRunStore,
   isTransientLockFailure,
   resetRunStoreForTests,
@@ -441,5 +446,106 @@ describe("isTransientLockFailure", () => {
     expect(isTransientLockFailure({ errcode: 11 })).toBe(false); // CORRUPT
     expect(isTransientLockFailure(new Error("database is not open"))).toBe(false);
     expect(isTransientLockFailure(undefined)).toBe(false);
+  });
+});
+
+describe("getAppendStore", () => {
+  let directory: string;
+  let dbPath: string;
+  const savedDbPath = process.env.QRE_DB_PATH;
+
+  beforeEach(async () => {
+    resetRunStoreForTests();
+    ({ directory, dbPath } = await createDashboardDatabase());
+    process.env.QRE_DB_PATH = dbPath;
+  });
+
+  afterEach(() => {
+    resetRunStoreForTests();
+    if (savedDbPath === undefined) delete process.env.QRE_DB_PATH;
+    else process.env.QRE_DB_PATH = savedDbPath;
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("saves a record the read store then sees", async () => {
+    const record = buildRunRecord({
+      config: { id: "33333333-3333-4333-8333-333333333333", name: "appended" },
+    });
+
+    await getAppendStore().save(record);
+
+    expect(await getRunStore().get(record.id)).toEqual(record);
+  });
+
+  it("refuses a database at a schema this build does not know", () => {
+    const raw = new DatabaseSync(dbPath);
+    raw.exec("PRAGMA user_version = 99");
+    raw.close();
+
+    let thrown: StoreAccessError | undefined;
+    try {
+      getAppendStore();
+    } catch (error) {
+      thrown = error as StoreAccessError;
+    }
+
+    expect(thrown?.code).toBe("DB_SCHEMA_MISMATCH");
+  });
+
+  it("refuses a path with no database, and creates nothing there", () => {
+    // The reason the stat happens BEFORE the store is constructed: an append
+    // store opens read-write, and `new DatabaseSync(path)` would create the
+    // file. A mistyped QRE_DB_PATH must not become a second, empty history.
+    const missing = join(directory, "not-a-database.sqlite");
+    process.env.QRE_DB_PATH = missing;
+
+    let thrown: StoreAccessError | undefined;
+    try {
+      getAppendStore();
+    } catch (error) {
+      thrown = error as StoreAccessError;
+    }
+
+    expect(thrown?.code).toBe("DB_NOT_FOUND");
+    expect(existsSync(missing)).toBe(false);
+  });
+
+  it("follows a database that was replaced under it", async () => {
+    await getAppendStore().save(
+      buildRunRecord({ config: { id: "44444444-4444-4444-8444-444444444444" } }),
+    );
+
+    // The analyst deleted their history and the dashboard made a new one.
+    rmSync(dbPath, { force: true });
+    const replacement = new SqliteRunStore(dbPath);
+    replacement.close();
+
+    const record = buildRunRecord({
+      config: { id: "55555555-5555-4555-8555-555555555555" },
+    });
+    await getAppendStore().save(record);
+
+    expect(await getRunStore().get(record.id)).toEqual(record);
+    expect(
+      await getRunStore().get("44444444-4444-4444-8444-444444444444"),
+    ).toBeNull();
+  });
+
+  it("is closed by closeRunStore, alongside the read connection", async () => {
+    const store = getAppendStore();
+
+    closeRunStore();
+
+    await expect(
+      store.save(
+        buildRunRecord({ config: { id: "66666666-6666-4666-8666-666666666666" } }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("leaves the read store with no way to write", () => {
+    // The point of two connections: a read tool is handed an object that has
+    // no `save` to reach for, whatever the append store can do.
+    expect("save" in getRunStore()).toBe(false);
   });
 });

@@ -21,6 +21,7 @@
 import { z } from "zod";
 
 import type { RunSettings } from "./projections.js";
+import { STORE_ACCESS_ERROR_CODES } from "./runStoreAccess.js";
 
 import {
   ARCHITECTURE_TYPES,
@@ -156,6 +157,37 @@ export const LIST_RUNS_OUTPUT = {
 
 export const GET_RUN_OUTPUT = {
   run: runDetail,
+};
+
+/**
+ * Why a finished run is not in the analyst's history.
+ *
+ * Every way of failing to OPEN the database, plus one for failing to write to
+ * an open one. The open codes are reused rather than restated so that a client
+ * reading `warning.code` sees the same vocabulary it already sees in an
+ * `isError` result — `DB_LOCKED` in particular means the same thing in both
+ * places, and only the consequence differs.
+ */
+export const SAVE_WARNING_CODES = [
+  ...STORE_ACCESS_ERROR_CODES,
+  "SAVE_FAILED",
+] as const;
+
+export const RUN_ESTIMATE_OUTPUT = {
+  run: runSummary,
+  saved: z
+    .boolean()
+    .describe("Whether the run was appended to the dashboard's history."),
+  warning: z
+    .object({
+      code: z.enum(SAVE_WARNING_CODES),
+      message: z.string(),
+    })
+    .optional()
+    .describe(
+      "Present only when saved is false. The estimate itself still ran and " +
+        "`run` is its real result — this says why it is not in the history.",
+    ),
 };
 
 export const VALIDATE_CONFIG_OUTPUT = {

@@ -1,17 +1,29 @@
 /**
  * How the MCP server reaches the dashboard's run history — and how it is kept
- * from changing it.
+ * from changing anything it may not change.
  *
- * The store handed to tools is a `SqliteReadOnlyRunStore`, so the guarantee is
- * structural rather than a matter of discipline: SQLite refuses writes on the
- * connection, and the type has no write methods for a tool to call. Nothing
- * here constructs `SqliteRunStore`; migration stays the dashboard's job, per
- * the design's CLOSED-1 rule.
+ * There are two connections here, because there are two kinds of caller. Read
+ * tools get a `SqliteReadOnlyRunStore`: SQLite refuses writes on the
+ * connection and the type has no write methods, so "a read tool cannot write"
+ * is structural rather than a matter of discipline. `qre_run_estimate` gets a
+ * `SqliteAppendRunStore`, which can write exactly one statement and refuses to
+ * open a database at a schema it does not already know.
+ *
+ * Nothing here constructs `SqliteRunStore`. That is the whole of the original
+ * CLOSED-1 rule that survives verbatim: migration is the dashboard's job, and
+ * this process must never do it — so the module that migrates stays off the
+ * server's import graph entirely, which `importGraph.test.ts` holds.
  *
  * Where the database is comes from `dataDir.ts`: an explicit QRE_DB_PATH if one
  * is set, otherwise the location the dashboard published. This process cannot
  * ask Electron and must not guess — opening the wrong database would report an
  * analyst's history as empty, which is worse than refusing to start.
+ *
+ * The stat before every open is load-bearing for the append store in a way it
+ * is not for the read store: `new DatabaseSync(path)` without `readOnly`
+ * CREATES the file. Refusing a path nothing lives at, before constructing
+ * anything, is what keeps a mistyped QRE_DB_PATH from quietly becoming a second
+ * empty history.
  *
  * Messages returned from this module name the environment variable, never the
  * resolved path — a path is the analyst's filesystem layout, and it has no
@@ -20,6 +32,10 @@
 
 import { statSync } from "node:fs";
 import { resolveRunDatabasePath } from "../main/dataDir.js";
+import {
+  SqliteAppendRunStore,
+  type AppendRunStoreOptions,
+} from "../main/sqliteAppendRunStore.js";
 import {
   RunStoreSchemaMismatchError,
   SqliteReadOnlyRunStore,
@@ -150,7 +166,7 @@ function describeOpenFailure(error: unknown): StoreAccessError {
       // directory the process cannot write to fails the open outright.
       return createStoreAccessError(
         "DB_READONLY",
-        "The database could not be opened for reading because its directory is not writable. SQLite needs to create a temporary index file beside it.",
+        "The database could not be opened for reading or for writing because its directory is not writable. SQLite needs to create a temporary index file beside it.",
       );
     case SQLITE_CANTOPEN:
       return createStoreAccessError(
@@ -174,36 +190,17 @@ function describeOpenFailure(error: unknown): StoreAccessError {
  * got a server that reported the OLD runs for as long as it lived — every list
  * was answered from an inode nothing else could see any more.
  */
-interface CachedStore {
-  store: SqliteReadOnlyRunStore;
+interface CachedStore<T> {
+  store: T;
   path: string;
   device: number;
   inode: number;
 }
 
-let cached: CachedStore | null = null;
-
-/**
- * Connections this process has stopped using but must not close yet.
- *
- * `getRunStore()` is synchronous, but a handler holds the store it returned
- * across awaits — `listRuns` reads the keys, awaits, then reads the page — and
- * two requests that arrive in one stdin chunk interleave at microtask
- * granularity. So closing a replaced connection here closes the one another
- * handler is about to use: its next read throws `ERR_INVALID_STATE`, which
- * reaches the client as a generic `STORE_READ_FAILED` naming nothing.
- *
- * Retiring instead costs one descriptor on a read-only, idle connection, and
- * only when the database is moved, replaced, or migrated under a running
- * server. They are closed together at shutdown.
- */
-const retired = new Set<SqliteReadOnlyRunStore>();
-
-/** Stop using the cached connection without closing it. */
-function retireCachedStore(): void {
-  if (cached === null) return;
-  retired.add(cached.store);
-  cached = null;
+/** What both caches need of the thing they hold. */
+interface SchemaCheckedStore {
+  schemaVersion(): number;
+  close(): void;
 }
 
 function fileIdentity(path: string): { device: number; inode: number } | null {
@@ -216,7 +213,7 @@ function fileIdentity(path: string): { device: number; inode: number } | null {
 }
 
 function isSameFile(
-  entry: CachedStore,
+  entry: CachedStore<unknown>,
   path: string,
   identity: { device: number; inode: number },
 ): boolean {
@@ -250,7 +247,7 @@ type SchemaRecheck =
   | { kind: "busy" }
   | { kind: "broken" };
 
-function recheckSchema(store: SqliteReadOnlyRunStore): SchemaRecheck {
+function recheckSchema(store: SchemaCheckedStore): SchemaRecheck {
   let actual: number;
   try {
     actual = store.schemaVersion();
@@ -265,96 +262,184 @@ function recheckSchema(store: SqliteReadOnlyRunStore): SchemaRecheck {
 }
 
 /**
- * Get or create the read-only run store, cached per process but never trusted
- * blindly. Throws a typed StoreAccessError on every failure.
+ * One cached connection, re-verified on every call, and the discipline for
+ * replacing it.
  *
- * Each call re-resolves where the database should be and checks that the
- * cached connection is still looking at that file, at the schema this build
- * reads. Three things change under a long-lived server: the pointer file (the
- * dashboard moved its data), the file itself (the history was deleted and
- * recreated), and the schema (the dashboard migrated in place). A stat and a
- * pragma per tool call is the price of answering from the database the analyst
- * is actually looking at, and it is microseconds against a query.
+ * Retiring rather than closing is the part worth keeping in one place.
+ * `getRunStore()` is synchronous, but a handler holds the store it returned
+ * across awaits — `listRuns` reads the keys, awaits, then reads the page — and
+ * two requests that arrive in one stdin chunk interleave at microtask
+ * granularity. So closing a replaced connection here closes the one another
+ * handler is about to use: its next read throws `ERR_INVALID_STATE`, which
+ * reaches the client as a generic `STORE_READ_FAILED` naming nothing.
  *
- * What it does NOT do is treat not knowing as news. A pointer file that cannot
- * be read this instant, or a stat that fails, says nothing about where the
- * database went — so the open connection is left alone and only this call
- * fails. Discarding it meant a single unreadable `location.json` answered
- * `DB_NOT_CONFIGURED` ("Launch the QRE Dashboard once…") for a history that was
- * open and answering a moment earlier.
+ * Retiring instead costs one descriptor on an idle connection, and only when
+ * the database is moved, replaced, or migrated under a running server. They are
+ * closed together at shutdown.
+ */
+class StoreCache<T extends SchemaCheckedStore> {
+  private entry: CachedStore<T> | null = null;
+  private readonly retired = new Set<T>();
+
+  constructor(
+    private readonly open: (path: string) => T,
+    private readonly whatFailed: string,
+  ) {}
+
+  /**
+   * The store for the database the analyst is actually looking at.
+   *
+   * Each call re-resolves where the database should be and checks that the
+   * cached connection is still looking at that file, at the schema this build
+   * knows. Three things change under a long-lived server: the pointer file (the
+   * dashboard moved its data), the file itself (the history was deleted and
+   * recreated), and the schema (the dashboard migrated in place). A stat and a
+   * pragma per tool call is microseconds against a query.
+   *
+   * What it does NOT do is treat not knowing as news. A pointer file that
+   * cannot be read this instant, or a stat that fails, says nothing about where
+   * the database went — so the open connection is left alone and only this call
+   * fails. Discarding it meant a single unreadable `location.json` answered
+   * `DB_NOT_CONFIGURED` ("Launch the QRE Dashboard once…") for a history that
+   * was open and answering a moment earlier.
+   */
+  get(): T {
+    const dbPath = resolveRunDatabasePath();
+    if (!dbPath || dbPath.trim() === "") throw notConfigured();
+
+    // Before constructing anything: an append store's `DatabaseSync` would
+    // CREATE a file at a path nothing lives at.
+    const identity = fileIdentity(dbPath);
+    if (identity === null) throw notFound();
+
+    if (this.entry !== null && !isSameFile(this.entry, dbPath, identity)) {
+      this.retire();
+    }
+
+    if (this.entry !== null) {
+      const recheck = recheckSchema(this.entry.store);
+      switch (recheck.kind) {
+        case "current":
+          return this.entry.store;
+        case "busy":
+          // The dashboard is writing. The connection is fine; let the caller's
+          // own statement wait it out and report DB_LOCKED if it has to.
+          return this.entry.store;
+        case "mismatch": {
+          const { actual } = recheck;
+          this.retire();
+          throw describeOpenFailure(
+            new RunStoreSchemaMismatchError(actual, DATABASE_SCHEMA_VERSION),
+          );
+        }
+        case "broken":
+          this.retire();
+          break;
+      }
+    }
+
+    let store: T;
+    try {
+      store = this.open(dbPath);
+    } catch (error) {
+      logError(this.whatFailed, error);
+      throw describeOpenFailure(error);
+    }
+
+    this.entry = { store, path: dbPath, ...identity };
+    return store;
+  }
+
+  /** Stop using the cached connection without closing it. */
+  private retire(): void {
+    if (this.entry === null) return;
+    this.retired.add(this.entry.store);
+    this.entry = null;
+  }
+
+  /** Close every connection this cache opened — the current one and any retired. */
+  closeAll(): void {
+    const open = [...this.retired, ...(this.entry === null ? [] : [this.entry.store])];
+    this.retired.clear();
+    this.entry = null;
+
+    for (const store of open) {
+      try {
+        store.close();
+      } catch (error) {
+        logError("Error closing run store", error);
+      }
+    }
+  }
+}
+
+const readCache = new StoreCache(
+  (path) => new SqliteReadOnlyRunStore(path),
+  "Failed to open the run store",
+);
+
+/**
+ * Options the append store is constructed with. A test overrides them through
+ * `resetRunStoreForTests` — the busy timeout and the sleep especially, because
+ * proving the retry happened must not mean waiting out a real five seconds.
+ */
+let appendOptions: AppendRunStoreOptions = {};
+
+let appendCache = new StoreCache(
+  (path) => new SqliteAppendRunStore(path, appendOptions),
+  "Failed to open the run store for appending",
+);
+
+/**
+ * The read-only store the read tools use. Throws a typed StoreAccessError on
+ * every failure.
  *
  * The schema version is verified on the connection the caller then uses, so
  * there is no window in which the dashboard migrates between the check and the
  * first read.
  */
 export function getRunStore(): SqliteReadOnlyRunStore {
-  const dbPath = resolveRunDatabasePath();
-  if (!dbPath || dbPath.trim() === "") throw notConfigured();
-
-  const identity = fileIdentity(dbPath);
-  if (identity === null) throw notFound();
-
-  if (cached !== null && !isSameFile(cached, dbPath, identity)) {
-    retireCachedStore();
-  }
-
-  if (cached !== null) {
-    const recheck = recheckSchema(cached.store);
-    switch (recheck.kind) {
-      case "current":
-        return cached.store;
-      case "busy":
-        // The dashboard is writing. The connection is fine; let the caller's
-        // own read wait it out and report DB_LOCKED if it has to.
-        return cached.store;
-      case "mismatch":
-        retireCachedStore();
-        throw describeOpenFailure(
-          new RunStoreSchemaMismatchError(recheck.actual, DATABASE_SCHEMA_VERSION),
-        );
-      case "broken":
-        retireCachedStore();
-        break;
-    }
-  }
-
-  let store: SqliteReadOnlyRunStore;
-  try {
-    store = new SqliteReadOnlyRunStore(dbPath);
-  } catch (error) {
-    logError("Failed to open the run store", error);
-    throw describeOpenFailure(error);
-  }
-
-  cached = { store, path: dbPath, ...identity };
-  return store;
+  return readCache.get();
 }
 
 /**
- * Close every connection this process opened — the current one and any it
- * retired. Called during shutdown.
+ * The append store `qre_run_estimate` saves through. Throws the same typed
+ * StoreAccessError, so a caller forwards it the same way.
+ *
+ * A SECOND connection rather than a read-write one shared with the read tools:
+ * a read tool must not be able to reach a `save` at all, and the only way to
+ * keep that true under later edits is for the object it is handed not to have
+ * one.
+ */
+export function getAppendStore(): SqliteAppendRunStore {
+  return appendCache.get();
+}
+
+/**
+ * Close every connection this process opened, of either kind. Called during
+ * shutdown.
  */
 export function closeRunStore(): void {
-  const open = [...retired, ...(cached === null ? [] : [cached.store])];
-  retired.clear();
-  cached = null;
-
-  for (const store of open) {
-    try {
-      store.close();
-    } catch (error) {
-      logError("Error closing run store", error);
-    }
-  }
+  readCache.closeAll();
+  appendCache.closeAll();
 }
 
 /**
- * Drop the cached store between tests.
+ * Drop the cached stores between tests.
  *
- * This closes the connection rather than just forgetting it: a test that
+ * This closes the connections rather than just forgetting them: a test that
  * abandons an open handle and then deletes its temporary directory leaks a
  * descriptor on POSIX and fails outright on Windows.
  */
-export function resetRunStoreForTests(): void {
+export function resetRunStoreForTests(
+  options: { appendOptions?: AppendRunStoreOptions } = {},
+): void {
   closeRunStore();
+  appendOptions = options.appendOptions ?? {};
+  // A fresh cache, so an option change cannot be shadowed by a connection the
+  // previous options opened.
+  appendCache = new StoreCache(
+    (path) => new SqliteAppendRunStore(path, appendOptions),
+    "Failed to open the run store for appending",
+  );
 }

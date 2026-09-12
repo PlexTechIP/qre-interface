@@ -7,8 +7,10 @@ import {
   boundedText,
   capText,
   escapeControlChars,
+  readToolFailure,
   redactPaths,
   setOwnProperty,
+  toolFailure,
   toolSuccess,
 } from "./toolResult.js";
 
@@ -225,5 +227,42 @@ describe("toolSuccess over a map with a key named __proto__", () => {
       type: "text",
       text: expect.stringContaining('"__proto__"'),
     });
+  });
+});
+
+describe("toolFailure with details", () => {
+  it("sanitises the details as thoroughly as the message", () => {
+    const result = toolFailure("VALIDATION_FAILED", "The draft would not run.", {
+      errors: [
+        {
+          field: "draft",
+          message: `could not read /Users/jane/runs/history.sqlite`,
+        },
+      ],
+    });
+
+    const failure = readToolFailure(result);
+    const errors = (failure?.details as { errors: { message: string }[] }).errors;
+    expect(errors[0]?.message).toContain("<path>");
+    expect(errors[0]?.message).not.toContain("jane");
+  });
+
+  it("omits the key entirely when there are no details", () => {
+    const result = toolFailure("DB_LOCKED", "Try again after the current run.");
+
+    const [block] = result.content;
+    if (block?.type !== "text") throw new Error("expected a text block");
+    expect(JSON.parse(block.text)).toEqual({
+      code: "DB_LOCKED",
+      message: "Try again after the current run.",
+    });
+    expect(readToolFailure(result)).not.toHaveProperty("details");
+  });
+
+  it("still carries no structuredContent, which is what a real client validates", () => {
+    const result = toolFailure("VALIDATION_FAILED", "No.", { errors: [] });
+
+    expect(result.structuredContent).toBeUndefined();
+    expect(result.isError).toBe(true);
   });
 });

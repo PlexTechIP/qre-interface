@@ -11,6 +11,7 @@ import { createMcpServer } from "./createServer.js";
 import { logInfo, logError } from "./logger.js";
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from "./serverInfo.js";
 import { closeRunStore } from "./runStoreAccess.js";
+import { isRunToolEnabled, stopEngineForShutdown } from "./engineAccess.js";
 import { flushStream, shutdown } from "./shutdown.js";
 
 let serverInstance: ReturnType<typeof createMcpServer> | null = null;
@@ -29,6 +30,9 @@ async function main(): Promise<void> {
   logInfo("mcp server ready", {
     name: MCP_SERVER_NAME,
     version: MCP_SERVER_VERSION,
+    // Whether this process can act is the first thing anyone debugging a
+    // "why won't it run" report needs, and stderr is where they will look.
+    runTool: isRunToolEnabled(),
   });
 }
 
@@ -37,6 +41,9 @@ function shutdownDependencies() {
   return {
     server: serverInstance,
     transport: transportInstance,
+    // First in the sequence: a request holding a two-minute Python child would
+    // otherwise outlast the shutdown grace period and orphan it.
+    stopEngine: stopEngineForShutdown,
     closeStore: closeRunStore,
     flush: () => flushStream(protocolStream),
     exit: (code: number) => process.exit(code),

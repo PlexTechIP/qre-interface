@@ -1,13 +1,18 @@
 /**
  * A run store that can only read.
  *
- * This exists because the MCP server is specified never to change the
- * dashboard's database — the design's CLOSED-1 rule keeps the dashboard as the
- * sole migration owner. Enforcing that by convention ("just don't call save")
- * leaves the guarantee one forgetful pull request away from being false, so it
- * is enforced structurally instead: the connection is opened `readOnly`, which
- * makes SQLite itself reject every write including the journal-mode pragma and
- * any migration DDL, and the class has no write methods to reach for.
+ * This exists because the MCP server's READ tools are specified never to change
+ * the dashboard's database. Enforcing that by convention ("just don't call
+ * save") leaves the guarantee one forgetful pull request away from being false,
+ * so it is enforced structurally instead: the connection is opened `readOnly`,
+ * which makes SQLite itself reject every write including the journal-mode
+ * pragma and any migration DDL, and the class has no write methods to reach for.
+ *
+ * The server can now append, through `SqliteAppendRunStore` on its own separate
+ * connection — which is precisely why this one stays as it is. CLOSED-1 is
+ * narrower than it was (the dashboard is the sole MIGRATION owner, not the sole
+ * writer), and keeping the two capabilities in two objects is what makes "a read
+ * tool cannot write" a fact about the type rather than a promise about the code.
  */
 
 import { DatabaseSync } from "node:sqlite";

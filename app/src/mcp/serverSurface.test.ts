@@ -14,7 +14,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import generationSchema from "../shared/contracts/runconfig-generation.schema.json" with { type: "json" };
-import { RUN_DRAFT_SCHEMA_URI, createMcpServer } from "./createServer.js";
+import {
+  READ_ONLY_SENTENCE,
+  RUN_DRAFT_SCHEMA_URI,
+  RUN_SENTENCE,
+  createMcpServer,
+} from "./createServer.js";
 import { resetRunStoreForTests } from "./runStoreAccess.js";
 import { withNoPublishedDatabase } from "./testing/noPublishedDatabase.js";
 
@@ -25,7 +30,10 @@ beforeEach(async () => {
   restoreEnvironment = withNoPublishedDatabase();
   resetRunStoreForTests();
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createMcpServer().connect(serverTransport);
+  // `env: {}` rather than the process's own: a developer who exported
+  // QRE_MCP_ALLOW_RUNS=1 to try the run tool would otherwise silently flip
+  // every assertion in this file about the default surface.
+  await createMcpServer({ env: {} }).connect(serverTransport);
   client = new Client({ name: "surface-test", version: "0.0.0" });
   await client.connect(clientTransport);
   await client.listTools();
@@ -47,7 +55,7 @@ afterEach(async () => {
 });
 
 describe("what the server says about itself", () => {
-  it("tells the client where to start and that nothing here can act", () => {
+  it("tells the client where to start and whether anything here can act", () => {
     const instructions = client.getInstructions();
 
     expect(instructions).toMatch(/qre_list_runs/);
@@ -76,5 +84,58 @@ describe("what the server says about itself", () => {
 
     expect(validate?.description).toMatch(/Every top-level key is required/);
     expect(validate?.description).toContain(RUN_DRAFT_SCHEMA_URI);
+  });
+});
+
+describe("the run tool's registration", () => {
+  /** A second client, against a server built with whatever environment. */
+  async function connect(env: NodeJS.ProcessEnv) {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await createMcpServer({ env }).connect(serverTransport);
+    const connected = new Client({ name: "surface-test", version: "0.0.0" });
+    await connected.connect(clientTransport);
+    return connected;
+  }
+
+  it("is not listed at all without the opt-in", async () => {
+    const listed = await client.listTools();
+
+    expect(listed.tools.map((tool) => tool.name)).not.toContain("qre_run_estimate");
+  });
+
+  it("is listed, and says it is not read-only, when the analyst enabled it", async () => {
+    const enabled = await connect({ QRE_MCP_ALLOW_RUNS: "1" });
+    try {
+      const { tools } = await enabled.listTools();
+      const run = tools.find((tool) => tool.name === "qre_run_estimate");
+
+      expect(run).toBeDefined();
+      expect(run?.annotations?.readOnlyHint).toBe(false);
+      // An append-only tool: the client should not warn about data loss.
+      expect(run?.annotations?.destructiveHint).toBe(false);
+      expect(run?.description).toMatch(/DRAFT_INVALID/);
+      expect(run?.description).toMatch(/RUN_BUSY/);
+    } finally {
+      await enabled.close();
+    }
+  });
+
+  it("changes what the server says it can do, in both directions", async () => {
+    expect(client.getInstructions()).toContain(READ_ONLY_SENTENCE);
+    expect(client.getInstructions()).not.toContain("qre_run_estimate");
+
+    const enabled = await connect({ QRE_MCP_ALLOW_RUNS: "1" });
+    try {
+      const instructions = enabled.getInstructions();
+      expect(instructions).toContain(RUN_SENTENCE);
+      // The claim that must not survive: a server that can run an estimate has
+      // no business telling a model that nothing here runs one.
+      expect(instructions).not.toContain(READ_ONLY_SENTENCE);
+      expect(instructions).not.toMatch(/^Read-only access/);
+      // Still true, and still worth saying in the same breath.
+      expect(instructions).toMatch(/no tool that deletes or edits a run/);
+    } finally {
+      await enabled.close();
+    }
   });
 });

@@ -22,16 +22,45 @@ import { homedir } from "node:os";
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { logError } from "./logger.js";
-import { isStoreAccessError, type StoreAccessErrorCode } from "./runStoreAccess.js";
+import { STORE_ACCESS_ERROR_CODES, isStoreAccessError } from "./runStoreAccess.js";
 
-/** Allowlisted error codes for MCP tool failures. */
-export type ToolErrorCode =
-  | StoreAccessErrorCode
-  | "STORE_READ_FAILED"
-  | "VALIDATION_FAILED"
-  | "RUN_NOT_FOUND"
-  | "INVALID_CURSOR"
-  | "DRAFT_UNSUPPORTED";
+/**
+ * Allowlisted error codes for MCP tool failures.
+ *
+ * A VALUE rather than a bare union, so that a code arriving as a string — out
+ * of a serialised failure, or out of a log line — can be narrowed back to the
+ * union instead of cast into it. A cast there is not a check: it silently
+ * admits whatever the string happened to be, which is exactly the class of
+ * mistake this closed set exists to prevent.
+ *
+ * There is deliberately no `RUNS_DISABLED`. `qre_run_estimate` is not
+ * registered when the environment opt-in is absent, so a client never has a
+ * call that could be answered with it — a code for an unreachable state is a
+ * code a handler grows a branch for.
+ */
+export const TOOL_ERROR_CODES = [
+  ...STORE_ACCESS_ERROR_CODES,
+  "STORE_READ_FAILED",
+  "VALIDATION_FAILED",
+  "RUN_NOT_FOUND",
+  "INVALID_CURSOR",
+  "DRAFT_UNSUPPORTED",
+  "ENGINE_NOT_CONFIGURED",
+  "RUN_BUSY",
+  "RUN_BUDGET_EXCEEDED",
+  "DRAFT_INVALID",
+  "RUN_FAILED",
+] as const;
+
+export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];
+
+/** Narrow a string back to the closed set, for text that crossed a boundary. */
+export function isToolErrorCode(value: unknown): value is ToolErrorCode {
+  return (
+    typeof value === "string" &&
+    (TOOL_ERROR_CODES as readonly string[]).includes(value)
+  );
+}
 
 /**
  * Cap a string to a maximum number of Unicode code points.
@@ -236,10 +265,25 @@ function sanitize<T>(value: T): T {
  * `errorPaths.test.ts` drives each of those codes through a real client that
  * has listed tools, which is what makes this stay true.
  */
-export function toolFailure(code: ToolErrorCode, message: string): CallToolResult {
+export function toolFailure(
+  code: ToolErrorCode,
+  message: string,
+  details?: unknown,
+): CallToolResult {
   const safeMessage = sanitize(message);
+  // `details` travels in the same text block and through the same sanitiser, so
+  // a structured refusal cannot become the one place a path or a control
+  // character leaves the server. It is for machine-readable specifics the
+  // message cannot carry — the field list behind a DRAFT_INVALID, which is what
+  // an agent needs to fix the draft and try again. Absent when undefined, so a
+  // failure that has nothing to add still serialises to the shape every
+  // existing reader expects.
+  const body =
+    details === undefined
+      ? { code, message: safeMessage }
+      : { code, message: safeMessage, details: sanitize(details) };
   return {
-    content: [{ type: "text", text: JSON.stringify({ code, message: safeMessage }) }],
+    content: [{ type: "text", text: JSON.stringify(body) }],
     isError: true,
   };
 }
@@ -252,16 +296,22 @@ export function toolFailure(code: ToolErrorCode, message: string): CallToolResul
  */
 export function readToolFailure(
   result: CallToolResult,
-): { code: string; message: string } | null {
+): { code: string; message: string; details?: unknown } | null {
   if (!result.isError) return null;
   const first = result.content?.[0];
   if (!first || first.type !== "text") return null;
   try {
-    const parsed = JSON.parse(first.text) as { code?: unknown; message?: unknown };
+    const parsed = JSON.parse(first.text) as {
+      code?: unknown;
+      message?: unknown;
+      details?: unknown;
+    };
     if (typeof parsed.code !== "string" || typeof parsed.message !== "string") {
       return null;
     }
-    return { code: parsed.code, message: parsed.message };
+    return "details" in parsed
+      ? { code: parsed.code, message: parsed.message, details: parsed.details }
+      : { code: parsed.code, message: parsed.message };
   } catch {
     return null;
   }

@@ -62,9 +62,11 @@ function everyString(value: unknown, found: string[] = []): string[] {
  * exactly what these tests did, while every error path was failing for real
  * clients with `-32602`.
  */
-async function connectedClient(): Promise<Client> {
+async function connectedClient(env: NodeJS.ProcessEnv = {}): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createMcpServer().connect(serverTransport);
+  // `env: {}` by default: a developer who exported QRE_MCP_ALLOW_RUNS=1 must
+  // not change which surface these tests are driving.
+  await createMcpServer({ env }).connect(serverTransport);
   const client = new Client({ name: "boundary-test", version: "0.0.0" });
   await client.connect(clientTransport);
   await client.listTools();
@@ -197,6 +199,62 @@ describe("the tool boundary", () => {
     for (const call of CALLS) {
       const result = await client.callTool(call);
       expect(result, `${call.name} produced no result`).toBeDefined();
+    }
+  });
+});
+
+describe("the tool that acts, at the same boundary", () => {
+  it("escapes a hostile name on the way out and stores it verbatim", async () => {
+    const { setEstimatorForTests, resetEngineAccessForTests } = await import(
+      "./engineAccess.js"
+    );
+    const { fakeEstimator } = await import("../shared/testing/fakeEstimator.js");
+    const { buildRunConfig, buildRunResult } = await import(
+      "../shared/testing/builders.js"
+    );
+    const { generatedDraftFromFormState } = await import(
+      "../renderer/state/generatedDraft.js"
+    );
+    const { formStateFromRunConfig } = await import("../renderer/state/formState.js");
+    const { SqliteReadOnlyRunStore } = await import(
+      "../main/sqliteReadOnlyRunStore.js"
+    );
+
+    resetEngineAccessForTests();
+    setEstimatorForTests(fakeEstimator(buildRunResult()));
+
+    // Control characters AND a home-directory path: the two things a name must
+    // never carry into an agent's context.
+    const name = `sweep${ESC}[2J${BEL} at /Users/analyst/qre/history`;
+    const draft = {
+      ...generatedDraftFromFormState(formStateFromRunConfig(buildRunConfig())),
+      name,
+    };
+
+    const client = await connectedClient({ QRE_MCP_ALLOW_RUNS: "1" });
+    try {
+      const result = (await client.callTool({
+        name: "qre_run_estimate",
+        arguments: { draft },
+      })) as unknown as { structuredContent: { run: { id: string; name: string } } };
+
+      const returned = result.structuredContent.run.name;
+      expect(returned).not.toMatch(CONTROL_CHARACTER);
+      expect(returned).not.toContain("/Users/analyst");
+
+      const store = new SqliteReadOnlyRunStore(dbPath);
+      try {
+        // The dashboard shows the analyst what they typed; only the wire is
+        // sanitised.
+        expect((await store.get(result.structuredContent.run.id))?.config.name).toBe(
+          name,
+        );
+      } finally {
+        store.close();
+      }
+    } finally {
+      await client.close();
+      resetEngineAccessForTests();
     }
   });
 });

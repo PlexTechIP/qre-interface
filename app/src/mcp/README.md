@@ -1,15 +1,23 @@
 # The MCP server
 
-A read-only [Model Context Protocol](https://modelcontextprotocol.io) server
-over the dashboard's run history. It lets an agent — Claude Code, Claude
-Desktop, or anything else that speaks MCP — answer questions about runs the
-analyst has already saved, and check a proposed configuration before the analyst
-runs it.
+A [Model Context Protocol](https://modelcontextprotocol.io) server over the
+dashboard's run history. It lets an agent — Claude Code, Claude Desktop, or
+anything else that speaks MCP — answer questions about runs the analyst has
+already saved, and check a proposed configuration before the analyst runs it.
 
-It reads. It does not run estimates, does not save runs, and cannot modify the
-database: the connection is opened `readOnly`, so SQLite itself refuses every
-write, and the store handed to tools has no write methods to call. Migration
-stays the dashboard's job.
+**By default it only reads.** The five read tools are handed a connection opened
+`readOnly`, so SQLite itself refuses every write, and the object they hold has
+no write methods to call.
+
+**With the Settings toggle on**, one more tool is registered —
+`qre_run_estimate` — which runs the Python engine on this machine and appends
+the record to the analyst's history. It is registered only when
+`QRE_MCP_ALLOW_RUNS=1` is in the server's environment, which is set where the
+MCP client is configured; nothing an agent sends over stdio can turn it on. See
+[Running estimates](#running-estimates).
+
+Migration stays the dashboard's job either way: nothing here can create a
+database, change a schema, delete a run, or edit one.
 
 ## Connect an agent
 
@@ -136,11 +144,15 @@ The two causes seen so far:
 | `qre_get_run` | `id` | One run in full: the settings it was configured with, timings, engine version, failure details, and one representative frontier point with every metric. |
 | `qre_draft_from_run` | `id` | The run as an editable draft, for "what if we changed X?". |
 | `qre_validate_config` | `draft` | Whether that draft would be accepted, and what is wrong if not. |
+| `qre_run_estimate` | `draft` | **Only with agent runs enabled.** Runs that draft on this machine, saves it, and returns the run. See below. |
 
 Two things sit beside the tools. The server sends `instructions` at
-`initialize` — which tool to start with, that nothing here can act, that run
-names are data — because that is the one thing five descriptions cannot say
-from inside themselves. And it serves one resource,
+`initialize` — which tool to start with, whether anything here can act, that run
+names are data — because that is the one thing the descriptions cannot say from
+inside themselves. The "can act" sentence is one of two: without the opt-in it
+says nothing here runs an estimate or changes the database; with it, it says
+`qre_run_estimate` runs and saves one because the analyst enabled it, and that
+there is still no tool that deletes or edits a run. And it serves one resource,
 `qre://contracts/run-draft.schema.json`: the committed generation schema,
 re-serialised from the very artifact the handler validates against, which is
 what a draft must satisfy. `qre_validate_config`'s input
@@ -198,6 +210,107 @@ time, so the fewest-qubits point is generally the slowest; the two ends are
 reported as whole points for that reason, never as an independent minimum per
 measurement, which would describe a configuration the engine never returned.
 
+## Running estimates
+
+Off by default. The tool is **registered only when `QRE_MCP_ALLOW_RUNS=1` is in
+the server's environment** — not refused inside the handler, not gated on a
+prompt: with the variable absent, `qre_run_estimate` is not in `tools/list` at
+all, so a model never sees a tool it would be turned down for. That is also why
+there is no `RUNS_DISABLED` error code; the state it would name is unreachable.
+
+The variable is set where the MCP client is configured — a file on the analyst's
+machine that the model cannot reach and the server cannot change. The
+dashboard's **Settings → MCP Server → "Let connected agents run estimates"**
+checkbox is a way of *producing* that configuration, not a second switch:
+ticking it changes the block you copy, and a client reads its environment only
+when it starts the server. **After changing it, re-run the add command (or
+re-paste the block) and restart the client.**
+
+From a checkout:
+
+```sh
+npm run mcp:config -- --allow-runs
+```
+
+### What a call does
+
+1. **Validates the draft** through exactly the walk `qre_validate_config`
+   reports on — `prepareDraft.ts`, shared by both tools so they cannot disagree.
+   A draft that would not run comes back as `DRAFT_INVALID` with that tool's
+   field list in `details.errors`, and nothing is started. This includes the
+   round-trip backstop: a draft the adapters would silently *change* is refused
+   rather than run as something else.
+2. **Resolves the interpreter** (`QRE_PYTHON_BIN`, or the venv beside the engine).
+3. **Opens the history for writing** — a preflight, because spending two minutes
+   on a database that will refuse the row is the one failure this can see coming.
+4. **Takes a slot**, then runs the engine and saves.
+
+Identity is minted by the server at execution: a fresh v4 `id` and `createdAt`,
+never taken from the draft. Provenance is `{ authoredBy: "model_assisted" }`
+with **no `model` key** — the server knows which *client* is calling
+("claude-code", "codex"), never which model is behind it, and a guess would be a
+plausible-looking wrong answer in a field analysts filter on.
+
+### Budgets and the queue
+
+One engine subprocess at a time, with a wait-queue exactly **one** deep: a call
+that arrives during a run waits for it; a third is refused with `RUN_BUSY`. On
+top of that, **5 runs per rolling minute** and **50 per server session**
+(`RUN_BUDGET_EXCEEDED`, which says which limit was hit). A refusal never costs
+budget — otherwise a client retrying at 1 Hz would hold the window permanently
+full.
+
+The call **blocks** for as long as the engine takes: usually seconds, up to
+about two minutes. Claude Code auto-backgrounds a tool call at two minutes;
+Codex defaults to a 60-second tool timeout, so the emitted TOML always carries
+`tool_timeout_sec = 600`.
+
+### `saved: false`
+
+A finished estimate is never discarded. If the append fails, the result comes
+back anyway with `saved: false` and a `warning` saying why — `DB_LOCKED` when
+the dashboard held the write lock past the busy timeout and two retries, one of
+the other `DB_*` codes when the database could not be opened, `SAVE_FAILED`
+otherwise. **The reply is then the only copy of that estimate**, so keep it or
+re-run.
+
+Do not confuse it with a failed *estimate*, which is an ordinary result with
+`run.status: "failed"` and `saved: true` — the dashboard saves failures too, and
+`qre_get_run` explains them.
+
+### The invocation log
+
+Every call — including refusals, which History cannot show — appends one JSON
+line to `mcp-invocations.jsonl`, beside the run database:
+
+```json
+{"ts":"…","tool":"qre_run_estimate","client":{"name":"claude-code","version":"2.0.0"},
+ "gate":"env_opt_in","consent":"not_elicited","argsDigest":"sha256:…",
+ "runId":"…","status":"succeeded","saved":true,"durationMs":41230}
+```
+
+The draft itself is never written down, only a digest of it — same reasoning as
+`RunProvenance` never carrying the prompt. The file rotates at 5 MiB, keeping
+`.1`, `.2`, `.3`. Writing it is best effort: an unwritable directory is logged
+to stderr and never fails a run that succeeded.
+
+### What is still not possible
+
+No tool deletes a run, edits one, or runs an uploaded program (a draft cannot
+name a local file). The append store opens read-write for one `INSERT` and
+**refuses to open a database at a schema it does not already know** — it
+contains no DDL, no `journal_mode` pragma and no `PRAGMA user_version =`, which
+`sqliteAppendRunStore.test.ts` checks by reading the source. Migration is still
+only ever the dashboard's.
+
+### The dashboard notices
+
+Main polls `PRAGMA data_version` every two seconds and pushes `store:changed` to
+every window; History reloads quietly, without flashing its loading state.
+`data_version` changes when *another* connection commits and never when this one
+does, which is exactly the asymmetry wanted — the dashboard's own saves already
+update the UI through the path that made them.
+
 ## When a tool fails
 
 A failure comes back as an MCP error result whose text block is
@@ -216,6 +329,15 @@ A failure comes back as an MCP error result whose text block is
 | `DRAFT_UNSUPPORTED` | This run cannot become an editable draft. The message names the setting responsible — an uploaded program, a `dynamicMemoryCompute` stage, a Majorana `tErrorRate`. Naming it matters: while the reason was withheld, an agent asked why simply inferred one, and reported a confident wrong cause. |
 | `STORE_READ_FAILED` | A read failed, or a stored record is corrupt. |
 | `VALIDATION_FAILED` | Validation itself failed. An *invalid draft* is not this — that is a successful result carrying `valid: false`. |
+| `DRAFT_INVALID` | `qre_run_estimate` only. The draft would not run, so nothing was started. `details.errors` is exactly `qre_validate_config`'s field list. |
+| `ENGINE_NOT_CONFIGURED` | No usable Python interpreter. Set `QRE_PYTHON_BIN`; the dashboard writes it into the emitted block. |
+| `RUN_BUSY` | An estimate is running and another is already waiting. Try again after the current one. |
+| `RUN_BUDGET_EXCEEDED` | 5 runs a minute, or 50 per server session. The message says which; the session budget resets only when the client restarts the server. |
+| `RUN_FAILED` | The tool itself failed. A failed *estimate* is not this — that is a normal result with `run.status: "failed"`. |
+
+`DB_LOCKED` also appears as a `warning.code` on a **successful** `qre_run_estimate`
+result, where it means something different: the estimate ran, and only the save
+failed. See below.
 
 Failures carry no `structuredContent`, deliberately: each tool's declared
 `outputSchema` describes its success payload, and the SDK's client validates
@@ -255,15 +377,17 @@ fail there rather than in an analyst's install.
 1. **There is no packaging tooling at all** — no electron-builder, no
    electron-forge. Week 6 excludes it deliberately, so none of the above has
    been exercised against a real `.app`.
-2. **`mcp:config` cannot run in a packaged app.** It resolves paths relative to
-   `src/mcp/`, which is not shipped. The design's answer is the right one: the
-   dashboard emits the config block itself, from Settings, because it is the only
-   process that knows its own binary path, its resources path, and its database
-   path. That feature does not exist yet.
+2. ~~**`mcp:config` cannot run in a packaged app.**~~ **Done.** It resolves
+   paths relative to `src/mcp/`, which is not shipped — so the dashboard emits
+   the block itself, from **Settings → MCP Server**, because it is the only
+   process that knows its own binary path, its resources path, its database
+   path, and the interpreter it resolved for the engine. `mcpSetup.ts` builds
+   it; `mcp:config` remains the developer's path from a checkout.
 3. **An update moves the paths.** A config block naming a versioned install
    directory goes stale on upgrade, and the failure looks like
-   `CONNECTION_CLOSED`. Whatever emits the block should be re-runnable, and the
-   docs should say to re-run it after an update.
+   `CONNECTION_CLOSED`. The Settings panel is re-runnable, and says to copy the
+   block again after an update — **and after toggling agent runs**, since a
+   client reads its environment only at spawn.
 
 ## Performance
 
@@ -308,7 +432,13 @@ Two structural rules are held by tests rather than by convention:
 - **Nothing on the server's import graph may reach Electron, the DOM, or
   `process.stdout`.** `importGraph.test.ts` walks from `server.ts` and enforces
   an explicit allowlist of what it may import from outside `src/mcp/` and
-  `src/shared/`. Adding a line to that allowlist is meant to be argued for.
+  `src/shared/`. Adding a line to that allowlist is meant to be argued for. It
+  now includes the seven engine-adapter modules between `QreEngine.run` and a
+  Python subprocess, and the append store — none of which import Electron or
+  touch a DOM. `sqliteRunStore.ts` (it migrates) and `databaseFile.ts` (it
+  creates directories) are still forbidden, and that is asserted **directly**
+  rather than by their absence from the allowlist: an allowlist is what someone
+  edits to make the test go green.
 - **stdout belongs to the protocol.** `bootstrap.ts` installs a guard as the
   first import in `server.ts` and diverts every other write to stderr, because
   one stray `console.log` corrupts the JSON-RPC stream. All logging goes through
