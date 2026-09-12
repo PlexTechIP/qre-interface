@@ -16,7 +16,7 @@ Built through a **PlexTech × Microsoft** collaboration.
 * **Comparison** — select saved runs and compare results across architectures, error-correction schemes, and other configurations using tables and charts.
 * **Markdown export** — export individual runs or comparison sets as Markdown for reports and further analysis.
 * **Optional AI assistant** — describe an estimate in plain language and use a supported model to draft the configuration. Users provide their own API key, which is stored locally and only sent to the selected provider when making a request.
-* **MCP server** — a read-only Model Context Protocol server exposes saved run history to external agents for analysis and review.
+* **MCP server** — a Model Context Protocol server exposes saved run history to external agents for analysis and review and, when enabled, lets them run estimates.
 * **Offline and reproducible** — core estimation workflows work without a network connection, and each run records the QRE engine version used to produce it.
 
 ## Who it's for
@@ -102,7 +102,7 @@ npm run test:engine
 
 ## Connecting an agent (MCP)
 
-QRE Dashboard includes a read-only MCP server that gives external agents access to saved run history. This allows an agent to review previous estimates, answer questions about them, and inspect configurations before new runs are submitted.
+QRE Dashboard includes an MCP server that gives external agents access to saved run history. This allows an agent to review previous estimates, answer questions about them, and inspect configurations before new runs are submitted. Access is read-only unless you enable agent runs (below).
 
 Build the MCP server and generate its client configuration with:
 
@@ -113,6 +113,8 @@ npm run mcp:config
 ```
 
 The command prints a ready-to-use `claude mcp add` command and a Claude Desktop configuration block with paths resolved for the current machine.
+
+To let a connected agent also **run** estimates on this machine and save them to your history, add `--allow-runs` (or tick "Let connected agents run estimates" under Settings → MCP Server in the app, then copy the block again). A client reads these settings only when it starts the server, so re-add the server and restart the client after changing them.
 
 See [`app/src/mcp/README.md`](app/src/mcp/README.md) for the available tools, error codes, and database configuration.
 
@@ -146,7 +148,7 @@ npm run test:engine
 │   └── src/
 │       ├── renderer/     # React UI: configuration, results, history, comparison, AI
 │       ├── main/         # main process: estimator, run store, exporter, IPC
-│       ├── mcp/          # read-only MCP server over run history
+│       ├── mcp/          # MCP server over run history (read tools; runs when enabled)
 │       └── shared/       # types shared across the IPC boundary
 ├── docs/                 # project documentation
 ├── spikes/               # exploratory prototypes
