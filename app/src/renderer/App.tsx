@@ -32,6 +32,16 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
 const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
+/**
+ * Whether the MCP block Settings emits lets connected agents run estimates.
+ *
+ * A renderer preference rather than anything in main, because that is honestly
+ * all it is: ticking it changes the text an analyst copies out of Settings, and
+ * takes effect only when their MCP client next starts the server with it.
+ * Storing it in main would create a second place to answer "are agent runs on?"
+ * whose answer could disagree with the client config that actually decides.
+ */
+const MCP_ALLOW_RUNS_STORAGE_KEY = "qre-mcp-allow-runs";
 
 type Page = "config" | "agent" | "results" | "history" | "comparison";
 
@@ -56,6 +66,15 @@ const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
  */
 function getInitialThemePreference(): ThemePreference {
   return readStoredPreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+}
+
+/** Off unless the analyst has explicitly turned it on. Fails closed, like every other read of this. */
+function getInitialAllowAgentRuns(): boolean {
+  try {
+    return window.localStorage.getItem(MCP_ALLOW_RUNS_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function getInitialAgentSelection(): { provider: ProviderId; model: string } {
@@ -143,6 +162,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const resolvedAgentService = resolveAgentService(agentService);
   const [themePreference, setThemePreference] = useState<ThemePreference>(
     getInitialThemePreference,
+  );
+  const [allowAgentRuns, setAllowAgentRuns] = useState<boolean>(
+    getInitialAllowAgentRuns,
   );
   const [systemDark, setSystemDark] = useState<boolean>(systemPrefersDark);
   const theme = resolveTheme(themePreference, systemDark);
@@ -304,6 +326,25 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
       JSON.stringify(agentSelection),
     );
   }, [agentSelection]);
+
+  useEffect(() => {
+    try {
+      // "0" rather than removing the key: an explicit off is what an analyst
+      // who turned this on and then off again means, and it reads back the
+      // same.
+      //
+      // Guarded like the matching read: `localStorage` throws outright where
+      // site data is blocked, and an exception raised in an effect unmounts the
+      // whole app over a preference that did not persist.
+      window.localStorage.setItem(
+        MCP_ALLOW_RUNS_STORAGE_KEY,
+        allowAgentRuns ? "1" : "0",
+      );
+    } catch {
+      // Not persisted this session. The toggle still works; it just starts off
+      // again next launch.
+    }
+  }, [allowAgentRuns]);
 
   // Provider status drives the permanent header indicator, so it is re-read
   // on mount and again whenever a key is stored — the indicator would

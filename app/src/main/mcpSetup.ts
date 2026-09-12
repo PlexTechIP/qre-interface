@@ -45,6 +45,25 @@ export interface McpSetupInputs {
    * file existence cannot see.
    */
   readonly hasSavedRuns: boolean;
+  /**
+   * The interpreter this install resolved for the engine.
+   *
+   * Always written into the emitted env, never left to the server's own
+   * default. `resolvePythonBin`'s fallback is relative to the module's own
+   * directory, which is correct when the server runs from source under tsx and
+   * wrong for the packaged bundle — where `mcp-server.mjs` sits beside a copied
+   * `python/` with no `.venv` in it. The dashboard is the process that knows
+   * the real answer, so it says it rather than hoping.
+   */
+  readonly pythonBinPath: string;
+  /**
+   * Whether the block should let connected agents run estimates.
+   *
+   * This is what the analyst's checkbox produces. It adds one environment
+   * variable; it changes nothing in this process, and it takes effect only when
+   * a client next starts the server with the emitted configuration.
+   */
+  readonly allowRuns: boolean;
   /** Injected so this is testable without touching a real filesystem. */
   readonly exists?: (target: string) => boolean;
 }
@@ -137,6 +156,12 @@ function codexConfigToml(entry: McpClientEntry): string {
     `[mcp_servers.${SERVER_NAME}]`,
     `command = ${tomlString(entry.command)}`,
     `args = [${entry.args.map(tomlString).join(", ")}]`,
+    // Codex gives a tool 60 seconds by default, and an estimate routinely takes
+    // longer than that. Unconditional rather than only when runs are enabled:
+    // the value is harmless to a read-only server, and an analyst who enables
+    // runs later should not have to discover that a number they never saw is
+    // the reason their agent reports a timeout on a run that succeeded.
+    "tool_timeout_sec = 600",
     "",
     `[mcp_servers.${SERVER_NAME}.env]`,
     ...Object.entries(entry.env).map(([key, value]) => `${key} = ${tomlString(value)}`),
@@ -173,6 +198,16 @@ export function buildMcpSetup(inputs: McpSetupInputs): McpSetup {
     );
   }
 
+  if (inputs.allowRuns && !exists(inputs.pythonBinPath)) {
+    problems.push(
+      "Agent runs are enabled, but the Python environment the engine needs is " +
+        "not installed. Run setup_venv.sh in the engine directory, or set " +
+        "QRE_PYTHON_BIN in the block below to an interpreter that has the QDK " +
+        "installed. Without it an agent can still read your history, but every " +
+        "run it starts will be refused.",
+    );
+  }
+
   if (!inputs.hasSavedRuns) {
     problems.push(
       "No runs are saved yet. An agent will be able to list benchmarks, but it " +
@@ -192,6 +227,14 @@ export function buildMcpSetup(inputs: McpSetupInputs): McpSetup {
       // lost, and it is the one place an analyst can see WHICH database the
       // agent will read.
       QRE_DB_PATH: inputs.runDatabasePath,
+      // Always present: the server's own default is right from a checkout and
+      // wrong from a packaged install, and only this process can tell them
+      // apart. See `pythonBinPath`.
+      QRE_PYTHON_BIN: inputs.pythonBinPath,
+      // Present only when on. Absence is what the server reads as off, so an
+      // analyst who turns the toggle back off and re-pastes the block gets a
+      // server with no run tool rather than one carrying `=0`.
+      ...(inputs.allowRuns ? { QRE_MCP_ALLOW_RUNS: "1" } : {}),
     },
   };
 

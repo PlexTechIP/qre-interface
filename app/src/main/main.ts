@@ -63,9 +63,13 @@ const engineDir = app.isPackaged
   : path.resolve(process.cwd(), "src/main/engine");
 // The real QRE engine (qdk[qre] Python subprocess) is the only estimator.
 // resolvePythonBin locates the venv interpreter under engineDir.
-const engine = new QreEngine(
-  resolvePythonBin(process.env, process.platform, engineDir),
-);
+//
+// Hoisted out of the constructor because the MCP setup block needs the same
+// answer: the server this install emits a configuration for must spawn the
+// interpreter THIS process resolved, and re-deriving it there would resolve
+// relative to the bundle instead.
+const pythonBin = resolvePythonBin(process.env, process.platform, engineDir);
+const engine = new QreEngine(pythonBin);
 registerEstimatorHandler(ipcMain, engine);
 // Form-level pre-flight for uploaded programs (main-process filesystem access).
 registerUploadHandler(ipcMain);
@@ -126,12 +130,14 @@ app.whenReady().then(() => {
     // same dist-electron directory `main.cjs` is loaded from — so resolving it
     // relative to `currentDir` keeps working wherever an installer puts them,
     // which no absolute path baked at build time would.
-    async () =>
+    async ({ allowRuns }) =>
       buildMcpSetup({
         executablePath: process.execPath,
         serverBundlePath: path.join(currentDir, "mcp-server.mjs"),
         runDatabasePath: dbPath,
         hasSavedRuns: (await store.count()) > 0,
+        pythonBinPath: pythonBin,
+        allowRuns,
       }),
     (target) => shell.showItemInFolder(target),
   );

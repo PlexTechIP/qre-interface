@@ -16,6 +16,7 @@ import type {
   StorageInfo,
   StorageLocationId,
   McpSetup,
+  McpSetupOptions,
 } from "../shared/appInfoTypes.js";
 import type {
   ChatMessage,
@@ -87,6 +88,22 @@ const store: RunStore = {
   },
   query(filter: RunFilter): Promise<RunRecord[]> {
     return ipcRenderer.invoke(STORE_QUERY_CHANNEL, filter) as Promise<RunRecord[]>;
+  },
+  /*
+   * The history changed in another process — an agent saved a run through the
+   * MCP server. Push-only: main sends, nothing invokes.
+   *
+   * The IpcRendererEvent is dropped for the same reason `onReplyDelta` drops
+   * it: it carries `sender` and `ports`, which are handles into the main
+   * process, and this callback exists to deliver a nudge with no payload at
+   * all.
+   */
+  onChanged(listener: () => void): () => void {
+    const forward = (): void => listener();
+    ipcRenderer.on(STORE_CHANGED_CHANNEL, forward);
+    return () => {
+      ipcRenderer.removeListener(STORE_CHANGED_CHANNEL, forward);
+    };
   },
 };
 
@@ -207,8 +224,13 @@ const appInfo: AppInfoService = {
   getStorage(): Promise<StorageInfo> {
     return ipcRenderer.invoke(APP_INFO_STORAGE_CHANNEL) as Promise<StorageInfo>;
   },
-  getMcpSetup(): Promise<McpSetup> {
-    return ipcRenderer.invoke(APP_INFO_MCP_CHANNEL) as Promise<McpSetup>;
+  getMcpSetup(options: McpSetupOptions): Promise<McpSetup> {
+    // Re-narrowed on the way out as well as on the way in: the renderer's
+    // value comes from localStorage, which is a string store that can hold
+    // anything a previous build wrote.
+    return ipcRenderer.invoke(APP_INFO_MCP_CHANNEL, {
+      allowRuns: options.allowRuns === true,
+    }) as Promise<McpSetup>;
   },
   reveal(id: StorageLocationId): Promise<RevealResult> {
     return ipcRenderer.invoke(APP_INFO_REVEAL_CHANNEL, id) as Promise<RevealResult>;

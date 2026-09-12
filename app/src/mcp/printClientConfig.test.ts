@@ -69,7 +69,10 @@ describe("the printed client configuration", () => {
 
     if (report.databasePath === null) {
       expect(report.problems.join(" ")).toContain("QRE_DB_PATH");
-      expect(report.config.env).toEqual({});
+      // Not "env is empty": the block also carries QRE_PYTHON_BIN when this
+      // checkout has a venv, and that is unrelated to whether a database was
+      // published. What must be absent is the database variable.
+      expect(report.config.env).not.toHaveProperty("QRE_DB_PATH");
     }
   });
 
@@ -180,4 +183,38 @@ describe("the printed configuration, actually run", () => {
       await client.close();
     }
   }, 30_000);
+});
+
+describe("--allow-runs", () => {
+  it("says nothing about runs unless it is asked for", () => {
+    const report = buildConfigReport();
+
+    expect(report.allowRuns).toBe(false);
+    expect(report.config.env).not.toHaveProperty("QRE_MCP_ALLOW_RUNS");
+    expect(claudeCodeCommand(report.config)).not.toContain("QRE_MCP_ALLOW_RUNS");
+  });
+
+  it("emits the opt-in when it is", () => {
+    const report = buildConfigReport({ allowRuns: true });
+
+    expect(report.allowRuns).toBe(true);
+    expect(report.config.env.QRE_MCP_ALLOW_RUNS).toBe("1");
+    expect(claudeCodeCommand(report.config)).toContain(
+      "--env QRE_MCP_ALLOW_RUNS='1'",
+    );
+  });
+
+  it("names the checkout's interpreter when there is one, and says so when there is not", () => {
+    const report = buildConfigReport({ allowRuns: true });
+
+    if (report.pythonBin === null) {
+      // No venv in this checkout: the block must not pretend otherwise, and
+      // must say what to run.
+      expect(report.config.env).not.toHaveProperty("QRE_PYTHON_BIN");
+      expect(report.problems.join(" ")).toMatch(/setup_venv\.sh/);
+    } else {
+      expect(report.config.env.QRE_PYTHON_BIN).toBe(report.pythonBin);
+      expect(report.problems.join(" ")).not.toMatch(/setup_venv\.sh/);
+    }
+  });
 });

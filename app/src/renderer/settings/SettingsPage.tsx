@@ -69,6 +69,15 @@ interface SettingsPageProps {
    */
   activeTab: number;
   onActiveTabChange: (index: number) => void;
+  /**
+   * Whether the emitted MCP block should let connected agents run estimates.
+   *
+   * Held by the shell, like the theme, because it is a preference rather than
+   * page state — and because what it actually changes is a block the analyst
+   * copies out of here, not anything this page does.
+   */
+  allowAgentRuns: boolean;
+  onAllowAgentRunsChange: (allow: boolean) => void;
 }
 
 /** Labels, in the order they are offered. */
@@ -109,10 +118,10 @@ const describeError = (error: unknown): string =>
 const PROVIDER_KEY_SECURITY_NOTE_ID = "provider-key-security-note";
 
 /**
- * Index of the "AI providers" tab in `TABS` below (general, providers, storage,
- * about). Exported so surfaces that send the analyst here to manage a key — the
- * chat page's model bar — can open Settings on the right tab. Keep in sync with
- * the `TABS` order.
+ * Index of the "AI providers" tab in `TABS` below (general, providers, MCP
+ * server, storage, about). Exported so surfaces that send the analyst here to
+ * manage a key — the chat page's model bar — can open Settings on the right
+ * tab. Keep in sync with the `TABS` order.
  */
 export const AI_PROVIDERS_TAB_INDEX = 1;
 
@@ -187,6 +196,8 @@ export function SettingsPage({
   onThemePreferenceChange,
   activeTab,
   onActiveTabChange,
+  allowAgentRuns,
+  onAllowAgentRunsChange,
 }: SettingsPageProps): React.JSX.Element {
   const themeName = useId();
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -236,7 +247,7 @@ export function SettingsPage({
   useEffect(() => {
     if (appInfo === undefined) return;
     let current = true;
-    void appInfo.getMcpSetup().then(
+    void appInfo.getMcpSetup({ allowRuns: allowAgentRuns }).then(
       (setup) => {
         if (!current) return;
         setMcpSetup(setup);
@@ -254,7 +265,9 @@ export function SettingsPage({
     return () => {
       current = false;
     };
-  }, [appInfo]);
+    // Re-read on the toggle as well as on `appInfo`: the block the analyst
+    // copies is what changes, so it has to be rebuilt the moment they tick it.
+  }, [appInfo, allowAgentRuns]);
 
   const reveal = async (id: StorageLocationId): Promise<void> => {
     if (appInfo === undefined) return;
@@ -468,13 +481,29 @@ export function SettingsPage({
           <p className="form-section__intro">
             Claude, Codex and other MCP clients can read your saved runs — to
             compare them, explain a failure, or check a configuration before you
-            run it. Access is read-only: an agent cannot start a run, change
-            one, or write to these files.
+            run it.{" "}
+            {allowAgentRuns
+              ? "With the setting below on, an agent can also start an estimate on this machine and save it to your history without asking you first. It still cannot delete or change a run."
+              : "Access is read-only: an agent cannot start a run, change one, or write to these files."}
           </p>
           <p className="form-section__intro">
             The paths below belong to this installation on this machine, and are
             worked out when the app starts. If you move or update the app, come
             back and copy them again.
+          </p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={allowAgentRuns}
+              onChange={(event) => onAllowAgentRunsChange(event.target.checked)}
+            />
+            Let connected agents run estimates
+          </label>
+          <p className="form-section__intro">
+            An MCP client reads these settings only when it starts the server,
+            so after changing this re-run the add command (or re-paste the
+            block) and restart the client.
           </p>
 
           {mcpError !== null ? (
