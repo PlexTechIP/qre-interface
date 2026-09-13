@@ -524,6 +524,30 @@ choice somebody will otherwise reopen; the reasoning is above, in §0, §4 and �
   changes what the emitted block SAYS and nothing about the running process, so
   persisting it in main would create a second place to answer "are agent runs
   on?" whose answer could disagree with the client config that actually decides.
+- **Codex needs a standing instruction to reach for the tools** (2026-09-13).
+  Codex 0.154 exposes a custom server's tools only through a `tool_search`
+  the model must decide to use, and does not surface the server's
+  `instructions` (a session asked to quote them said "NONE"; its feature list
+  shows `tool_search_always_defer_mcp_tools` fixed on). Asked to "run a
+  trapped ion Shor's estimate" from an empty folder it searched the web; with
+  a stanza in `AGENTS.md` naming the tools and the domain words, the identical
+  prompt listed, drafted, validated, ran and reported. The PM chose not to
+  have setup write into `AGENTS.md`; Settings offers the stanza as an
+  optional block, and "use the qre-dashboard MCP" in the prompt works as
+  well. The server instructions were also rewritten to lead with the domain,
+  which is what Claude Code reads.
+- **Defaults and brevity** (2026-09-13). Told to use the MCP, Codex chose
+  RSA-2048 with `maxError` 0.01 for a request that named neither, got the
+  infeasible result, relaxed it and ran again — two multi-minute runs — then
+  wrote a twelve-row table. The instructions and the run tool's description
+  now say: with no size or budget named, keep the defaults or a recent saved
+  run's settings and say so; report the headline metrics in a few lines. The
+  per-call JSON in Codex's transcript is the client's display, not ours.
+- **The Codex one-liner applies the timeout too** (2026-09-12): `codex mcp
+  add` has no timeout flag, rewrites the table on a repeat add, and drops keys
+  it does not know, so the emitted command follows the add with an idempotent
+  insertion of the line. Verified against codex-cli 0.137.0: `codex mcp get`
+  reads it back as `tool_timeout_sec: 600`.
 - **`tool_timeout_sec = 600` is emitted unconditionally.** Codex defaults to 60
   seconds, which a real estimate exceeds; the value is harmless to a read-only
   server, and an analyst who enables runs later should not have to discover that

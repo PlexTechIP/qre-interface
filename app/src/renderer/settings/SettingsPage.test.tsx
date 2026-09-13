@@ -775,6 +775,23 @@ describe("SettingsPage — the MCP Server tab", () => {
     expect(screen.getByText(/cannot delete or change a run/i)).toBeVisible();
   });
 
+  it("offers the Codex standing instruction as an optional block", async () => {
+    // Codex finds a custom server's tools only by searching and never sees
+    // the server's instructions, so an open-ended estimate request can be
+    // answered from the web. The stanza is offered; the command does not
+    // write into the analyst's AGENTS.md.
+    setup({ tab: "MCP Server" });
+
+    const block = await screen.findByRole("group", {
+      name: /codex, optional standing instruction setup/i,
+    });
+    expect(block).toHaveTextContent("qre-dashboard MCP server");
+    expect(block).toHaveTextContent("qre_run_estimate");
+    expect(
+      screen.getByRole("group", { name: /codex cli setup/i }),
+    ).not.toHaveTextContent("AGENTS.md");
+  });
+
   it("says the client must be restarted before the change takes effect", async () => {
     // An MCP client reads the environment once, at spawn. Without this the
     // analyst ticks a box, sees the block change, and concludes it is on.

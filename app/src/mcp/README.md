@@ -240,6 +240,44 @@ npm run mcp:config                 # agent runs enabled
 npm run mcp:config -- --read-only  # reads only
 ```
 
+### If the agent searches the web instead of calling the tools
+
+Test from a folder that is **not** this repository. Inside the checkout an
+agent finds `estimate.py` and the benchmark sources and runs the engine
+through the shell, which saves and logs nothing; that is the agent being
+resourceful, not the server failing.
+
+From a neutral folder, a Codex session asked to "run a trapped ion Shor's
+estimate" still went to the web for published RSA-2048 numbers, although it was
+connected and called `qre_list_benchmarks` correctly when asked by name. The
+reason is how Codex exposes a custom server: it does not list the server's
+tools to the model, it gives the model a `tool_search` to look them up with,
+and it does not show the server's `instructions` at all (a session asked to
+quote them answered "NONE"). So nothing tied the words in that request to this
+server, and the model had no reason to search.
+
+Two things address it. The server's `instructions` and the run tool's
+description now say what an estimate is, which benchmark and hardware words map
+to which fields, and that these tools — not a web search — are the answer to
+"run an estimate"; that is what Claude Code reads. For Codex, say "use the
+qre-dashboard MCP" in the prompt: with that, the same session listed, drafted,
+validated, ran and reported. To make it the default, Settings offers a
+standing-instruction stanza to paste into `~/.codex/AGENTS.md` or a project's
+`AGENTS.md` (tested: with it present, the bare prompt went straight to the
+tools). The setup command deliberately does not write into `AGENTS.md`; that
+file is the analyst's own.
+
+Two more things the instructions now say, because a Codex session did both:
+when the analyst names no problem size or error budget, keep the benchmark's
+defaults or a recent saved run's settings and say so, rather than scaling up
+(it chose RSA-2048 with `maxError` 0.01, which has no feasible point, then ran
+it again relaxed — two multi-minute runs for a request that named neither); and
+report briefly — run id, qubits, runtime in human units, code distance,
+factories, total error, assumptions — since the analyst can ask for more. How
+much of a session's transcript is tool JSON is the client's choice: Codex
+prints every call's arguments and a slice of each result, Claude Code
+collapses them to a count.
+
 ### What a call does
 
 1. **Validates the draft** through exactly the walk `qre_validate_config`
@@ -279,7 +317,10 @@ full.
 The call **blocks** for as long as the engine takes: usually seconds, up to
 about two minutes. Claude Code auto-backgrounds a tool call at two minutes;
 Codex defaults to a 60-second tool timeout, so the emitted TOML always carries
-`tool_timeout_sec = 600`.
+`tool_timeout_sec = 600`, and the emitted Codex command applies the same line
+after `codex mcp add` — that command has no timeout flag, rewrites the table on
+a repeat add, and drops keys it does not know, so the line is inserted
+idempotently right after the add rather than once by hand.
 
 ### `saved: false`
 

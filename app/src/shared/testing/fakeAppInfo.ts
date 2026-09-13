@@ -60,7 +60,16 @@ function fakeSetup(entry: McpClientEntry): McpSetup {
     entry,
     configJson: JSON.stringify({ mcpServers: { "qre-dashboard": entry } }, null, 2),
     claudeCodeCommand: fakeAddCommand("claude", entry),
-    codexCommand: fakeAddCommand("codex", entry),
+    // The real command applies the tool timeout after the add; the fixture
+    // carries the same tail so the panel renders what an analyst will see.
+    codexCommand:
+      `${fakeAddCommand("codex", entry)} && perl -0pi -e ` +
+      `'s/^(\\[mcp_servers\\.qre-dashboard\\]\\n)(?!tool_timeout_sec)/` +
+      `\${1}tool_timeout_sec = 600\\n/m' ~/.codex/config.toml`,
+    codexAgentsInstruction:
+      "## QRE Dashboard (qre-dashboard MCP server)\n" +
+      "Use the qre-dashboard MCP tools (qre_run_estimate and the rest) for " +
+      "quantum resource estimates.",
     codexConfigToml: [
       "[mcp_servers.qre-dashboard]",
       `command = "${entry.command}"`,

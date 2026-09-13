@@ -127,6 +127,83 @@ function addCommand(program: string, entry: McpClientEntry): string {
     .join(" ");
 }
 
+/**
+ * How long Codex lets one tool call run. Its default is 60 seconds; an
+ * estimate routinely takes longer, plus queue time behind another run.
+ */
+const CODEX_TOOL_TIMEOUT_SEC = 600;
+
+/**
+ * The Codex one-liner: `codex mcp add …`, then the timeout.
+ *
+ * `codex mcp add` has no flag for `tool_timeout_sec` (checked against
+ * codex-cli 0.137.0: `-c key=value` is a runtime override, and passing it made
+ * the add fail validation rather than persist anything). It also REWRITES the
+ * table on a repeat add and drops any key it does not know — so the timeout
+ * has to be applied after every add, not once. The second command inserts the
+ * line directly under the table header, and only when it is not already there,
+ * so running the whole thing again is safe. Codex reads the result back as
+ * `tool_timeout_sec: 600` in `codex mcp get`.
+ *
+ * POSIX only, like the single-quoted `add` in front of it; Windows users have
+ * the TOML block, which carries the same line.
+ */
+/**
+ * An optional standing instruction for Codex, offered as a copyable block.
+ *
+ * Codex does not list a custom MCP server's tools to the model; it exposes a
+ * `tool_search` and lets the model look them up, and it does not show the
+ * server's own `instructions` either. So a session asked to "run a trapped
+ * ion Shor's estimate" saw no reason to search, and answered from the web —
+ * while the same session used the tools correctly once told "use the qre
+ * MCP", and went straight to them unprompted when these lines were in
+ * `AGENTS.md`. Checked against codex-cli 0.154.0.
+ *
+ * Offered, not applied: the emitted command does not touch `AGENTS.md`, because
+ * that file is the analyst's own standing instructions to Codex and a setup
+ * command writing into it is a step too far. Saying "use the qre-dashboard
+ * MCP" in the prompt is the alternative, and it works.
+ */
+const CODEX_AGENTS_LINES: readonly string[] = [
+  `## QRE Dashboard (${SERVER_NAME} MCP server)`,
+  "For any request to run, estimate, size or compare quantum resource " +
+    "estimates - Shor factoring, Ekera-Hastad factoring, Grover search, phase " +
+    "estimation, quantum dynamics, on hardware such as trapped ion, " +
+    "superconducting, Majorana or neutral atom - use the qre-dashboard MCP " +
+    "tools: qre_list_benchmarks, qre_list_runs, qre_get_run, " +
+    "qre_draft_from_run, qre_validate_config, qre_run_estimate. Search your " +
+    "tools for them if they are not listed. Do not search the web for " +
+    "published estimates and do not write your own estimator. Trapped ion and " +
+    "superconducting are both the gateBased architecture with different gate " +
+    "and measurement times.",
+];
+
+/**
+ * The Codex one-liner: `codex mcp add …`, then the timeout.
+ *
+ * `codex mcp add` has no flag for `tool_timeout_sec` (checked against
+ * codex-cli 0.137.0: `-c key=value` is a runtime override, and passing it made
+ * the add fail validation rather than persist anything). It also REWRITES the
+ * table on a repeat add and drops any key it does not know — so the timeout
+ * has to be applied after every add, not once. The second command inserts the
+ * line directly under the table header, and only when it is not already there,
+ * so running the whole thing again is safe. Codex reads the result back as
+ * `tool_timeout_sec: 600` in `codex mcp get`.
+ *
+ * POSIX only, like the single-quoted `add` in front of it; Windows users have
+ * the TOML block, which carries the same line.
+ */
+function codexCommand(entry: McpClientEntry): string {
+  const table = `mcp_servers\\.${SERVER_NAME}`;
+  const insert =
+    `s/^(\\[${table}\\]\\n)(?!tool_timeout_sec)/` +
+    `\${1}tool_timeout_sec = ${CODEX_TOOL_TIMEOUT_SEC}\\n/m`;
+  return (
+    `${addCommand("codex", entry)} && ` +
+    `perl -0pi -e '${insert}' ~/.codex/config.toml`
+  );
+}
+
 function configJson(entry: McpClientEntry): string {
   return JSON.stringify({ mcpServers: { [SERVER_NAME]: entry } }, null, 2);
 }
@@ -156,12 +233,11 @@ function codexConfigToml(entry: McpClientEntry): string {
     `[mcp_servers.${SERVER_NAME}]`,
     `command = ${tomlString(entry.command)}`,
     `args = [${entry.args.map(tomlString).join(", ")}]`,
-    // Codex gives a tool 60 seconds by default, and an estimate routinely takes
-    // longer than that. Unconditional rather than only when runs are enabled:
-    // the value is harmless to a read-only server, and an analyst who enables
-    // runs later should not have to discover that a number they never saw is
-    // the reason their agent reports a timeout on a run that succeeded.
-    "tool_timeout_sec = 600",
+    // Unconditional rather than only when runs are enabled: the value is
+    // harmless to a read-only server, and an analyst who enables runs later
+    // should not have to discover that a number they never saw is the reason
+    // their agent reports a timeout on a run that succeeded.
+    `tool_timeout_sec = ${CODEX_TOOL_TIMEOUT_SEC}`,
     "",
     `[mcp_servers.${SERVER_NAME}.env]`,
     ...Object.entries(entry.env).map(([key, value]) => `${key} = ${tomlString(value)}`),
@@ -242,8 +318,9 @@ export function buildMcpSetup(inputs: McpSetupInputs): McpSetup {
     entry,
     configJson: configJson(entry),
     claudeCodeCommand: addCommand("claude", entry),
-    codexCommand: addCommand("codex", entry),
+    codexCommand: codexCommand(entry),
     codexConfigToml: codexConfigToml(entry),
+    codexAgentsInstruction: CODEX_AGENTS_LINES.join("\n"),
     problems,
   };
 }

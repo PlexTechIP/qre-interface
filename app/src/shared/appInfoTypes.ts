@@ -88,6 +88,14 @@ export interface McpSetup {
   /** The `~/.codex/config.toml` block, for editing that file by hand. */
   readonly codexConfigToml: string;
   /**
+   * The standing instruction the Codex command appends to `~/.codex/AGENTS.md`,
+   * offered on its own for an analyst who would rather put it in a project's
+   * `AGENTS.md`. Codex finds a custom server's tools only when the model
+   * searches for them and does not show the server's own instructions, so
+   * without this a request to "run an estimate" can be answered from the web.
+   */
+  readonly codexAgentsInstruction: string;
+  /**
    * What is not yet true. Empty means the block above will work as it stands;
    * anything here is a step the analyst has to take first, said in their words
    * rather than left to be discovered at the first tool call.

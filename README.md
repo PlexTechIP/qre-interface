@@ -116,6 +116,8 @@ The command prints a ready-to-use `claude mcp add` command and a Claude Desktop 
 
 By default the block also lets a connected agent **run** estimates on this machine and save them to your history; your MCP client will ask before the first one. For a read-only block, add `--read-only` (or untick "Let connected agents run estimates" under Settings → MCP Server in the app, then copy the block again). A client reads these settings only when it starts the server, so re-add the server and restart the client after changing them.
 
+Codex users: take the Codex command from Settings → MCP Server rather than the Claude one; it also raises Codex's 60-second tool timeout. Codex finds a server's tools by search rather than listing them, so say "use the qre-dashboard MCP" in the prompt (or paste the optional standing instruction from Settings into `~/.codex/AGENTS.md`). Test from a folder outside this repository, so the agent has the tools and not the source.
+
 See [`app/src/mcp/README.md`](app/src/mcp/README.md) for the available tools, error codes, and database configuration.
 
 ## Development workflow

@@ -212,6 +212,34 @@ describe("letting agents run estimates", () => {
     expect(setup.problems).toEqual([]);
   });
 
+  it("makes the Codex command set the tool timeout itself", () => {
+    // `codex mcp add` has no timeout flag and rewrites the table on a repeat
+    // add, so the one-liner applies the line after the add, idempotently. The
+    // Claude Code command needs nothing of the kind.
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    expect(setup.codexCommand).toMatch(/^codex mcp add /);
+    expect(setup.codexCommand).toContain(" && perl -0pi -e '");
+    expect(setup.codexCommand).toContain("tool_timeout_sec = 600");
+    expect(setup.codexCommand).toContain("(?!tool_timeout_sec)");
+    expect(setup.codexCommand).toMatch(/~\/\.codex\/config\.toml$/);
+    expect(setup.claudeCodeCommand).not.toContain("perl");
+  });
+
+  it("offers Codex a standing instruction without writing it anywhere", () => {
+    // Codex finds a custom server's tools only by searching for them and does
+    // not show the server's instructions, so a session asked to "run an
+    // estimate" can answer from the web. The stanza is offered for AGENTS.md;
+    // the command deliberately does not touch that file.
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    expect(setup.codexAgentsInstruction).toContain("qre-dashboard MCP server");
+    expect(setup.codexAgentsInstruction).toContain("qre_run_estimate");
+    expect(setup.codexAgentsInstruction).toMatch(/trapped ion/i);
+    expect(setup.codexCommand).not.toContain("AGENTS.md");
+    expect(setup.claudeCodeCommand).not.toContain("AGENTS.md");
+  });
+
   it("reports a missing Python environment, but only when runs are on", () => {
     const noPython = (target: string): boolean => target !== PATHS.pythonBinPath;
 

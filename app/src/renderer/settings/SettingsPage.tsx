@@ -159,9 +159,24 @@ const MCP_CLIENTS: readonly {
   {
     id: "codex",
     label: "Codex CLI",
-    intro: "Run this once, from any folder.",
+    intro:
+      "Run this once, from any folder. It registers the server and sets " +
+      "Codex’s tool timeout to 600 seconds, since its default of 60 is " +
+      "shorter than an estimate.",
     copyLabel: "Copy command",
     value: (setup) => setup.codexCommand,
+  },
+  {
+    id: "codex-agents",
+    label: "Codex, optional standing instruction",
+    intro:
+      "Codex finds this server’s tools only when the model searches for them, " +
+      "and it does not see the server’s own instructions — so an open-ended " +
+      "request to run an estimate may be answered from the web. Saying “use " +
+      "the qre-dashboard MCP” in the prompt is enough; to make it the default, " +
+      "add this to ~/.codex/AGENTS.md or a project’s AGENTS.md.",
+    copyLabel: "Copy instruction",
+    value: (setup) => setup.codexAgentsInstruction,
   },
   {
     id: "claude-desktop",
