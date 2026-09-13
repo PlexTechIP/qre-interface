@@ -74,7 +74,9 @@ export const READ_ONLY_SENTENCE =
 export const RUN_SENTENCE =
   "qre_run_estimate runs an estimate on this machine, saves it to the " +
   "analyst's history, and returns the full result; it is present because the " +
-  "analyst enabled it. There is no tool that deletes or edits a run.";
+  "analyst enabled it. When the analyst asks to run an estimate, run a new one " +
+  "with it — a saved run with similar settings is context for comparison, not " +
+  "a substitute. There is no tool that deletes or edits a run.";
 
 function serverInstructions(allowRuns: boolean): string {
   return (

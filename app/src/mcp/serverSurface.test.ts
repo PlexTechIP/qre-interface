@@ -131,6 +131,9 @@ describe("the run tool's registration", () => {
     try {
       const instructions = enabled.getInstructions();
       expect(instructions).toContain(RUN_SENTENCE);
+      // "Run" means run: a live test answered "run a trapped ion estimate" by
+      // reporting a saved run with similar settings instead of starting one.
+      expect(instructions).toMatch(/run a new one/);
       // The claim that must not survive: a server that can run an estimate has
       // no business telling a model that nothing here runs one.
       expect(instructions).not.toContain(READ_ONLY_SENTENCE);
