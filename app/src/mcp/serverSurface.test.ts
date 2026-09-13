@@ -62,6 +62,12 @@ describe("what the server says about itself", () => {
     expect(instructions).toMatch(/only source of run ids/i);
     expect(instructions).toMatch(/Nothing here runs an estimate/);
     expect(instructions).toContain(RUN_DRAFT_SCHEMA_URI);
+    // The domain comes first: a Codex session asked for a "trapped ion Shor's
+    // estimate" went to the web because nothing tied the words in that
+    // request to this server. The words are here now, and so is the rule.
+    expect(instructions).toMatch(/Shor's factoring/);
+    expect(instructions).toMatch(/trapped ion/);
+    expect(instructions).toMatch(/do not search the web/);
   });
 
   it("serves the committed draft contract as a resource", async () => {

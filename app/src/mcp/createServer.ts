@@ -49,13 +49,35 @@ export const RUN_DRAFT_SCHEMA_URI = "qre://contracts/run-draft.schema.json";
  * possible — so the two spellings are exhaustive about different things and
  * only one of them is ever sent.
  */
+/**
+ * What the server is FOR, before which tool to call.
+ *
+ * A Codex session given "run a trapped ion Shor's estimate" searched the web
+ * for published RSA-2048 estimates and never touched these tools, although it
+ * was connected and could call them when asked by name. Nothing it had read
+ * tied that request to this server: the text opened with "saved runs" and
+ * "start with qre_list_runs", which describes a history browser. So the domain
+ * comes first — what an estimate is, which benchmarks and hardware families
+ * the words in an analyst's request map to — and the explicit instruction to
+ * use these tools rather than the web for it.
+ */
 const BASE_INSTRUCTIONS =
-  "an analyst's saved quantum resource-estimation (QRE) " +
-  "runs from the QRE Dashboard. Start with qre_list_runs; it is the only " +
-  "source of run ids. qre_get_run reads one run's settings and results; " +
-  "qre_draft_from_run turns a run into an editable draft; qre_validate_config " +
-  "checks a draft (edited or written from scratch) before the analyst runs it " +
-  "in the dashboard. qre_list_benchmarks needs no history. ";
+  "the QRE Dashboard, an analyst's local front end to Microsoft's Quantum " +
+  "Resource Estimator (QRE). A QRE estimate computes the physical qubits, " +
+  "runtime, code distance and magic-state factories a fault-tolerant quantum " +
+  "computer needs to run a benchmark — Shor's factoring, Ekerå–Håstad " +
+  "factoring, Grover's search, phase estimation, quantum dynamics — on a " +
+  "chosen hardware model. When the analyst asks to run, estimate, size or " +
+  "compare such a workload, use these tools; do not search the web or reason " +
+  "from published estimates. Hardware names map to the architecture field: " +
+  "superconducting and trapped ion are both gateBased (ions with " +
+  "microsecond-scale gate and measurement times, superconductors with " +
+  "nanosecond-scale), Majorana is majorana, neutral atoms are neutralAtom. " +
+  "Start with qre_list_runs for saved runs; it is the only source of run ids. " +
+  "qre_get_run reads one run's settings and results; qre_draft_from_run turns " +
+  "a run into an editable draft; qre_validate_config checks a draft (edited " +
+  "or written from scratch); qre_list_benchmarks lists what can be estimated " +
+  "and needs no history. ";
 
 /**
  * The sentence sent when no run tool is registered.
@@ -76,7 +98,13 @@ export const RUN_SENTENCE =
   "analyst's history, and returns the full result; it is present because the " +
   "analyst enabled it. When the analyst asks to run an estimate, run a new one " +
   "with it — a saved run with similar settings is context for comparison, not " +
-  "a substitute. There is no tool that deletes or edits a run.";
+  "a substitute. When they name no problem size or error budget, keep the " +
+  "benchmark's defaults or the most recent similar saved run's settings and " +
+  "say what you assumed; do not scale the problem up on your own (a 2048-bit " +
+  "Shor run takes minutes and often has no feasible point under a tight " +
+  "maxError). Report briefly: run id, physical qubits, runtime in human " +
+  "units, code distance, factories, total error, and the assumptions — the " +
+  "analyst can ask for more. There is no tool that deletes or edits a run.";
 
 function serverInstructions(allowRuns: boolean): string {
   return (
@@ -153,7 +181,10 @@ export function createMcpServer(
     {
       title: "List Benchmarks",
       description:
-        "List the quantum programs this build can estimate resources for. " +
+        "List the quantum programs this build can estimate resources for — " +
+        "Shor's factoring, Ekerå–Håstad factoring, Grover's search, phase " +
+        "estimation, quantum dynamics. Call this first when the analyst names " +
+        "an algorithm to estimate. " +
         "Returns benchmark IDs, names, descriptions, and source formats. The " +
         "IDs are what `qre_list_runs`'s `benchmarkId` filter takes, and what a " +
         "draft's `application.benchmarkId` must be. Needs no run history, so " +
@@ -330,8 +361,15 @@ export function createMcpServer(
       {
         title: "Run Estimate",
         description:
-          "Run a resource estimate on the analyst's machine and save it to their " +
-          "history. Takes the same draft as `qre_validate_config`, and refuses the " +
+          "Run a quantum resource estimate (QRE) — physical qubits, runtime, code " +
+          "distance, factories — for a benchmark (Shor's factoring, Ekerå–Håstad, " +
+          "Grover's search, phase estimation, quantum dynamics) on a hardware " +
+          "model, on the analyst's machine, and save it to their history. This is " +
+          "the tool to use when the analyst asks to run or estimate such a " +
+          "workload, including for named hardware like trapped ion or " +
+          "superconducting (both gateBased, differing in gate and measurement " +
+          "times); do not search the web for published estimates instead. Takes " +
+          "the same draft as `qre_validate_config`, and refuses the " +
           "same drafts: an unacceptable one comes back as a `DRAFT_INVALID` error " +
           "whose `details.errors` is that tool's field list, and nothing is " +
           "started.\n\n" +
@@ -345,9 +383,14 @@ export function createMcpServer(
           "frontier point with every metric (physical qubits, runtime, code " +
           "distance, factories, logical cycle time, total error, and the engine's " +
           "additional metrics), and the frontier as qubit/runtime points — plus " +
-          "`frontier` (the span) and `saved`. Report the result to the analyst " +
-          "from this reply; they should not need to open the dashboard or call " +
-          "another tool to read it. An estimate that FAILED is a normal result " +
+          "`frontier` (the span) and `saved`. Report from this reply, briefly — " +
+          "run id, physical qubits, runtime in human units, code distance, " +
+          "factories, total error, and what you assumed, in a few lines; the " +
+          "analyst can ask for the rest and need not open the dashboard. When " +
+          "the analyst names no problem size or error budget, keep the " +
+          "benchmark's defaults or a recent similar run's settings rather than " +
+          "scaling up: a 2048-bit Shor run takes minutes and often has no " +
+          "feasible point under a tight maxError. An estimate that FAILED is a normal result " +
           "with `run.status: \"failed\"` and `run.error` saying why — it is saved " +
           "like any other. `saved: false` with a `warning` means the opposite: " +
           "the estimate is real and the history could not be written, so the " +
