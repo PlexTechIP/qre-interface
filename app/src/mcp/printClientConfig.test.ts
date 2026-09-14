@@ -29,14 +29,24 @@ import {
 
 let directory: string;
 const savedDbPath = process.env.QRE_DB_PATH;
+const savedPythonBin = process.env.QRE_PYTHON_BIN;
 
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "qre-config-"));
+  // An interpreter that exists on every machine. Agent runs are on by default,
+  // so a checkout with no venv reports a problem — correctly — and the tests
+  // below that assert "no problems" are about the database, not the venv.
+  // CI has no venv (the unit-test job installs no Python), and this file went
+  // red there the first time the default flipped while passing on every
+  // developer machine that had run setup_venv.sh.
+  process.env.QRE_PYTHON_BIN = process.execPath;
 });
 
 afterEach(() => {
   if (savedDbPath === undefined) delete process.env.QRE_DB_PATH;
   else process.env.QRE_DB_PATH = savedDbPath;
+  if (savedPythonBin === undefined) delete process.env.QRE_PYTHON_BIN;
+  else process.env.QRE_PYTHON_BIN = savedPythonBin;
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -204,17 +214,27 @@ describe("agent runs in the emitted block", () => {
     expect(claudeCodeCommand(report.config)).not.toContain("QRE_MCP_ALLOW_RUNS");
   });
 
-  it("names the checkout's interpreter when there is one, and says so when there is not", () => {
+  it("names the interpreter when there is one", () => {
+    // `beforeEach` points QRE_PYTHON_BIN at an executable that exists.
     const report = buildConfigReport({ allowRuns: true });
 
-    if (report.pythonBin === null) {
-      // No venv in this checkout: the block must not pretend otherwise, and
-      // must say what to run.
-      expect(report.config.env).not.toHaveProperty("QRE_PYTHON_BIN");
-      expect(report.problems.join(" ")).toMatch(/setup_venv\.sh/);
-    } else {
-      expect(report.config.env.QRE_PYTHON_BIN).toBe(report.pythonBin);
-      expect(report.problems.join(" ")).not.toMatch(/setup_venv\.sh/);
-    }
+    expect(report.pythonBin).toBe(process.execPath);
+    expect(report.config.env.QRE_PYTHON_BIN).toBe(process.execPath);
+    expect(report.problems.join(" ")).not.toMatch(/setup_venv\.sh/);
+  });
+
+  it("says what to run when there is no interpreter, and only when runs are on", () => {
+    // Both branches on every machine, rather than whichever one the checkout
+    // happens to be in: the block must not pretend an interpreter exists, and
+    // must say what to run — but a read-only block has no interpreter to miss.
+    process.env.QRE_PYTHON_BIN = join(directory, "no-such-python3");
+
+    const enabled = buildConfigReport({ allowRuns: true });
+    expect(enabled.pythonBin).toBeNull();
+    expect(enabled.config.env).not.toHaveProperty("QRE_PYTHON_BIN");
+    expect(enabled.problems.join(" ")).toMatch(/setup_venv\.sh/);
+
+    const readOnly = buildConfigReport({ allowRuns: false });
+    expect(readOnly.problems.join(" ")).not.toMatch(/setup_venv\.sh/);
   });
 });
