@@ -52,9 +52,9 @@ const savedDbPath = process.env.QRE_DB_PATH;
  * A client that has listed tools, because that is what populates the SDK's
  * output-schema validator and therefore what a real client does.
  */
-async function connectedClient(): Promise<Client> {
+async function connectedClient(env: NodeJS.ProcessEnv = {}): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createMcpServer().connect(serverTransport);
+  await createMcpServer({ env }).connect(serverTransport);
   const client = new Client({ name: "error-path-test", version: "0.0.0" });
   await client.connect(clientTransport);
   await client.listTools();
@@ -243,5 +243,91 @@ describe("an invalid draft", () => {
 
     expect(result.isError).toBeFalsy();
     expect(result.structuredContent).toMatchObject({ valid: false });
+  });
+});
+
+/**
+ * The run tool's refusals through the same client.
+ *
+ * Same defect class as everything above: each of these codes rides on a tool
+ * that declares an `outputSchema`, so any of them carrying `structuredContent`
+ * would be rejected by the SDK before the caller read the message.
+ */
+describe("the run tool's refusals", () => {
+  let restoreEngine: () => void;
+
+  beforeEach(async () => {
+    const { resetEngineAccessForTests, setEstimatorForTests } = await import(
+      "./engineAccess.js"
+    );
+    const { fakeEstimator } = await import("../shared/testing/fakeEstimator.js");
+    const { buildRunResult } = await import("../shared/testing/builders.js");
+    resetEngineAccessForTests();
+    setEstimatorForTests(fakeEstimator(buildRunResult(), { delayMs: 100 }));
+    restoreEngine = () => resetEngineAccessForTests();
+  });
+
+  afterEach(() => {
+    restoreEngine();
+  });
+
+  async function validDraft(): Promise<unknown> {
+    const { generatedDraftFromFormState } = await import(
+      "../renderer/state/generatedDraft.js"
+    );
+    const { formStateFromRunConfig } = await import("../renderer/state/formState.js");
+    const { buildRunConfig } = await import("../shared/testing/builders.js");
+    return generatedDraftFromFormState(formStateFromRunConfig(buildRunConfig()));
+  }
+
+  it("reports DRAFT_INVALID as a readable failure carrying the field list", async () => {
+    const client = await connectedClient({ QRE_MCP_ALLOW_RUNS: "1" });
+
+    const result = (await client.callTool({
+      name: "qre_run_estimate",
+      arguments: { draft: { nonsense: true } },
+    })) as CallToolResult;
+
+    expect(result.structuredContent).toBeUndefined();
+    const failure = readToolFailure(result);
+    expect(failure?.code).toBe("DRAFT_INVALID");
+    expect((failure?.details as { errors: unknown[] }).errors.length).toBeGreaterThan(0);
+  });
+
+  it("reports ENGINE_NOT_CONFIGURED as a readable failure", async () => {
+    const { setEstimatorForTests } = await import("./engineAccess.js");
+    setEstimatorForTests(null);
+    const savedPythonBin = process.env.QRE_PYTHON_BIN;
+    process.env.QRE_PYTHON_BIN = dbPath; // a real file, not executable
+
+    try {
+      const client = await connectedClient({ QRE_MCP_ALLOW_RUNS: "1" });
+      const failure = await failureFrom(client, "qre_run_estimate", {
+        draft: (await validDraft()) as Record<string, unknown>,
+      });
+      expect(failure.code).toBe("ENGINE_NOT_CONFIGURED");
+    } finally {
+      if (savedPythonBin === undefined) delete process.env.QRE_PYTHON_BIN;
+      else process.env.QRE_PYTHON_BIN = savedPythonBin;
+    }
+  });
+
+  it("reports RUN_BUSY as a readable failure", async () => {
+    const client = await connectedClient({ QRE_MCP_ALLOW_RUNS: "1" });
+    const draft = (await validDraft()) as Record<string, unknown>;
+
+    const calls = [
+      client.callTool({ name: "qre_run_estimate", arguments: { draft } }),
+      client.callTool({ name: "qre_run_estimate", arguments: { draft } }),
+      client.callTool({ name: "qre_run_estimate", arguments: { draft } }),
+    ];
+    const results = (await Promise.all(calls)) as CallToolResult[];
+
+    const busy = results
+      .map((result) => ({ result, failure: readToolFailure(result) }))
+      .find((entry) => entry.failure?.code === "RUN_BUSY");
+
+    expect(busy, "expected one of three concurrent calls to be refused").toBeDefined();
+    expect(busy?.result.structuredContent).toBeUndefined();
   });
 });

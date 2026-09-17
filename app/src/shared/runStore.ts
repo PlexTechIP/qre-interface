@@ -22,6 +22,7 @@ import {
   type RunFilter,
   type RunRecord,
   type RunStore,
+  type RunStoreChangeSource,
 } from "./types";
 
 /**
@@ -75,4 +76,20 @@ export class InMemoryRunStore implements RunStore {
   async query(filter: RunFilter): Promise<RunRecord[]> {
     return queryRunRecords([...this.records.values()], filter).map(clone);
   }
+}
+
+/**
+ * A plain `RunStore` dressed as `window.store`.
+ *
+ * `window.store` is a `RunStore & RunStoreChangeSource` because the real one
+ * has a main process on the other side of it to hear from. A test double has
+ * nobody, so it gets a subscription that never fires rather than being made to
+ * implement one — which is exactly why `onChanged` is not on `RunStore` itself.
+ */
+export function withNoChangeSource<T extends RunStore>(
+  store: T,
+): T & RunStoreChangeSource {
+  return Object.assign(store, {
+    onChanged: (_listener: () => void): (() => void) => () => {},
+  });
 }

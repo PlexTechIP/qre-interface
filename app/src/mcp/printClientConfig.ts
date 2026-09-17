@@ -17,7 +17,9 @@
  * reserves for the protocol stream. It must never appear on `server.ts`'s import
  * graph, and `importGraph.test.ts` fails if it ever does.
  *
- * Run with: `npm run mcp:config` (add `--json` for the bare config block).
+ * Run with: `npm run mcp:config` (add `--json` for the bare config block, or
+ * `--read-only` for a block that lets the agent read history but not run
+ * estimates; runs are on by default, as they are in the dashboard's block).
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -26,6 +28,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveRunDatabasePath } from "../main/dataDir.js";
+import { resolvePythonBin } from "../main/engine/pythonBin.js";
 import { MCP_SERVER_NAME } from "./serverInfo.js";
 
 /** This file's directory, and the app root two levels above it. */
@@ -154,6 +157,10 @@ export interface ConfigReport {
    */
   notes: string[];
   databasePath: string | null;
+  /** The engine's Python interpreter, when this checkout has one. */
+  pythonBin: string | null;
+  /** Whether the block tells the server to register the run tool. */
+  allowRuns: boolean;
   /** The interpreter the block names, and whether it is the one running now. */
   node: NodeChoice | null;
 }
@@ -165,7 +172,26 @@ export interface ConfigReport {
  * analyst who has not launched the dashboard yet should still be able to set the
  * agent up, and `qre_list_benchmarks` works without any history at all.
  */
-export function buildConfigReport(): ConfigReport {
+/**
+ * The venv interpreter for THIS checkout, when it is there.
+ *
+ * Resolved against `src/main/engine` explicitly rather than by letting
+ * `resolvePythonBin` use its own module directory: this file lives in
+ * `src/mcp/`, so the default would look for a venv two directories away from
+ * the one `setup_venv.sh` creates.
+ */
+function resolveCheckoutPythonBin(): string | null {
+  const pythonBin = resolvePythonBin(
+    process.env,
+    process.platform,
+    join(appRoot(), "src/main/engine"),
+  );
+  return existsSync(pythonBin) ? pythonBin : null;
+}
+
+export function buildConfigReport(
+  options: { allowRuns?: boolean } = {},
+): ConfigReport {
   const problems: string[] = [];
   const notes: string[] = [];
 
@@ -207,13 +233,36 @@ export function buildConfigReport(): ConfigReport {
     );
   }
 
+  // On unless asked otherwise, matching the dashboard's default: the first
+  // live tests ended read-only because a block had been produced without it.
+  const allowRuns = options.allowRuns !== false;
+  const pythonBin = resolveCheckoutPythonBin();
+  if (allowRuns && pythonBin === null) {
+    problems.push(
+      "Agent runs were requested, but this checkout has no Python environment " +
+        "for the engine. Run src/main/engine/python/setup_venv.sh, or set " +
+        "QRE_PYTHON_BIN to an interpreter with the QDK installed. Without it " +
+        "every run the agent starts is refused.",
+    );
+  }
+
   return {
     config: {
       command: node?.path ?? process.execPath,
       args: [bundle],
-      env: databasePath === null ? {} : { QRE_DB_PATH: databasePath },
+      env: {
+        ...(databasePath === null ? {} : { QRE_DB_PATH: databasePath }),
+        // Named explicitly for the same reason the dashboard names it: the
+        // server's own default resolves relative to the bundle, which has no
+        // venv beside it.
+        ...(pythonBin === null ? {} : { QRE_PYTHON_BIN: pythonBin }),
+        // Absent unless asked for. Absence is what the server reads as off.
+        ...(allowRuns ? { QRE_MCP_ALLOW_RUNS: "1" } : {}),
+      },
     },
     databasePath,
+    pythonBin,
+    allowRuns,
     node,
     problems,
     notes,
@@ -254,6 +303,8 @@ function render(report: ConfigReport): string {
     `  node          ${config.command}${report.node ? ` (${report.node.version})` : ""}`,
     `  server        ${config.args[0]}`,
     `  run history   ${report.databasePath ?? "(none published yet)"}`,
+    `  engine        ${report.pythonBin ?? "(no Python environment in this checkout)"}`,
+    `  agent runs    ${report.allowRuns ? "enabled (pass --read-only for a read-only block)" : "disabled (--read-only)"}`,
     "",
   ];
 
@@ -289,7 +340,11 @@ function render(report: ConfigReport): string {
 
 /** Entry point. `--json` prints only the config block, for piping. */
 function main(): void {
-  const report = buildConfigReport();
+  // `--allow-runs` is still accepted, as a no-op: it was the spelling for a
+  // day, and a stale README line should not silently produce a read-only block.
+  const report = buildConfigReport({
+    allowRuns: !process.argv.includes("--read-only"),
+  });
   const jsonOnly = process.argv.includes("--json");
 
   if (jsonOnly) {

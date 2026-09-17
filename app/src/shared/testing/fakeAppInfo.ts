@@ -10,6 +10,7 @@ import type {
   AppInfoService,
   McpClientEntry,
   McpSetup,
+  McpSetupOptions,
   RevealResult,
   StorageInfo,
   StorageLocation,
@@ -35,38 +36,66 @@ const FAKE_ENTRY: McpClientEntry = {
   env: {
     ELECTRON_RUN_AS_NODE: "1",
     QRE_DB_PATH: "/fixture/userData/run-history.sqlite",
+    QRE_PYTHON_BIN: "/fixture/resources/python/.venv/bin/python3",
   },
 };
 
-const fakeAddCommand = (program: string): string =>
+/** The same install, with the analyst's run opt-in in it. */
+const FAKE_ENTRY_WITH_RUNS: McpClientEntry = {
+  ...FAKE_ENTRY,
+  env: { ...FAKE_ENTRY.env, QRE_MCP_ALLOW_RUNS: "1" },
+};
+
+const fakeAddCommand = (program: string, entry: McpClientEntry): string =>
   [
     `${program} mcp add qre-dashboard`,
-    ...Object.entries(FAKE_ENTRY.env).map(([key, value]) => `--env ${key}='${value}'`),
+    ...Object.entries(entry.env).map(([key, value]) => `--env ${key}='${value}'`),
     "--",
-    `'${FAKE_ENTRY.command}'`,
-    ...FAKE_ENTRY.args.map((arg) => `'${arg}'`),
+    `'${entry.command}'`,
+    ...entry.args.map((arg) => `'${arg}'`),
   ].join(" ");
 
-export const FAKE_MCP_SETUP: McpSetup = {
-  entry: FAKE_ENTRY,
-  configJson: JSON.stringify({ mcpServers: { "qre-dashboard": FAKE_ENTRY } }, null, 2),
-  claudeCodeCommand: fakeAddCommand("claude"),
-  codexCommand: fakeAddCommand("codex"),
-  codexConfigToml: [
-    "[mcp_servers.qre-dashboard]",
-    `command = "${FAKE_ENTRY.command}"`,
-    `args = ["${FAKE_ENTRY.args[0] ?? ""}"]`,
-    "",
-    "[mcp_servers.qre-dashboard.env]",
-    ...Object.entries(FAKE_ENTRY.env).map(([key, value]) => `${key} = "${value}"`),
-  ].join("\n"),
-  problems: [],
-};
+function fakeSetup(entry: McpClientEntry): McpSetup {
+  return {
+    entry,
+    configJson: JSON.stringify({ mcpServers: { "qre-dashboard": entry } }, null, 2),
+    claudeCodeCommand: fakeAddCommand("claude", entry),
+    // The real command applies the tool timeout after the add; the fixture
+    // carries the same tail so the panel renders what an analyst will see.
+    codexCommand:
+      `${fakeAddCommand("codex", entry)} && perl -0pi -e ` +
+      `'s/^(\\[mcp_servers\\.qre-dashboard\\]\\n)(?!tool_timeout_sec)/` +
+      `\${1}tool_timeout_sec = 600\\n/m' ~/.codex/config.toml`,
+    codexAgentsInstruction:
+      "## QRE Dashboard (qre-dashboard MCP server)\n" +
+      "Use the qre-dashboard MCP tools (qre_run_estimate and the rest) for " +
+      "quantum resource estimates.",
+    codexConfigToml: [
+      "[mcp_servers.qre-dashboard]",
+      `command = "${entry.command}"`,
+      `args = ["${entry.args[0] ?? ""}"]`,
+      "tool_timeout_sec = 600",
+      "",
+      "[mcp_servers.qre-dashboard.env]",
+      ...Object.entries(entry.env).map(([key, value]) => `${key} = "${value}"`),
+    ].join("\n"),
+    problems: [],
+  };
+}
+
+export const FAKE_MCP_SETUP: McpSetup = fakeSetup(FAKE_ENTRY);
+
+/** What the panel gets once the analyst ticks "let agents run estimates". */
+export const FAKE_MCP_SETUP_WITH_RUNS: McpSetup = fakeSetup(FAKE_ENTRY_WITH_RUNS);
 
 export interface FakeAppInfoOptions {
   locations?: readonly StorageLocation[];
   /** Override the setup block, e.g. to exercise the problems list. */
   mcpSetup?: McpSetup;
+  /** Override the block returned when `allowRuns` is asked for. */
+  mcpSetupWithRuns?: McpSetup;
+  /** Records the options the panel asked with, for assertions. */
+  onGetMcpSetup?: (options: McpSetupOptions) => void;
   /** Resolve `reveal` as a failure, the way a missing folder really does. */
   revealResult?: RevealResult;
   /** Records which location was revealed, for assertions. */
@@ -78,8 +107,14 @@ export function fakeAppInfoService(options: FakeAppInfoOptions = {}): AppInfoSer
     async getStorage(): Promise<StorageInfo> {
       return { locations: options.locations ?? FAKE_STORAGE_LOCATIONS };
     },
-    async getMcpSetup(): Promise<McpSetup> {
-      return options.mcpSetup ?? FAKE_MCP_SETUP;
+    async getMcpSetup(setupOptions: McpSetupOptions): Promise<McpSetup> {
+      options.onGetMcpSetup?.(setupOptions);
+      // Picks by `allowRuns` rather than always answering the same way, so a
+      // test that asserts the panel shows the opt-in is asserting something the
+      // real service would also do.
+      return setupOptions.allowRuns
+        ? (options.mcpSetupWithRuns ?? FAKE_MCP_SETUP_WITH_RUNS)
+        : (options.mcpSetup ?? FAKE_MCP_SETUP);
     },
     async reveal(id: StorageLocationId): Promise<RevealResult> {
       options.onReveal?.(id);

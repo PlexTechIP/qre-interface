@@ -92,3 +92,28 @@ describe.each(PIPELINES)("$what", ({ source }) => {
     ).toBeGreaterThan(emptiesAt);
   });
 });
+
+/**
+ * The run tool spawns `python/estimate.py`, resolved relative to the bundle's
+ * own directory. `vite.main.config.ts` is what puts it there.
+ *
+ * Before the run tool existed this mattered only to the Electron main process,
+ * which is built by the same config and could not miss it. Now an MCP client
+ * launches `dist-electron/mcp-server.mjs` directly, and a bundle with no
+ * `python/` beside it fails at spawn time with a message about a missing file —
+ * two minutes into a call, and nowhere near the build that dropped it.
+ */
+describe("the engine's Python wrapper", () => {
+  it("is copied into dist-electron beside the MCP bundle", () => {
+    const config = read("vite.main.config.ts");
+
+    expect(config).toContain(`resolve("dist-electron/python")`);
+    expect(config).toContain(`resolve("src/main/engine/python")`);
+  });
+
+  it("is copied by the same pipeline that builds the MCP bundle", () => {
+    for (const { source } of PIPELINES) {
+      expect(source()).toContain("vite.main.config.ts");
+    }
+  });
+});

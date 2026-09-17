@@ -1,13 +1,18 @@
 /**
  * A run store that can only read.
  *
- * This exists because the MCP server is specified never to change the
- * dashboard's database — the design's CLOSED-1 rule keeps the dashboard as the
- * sole migration owner. Enforcing that by convention ("just don't call save")
- * leaves the guarantee one forgetful pull request away from being false, so it
- * is enforced structurally instead: the connection is opened `readOnly`, which
- * makes SQLite itself reject every write including the journal-mode pragma and
- * any migration DDL, and the class has no write methods to reach for.
+ * This exists because the MCP server's READ tools are specified never to change
+ * the dashboard's database. Enforcing that by convention ("just don't call
+ * save") leaves the guarantee one forgetful pull request away from being false,
+ * so it is enforced structurally instead: the connection is opened `readOnly`,
+ * which makes SQLite itself reject every write including the journal-mode
+ * pragma and any migration DDL, and the class has no write methods to reach for.
+ *
+ * The server can now append, through `SqliteAppendRunStore` on its own separate
+ * connection — which is precisely why this one stays as it is. CLOSED-1 is
+ * narrower than it was (the dashboard is the sole MIGRATION owner, not the sole
+ * writer), and keeping the two capabilities in two objects is what makes "a read
+ * tool cannot write" a fact about the type rather than a promise about the code.
  */
 
 import { DatabaseSync } from "node:sqlite";
@@ -21,7 +26,11 @@ import {
   DATABASE_SCHEMA_VERSION,
   selectAllRecords,
   selectRecordById,
+  selectRecordKeysByFilter,
   selectRecordsByFilter,
+  selectRecordsByIds,
+  type RunKey,
+  type RunKeyFilter,
 } from "./sqliteRunStoreReader.js";
 
 /**
@@ -92,6 +101,38 @@ export class SqliteReadOnlyRunStore implements ReadableRunStore {
 
   async query(filter: RunFilter): Promise<RunRecord[]> {
     return selectRecordsByFilter(this.database, filter);
+  }
+
+  /**
+   * The keys of every matching record, newest first, for a caller that will
+   * page: count them, find a cursor in them, and fetch only the page with
+   * `getMany`. Reads no record JSON. See `selectRecordKeysByFilter`.
+   */
+  async queryKeys(filter: RunKeyFilter): Promise<RunKey[]> {
+    return selectRecordKeysByFilter(this.database, filter);
+  }
+
+  /** The records for these ids, in this order; ids with no record are skipped. */
+  async getMany(ids: readonly string[]): Promise<RunRecord[]> {
+    return selectRecordsByIds(this.database, ids);
+  }
+
+  /**
+   * The schema version the database reports NOW, on this connection.
+   *
+   * The constructor's check guards the first read; this is for a caller that
+   * keeps the connection open while the dashboard may migrate the file in
+   * place. Throws if the connection is closed or the file is unreadable.
+   */
+  schemaVersion(): number {
+    const row = this.database.prepare("PRAGMA user_version").get() as
+      | { user_version?: unknown }
+      | undefined;
+    const actual = row?.user_version;
+    if (typeof actual !== "number") {
+      throw new Error("Could not read the SQLite run-store schema version.");
+    }
+    return actual;
   }
 
   /** Close the underlying connection. Safe to call more than once. */

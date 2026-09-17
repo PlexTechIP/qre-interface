@@ -5545,6 +5545,31 @@ button.danger:hover {
 }
 
 /*
+ * The one setting on this panel, as a wrapping <label>.
+ *
+ * A wrapping label rather than the `.checkbox-field` row used in the run form:
+ * that row exists so a tooltip trigger inside the text is not folded into the
+ * checkbox's own hit area, and there is no tooltip here.
+ */
+/* Which mode the MCP block below is in — read-only, or agents may run. */
+.settings-mode {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  cursor: pointer;
+}
+
+.settings-checkbox input {
+  accent-color: var(--color-accent);
+}
+
+/*
  * A copyable block: a client config or a shell command.
  *
  * Wraps rather than scrolls horizontally. These are absolute paths on someone

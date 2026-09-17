@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -13,7 +13,11 @@ import type {
 import type { AppInfoService } from "../../shared/appInfoTypes";
 import { InMemoryChatStore } from "../../shared/chatStore";
 import { fakeAgentService, fakeAppInfoService } from "../../shared/testing";
-import { FAKE_MCP_SETUP, FAKE_STORAGE_LOCATIONS } from "../../shared/testing/fakeAppInfo";
+import {
+  FAKE_MCP_SETUP,
+  FAKE_MCP_SETUP_WITH_RUNS,
+  FAKE_STORAGE_LOCATIONS,
+} from "../../shared/testing/fakeAppInfo";
 import { QRE_VERSION } from "../constants/staticOptions";
 import type { ThemePreference } from "../theme";
 import { SettingsPage } from "./SettingsPage";
@@ -66,6 +70,8 @@ function setup(
      * subject lives on is a fact about the page, not about the test.
      */
     tab?: string;
+    /** The analyst's MCP run opt-in, as the shell holds it. */
+    allowAgentRuns?: boolean;
   } = {},
 ) {
   const chats = overrides.chats ?? new InMemoryChatStore();
@@ -78,9 +84,16 @@ function setup(
   const onCatalogRefreshed = vi.fn();
   const onConversationsCleared = vi.fn();
   const onThemePreferenceChange = vi.fn();
+  const onAllowAgentRunsChange = vi.fn();
 
   function Harness(): React.JSX.Element {
     const [activeTab, setActiveTab] = useState(0);
+    // The harness holds the toggle the way the shell does, so a test can click
+    // it and then assert on what the panel re-read.
+    // On unless a test says otherwise — the same default the shell applies.
+    const [allowAgentRuns, setAllowAgentRuns] = useState(
+      overrides.allowAgentRuns ?? true,
+    );
     return (
       <SettingsPage
         service={service}
@@ -98,6 +111,11 @@ function setup(
         onThemePreferenceChange={onThemePreferenceChange}
         activeTab={activeTab}
         onActiveTabChange={setActiveTab}
+        allowAgentRuns={allowAgentRuns}
+        onAllowAgentRunsChange={(allow) => {
+          onAllowAgentRunsChange(allow);
+          setAllowAgentRuns(allow);
+        }}
       />
     );
   }
@@ -119,6 +137,7 @@ function setup(
     onCatalogRefreshed,
     onConversationsCleared,
     onThemePreferenceChange,
+    onAllowAgentRunsChange,
   };
 }
 
@@ -689,18 +708,110 @@ describe("SettingsPage — the MCP Server tab", () => {
     expect(screen.getByRole("button", { name: /copy toml/i })).toBeVisible();
   });
 
-  it("says the access is read-only, because that is the question asked", async () => {
+  it("says the access is read-only when the analyst turned runs off", async () => {
+    setup({ tab: "MCP Server", allowAgentRuns: false });
+
+    const intro = await screen.findByText(/cannot start a run, change one/i);
+    expect(intro).toHaveTextContent(/read-only/i);
+  });
+
+  it("offers agent runs ticked by default, and reports an untick to the shell", async () => {
+    const { onAllowAgentRunsChange } = setup({ tab: "MCP Server" });
+
+    const toggle = await screen.findByRole("checkbox", {
+      name: /let connected agents run estimates/i,
+    });
+    // On by default: two live tests ended read-only because the block had been
+    // copied with this unticked.
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+
+    expect(onAllowAgentRunsChange).toHaveBeenCalledWith(false);
+  });
+
+  it("says which mode the block is in, right above it", async () => {
+    setup({ tab: "MCP Server" });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /lets connected agents run estimates/i,
+    );
+
+    cleanup();
+
+    setup({ tab: "MCP Server", allowAgentRuns: false });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /this block is read-only/i,
+    );
+  });
+
+  it("re-reads the block with the opt-in, and says what it says instead", async () => {
+    const onGetMcpSetup = vi.fn();
+    setup({
+      tab: "MCP Server",
+      appInfo: fakeAppInfoService({ onGetMcpSetup }),
+      allowAgentRuns: false,
+    });
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: /let connected agents run estimates/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onGetMcpSetup).toHaveBeenCalledWith({ allowRuns: true });
+    });
+
+    // The block the analyst copies is the thing that changed.
+    await waitFor(() => {
+      expect(
+        screen.getByRole("group", { name: /claude code setup/i }),
+      ).toHaveTextContent("QRE_MCP_ALLOW_RUNS='1'");
+    });
+
+    // And the panel no longer claims the access is read-only.
+    expect(screen.queryByText(/cannot start a run/i)).toBeNull();
+    expect(screen.getByText(/without asking you first/i)).toBeVisible();
+    expect(screen.getByText(/cannot delete or change a run/i)).toBeVisible();
+  });
+
+  it("offers the Codex standing instruction as an optional block", async () => {
+    // Codex finds a custom server's tools only by searching and never sees
+    // the server's instructions, so an open-ended estimate request can be
+    // answered from the web. The stanza is offered; the command does not
+    // write into the analyst's AGENTS.md.
     setup({ tab: "MCP Server" });
 
-    const block = await screen.findByText(/read-only/i);
-    expect(block).toHaveTextContent(/cannot start a run/i);
+    const block = await screen.findByRole("group", {
+      name: /codex, optional standing instruction setup/i,
+    });
+    expect(block).toHaveTextContent("qre-dashboard MCP server");
+    expect(block).toHaveTextContent("qre_run_estimate");
+    expect(
+      screen.getByRole("group", { name: /codex cli setup/i }),
+    ).not.toHaveTextContent("AGENTS.md");
+  });
+
+  it("says the client must be restarted before the change takes effect", async () => {
+    // An MCP client reads the environment once, at spawn. Without this the
+    // analyst ticks a box, sees the block change, and concludes it is on.
+    setup({ tab: "MCP Server" });
+
+    expect(
+      await screen.findByText(/reads these settings only when it starts the server/i),
+    ).toBeVisible();
   });
 
   it("surfaces a problem rather than a block that will not work", async () => {
     setup({
       tab: "MCP Server",
+      // The default block is the runs-enabled one, so that is the fixture the
+      // panel will ask for.
       appInfo: fakeAppInfoService({
-        mcpSetup: { ...FAKE_MCP_SETUP, problems: ["No runs are saved yet."] },
+        mcpSetupWithRuns: {
+          ...FAKE_MCP_SETUP_WITH_RUNS,
+          problems: ["No runs are saved yet."],
+        },
       }),
     });
 

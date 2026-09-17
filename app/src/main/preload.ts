@@ -16,6 +16,7 @@ import type {
   StorageInfo,
   StorageLocationId,
   McpSetup,
+  McpSetupOptions,
 } from "../shared/appInfoTypes.js";
 import type {
   ChatMessage,
@@ -31,6 +32,7 @@ import type {
   RunRecord,
   RunResult,
   RunStore,
+  RunStoreChangeSource,
   UploadedProgramFormat,
 } from "../shared/types.js";
 import type { UploadValidationResult } from "./engine/uploadValidation.js";
@@ -60,6 +62,7 @@ import {
   STORE_GET_CHANNEL,
   STORE_LIST_CHANNEL,
   STORE_QUERY_CHANNEL,
+  STORE_CHANGED_CHANNEL,
   STORE_SAVE_CHANNEL,
 } from "./ipcChannels.js";
 
@@ -72,7 +75,7 @@ const estimator: Pick<EstimatorService, "run"> = {
 // The RunStore, reached over IPC. Each method is a thin `invoke` wrapper — the
 // renderer consumes the same async `RunStore` interface the mock did, so the
 // History/Comparison UI swaps onto real SQLite with no shape change.
-const store: RunStore = {
+const store: RunStore & RunStoreChangeSource = {
   save(record: RunRecord): Promise<void> {
     return ipcRenderer.invoke(STORE_SAVE_CHANNEL, record) as Promise<void>;
   },
@@ -87,6 +90,22 @@ const store: RunStore = {
   },
   query(filter: RunFilter): Promise<RunRecord[]> {
     return ipcRenderer.invoke(STORE_QUERY_CHANNEL, filter) as Promise<RunRecord[]>;
+  },
+  /*
+   * The history changed in another process — an agent saved a run through the
+   * MCP server. Push-only: main sends, nothing invokes.
+   *
+   * The IpcRendererEvent is dropped for the same reason `onReplyDelta` drops
+   * it: it carries `sender` and `ports`, which are handles into the main
+   * process, and this callback exists to deliver a nudge with no payload at
+   * all.
+   */
+  onChanged(listener: () => void): () => void {
+    const forward = (): void => listener();
+    ipcRenderer.on(STORE_CHANGED_CHANNEL, forward);
+    return () => {
+      ipcRenderer.removeListener(STORE_CHANGED_CHANNEL, forward);
+    };
   },
 };
 
@@ -130,8 +149,9 @@ const agent: AgentService = {
     return ipcRenderer.invoke(AGENT_CATALOG_CHANNEL, provider) as Promise<ProviderCatalogResult>;
   },
   /*
-   * The one listener on this surface, and the only place `ipcRenderer.on`
-   * appears in the preload at all.
+   * The one listener on THIS surface. There is one other in the preload —
+   * `store.onChanged`, which is how History learns that an agent saved a run —
+   * and both follow the same rule.
    *
    * The IpcRendererEvent is deliberately not forwarded: it carries `sender` and
    * `ports`, which are handles into the main process, and handing those to the
@@ -207,8 +227,13 @@ const appInfo: AppInfoService = {
   getStorage(): Promise<StorageInfo> {
     return ipcRenderer.invoke(APP_INFO_STORAGE_CHANNEL) as Promise<StorageInfo>;
   },
-  getMcpSetup(): Promise<McpSetup> {
-    return ipcRenderer.invoke(APP_INFO_MCP_CHANNEL) as Promise<McpSetup>;
+  getMcpSetup(options: McpSetupOptions): Promise<McpSetup> {
+    // Re-narrowed on the way out as well as on the way in: the renderer's
+    // value comes from localStorage, which is a string store that can hold
+    // anything a previous build wrote.
+    return ipcRenderer.invoke(APP_INFO_MCP_CHANNEL, {
+      allowRuns: options.allowRuns === true,
+    }) as Promise<McpSetup>;
   },
   reveal(id: StorageLocationId): Promise<RevealResult> {
     return ipcRenderer.invoke(APP_INFO_REVEAL_CHANNEL, id) as Promise<RevealResult>;

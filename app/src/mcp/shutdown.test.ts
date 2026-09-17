@@ -146,3 +146,34 @@ describe("shutdown", () => {
     expect(exit).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("an engine subprocess that is still running", () => {
+  it("kills it before the server stops accepting, not after", async () => {
+    // `server.close()` waits for in-flight requests, and a request running an
+    // estimate holds a Python child for up to two minutes — long enough for
+    // the grace timer to expire and orphan it. Killing first turns that
+    // request into a failure the sequence can wait for.
+    const { order, dependencies } = deps({
+      stopEngine: () => {
+        order.push("engine");
+      },
+    });
+
+    await shutdown(0, dependencies);
+
+    expect(order).toEqual(["engine", "server", "transport", "store", "flush", "exit"]);
+  });
+
+  it("finishes the sequence when stopping the engine throws", async () => {
+    const { order, dependencies } = deps({
+      stopEngine: () => {
+        order.push("engine");
+        throw new Error("no such process");
+      },
+    });
+
+    await shutdown(0, dependencies);
+
+    expect(order).toEqual(["engine", "server", "transport", "store", "flush", "exit"]);
+  });
+});

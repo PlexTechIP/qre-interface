@@ -67,6 +67,18 @@ Both setup scripts require the repository-pinned Python 3.13.14, create
 `QRE_PYTHON_BIN` to an executable path to override that interpreter explicitly.
 The venv must exist before running `npm run test:engine` or `npm run test:all`.
 
+The dashboard is no longer the only process that spawns this engine. With agent
+runs enabled, the MCP server's `qre_run_estimate` resolves the interpreter
+through the SAME `resolvePythonBin`, so the two cannot disagree about which venv
+is in use — and the dashboard writes the path it resolved into `QRE_PYTHON_BIN`
+in the client configuration it emits under Settings → MCP Server. That is not
+belt-and-braces: the default resolves relative to the resolving module's own
+directory, which is right when the server runs from source under `tsx` and wrong
+for the bundle, where `mcp-server.mjs` sits beside a copied `python/` with no
+`.venv` in it. **A packaged build must point `QRE_PYTHON_BIN` at the runtime it
+actually ships**, or every run an agent starts is refused with
+`ENGINE_NOT_CONFIGURED`.
+
 Test suites in this module:
 
 - `pythonBin.test.ts` — Windows/POSIX venv and explicit-override resolution

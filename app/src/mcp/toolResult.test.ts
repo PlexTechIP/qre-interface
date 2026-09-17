@@ -7,7 +7,11 @@ import {
   boundedText,
   capText,
   escapeControlChars,
+  readToolFailure,
   redactPaths,
+  setOwnProperty,
+  toolFailure,
+  toolSuccess,
 } from "./toolResult.js";
 
 const ESC = String.fromCharCode(27);
@@ -188,5 +192,77 @@ describe("redactPaths on a quoted path containing the other quote", () => {
 
     expect(redacted).not.toContain("say");
     expect(redacted).toContain("line 3");
+  });
+});
+
+/**
+ * Every map in a result is keyed by text the server did not choose. Plain
+ * assignment of a key named `__proto__` reaches the accessor on
+ * `Object.prototype` and rewires the object instead of storing the value.
+ */
+describe("setOwnProperty", () => {
+  it("stores a key named __proto__ as data", () => {
+    const target: Record<string, unknown> = {};
+
+    setOwnProperty(target, "__proto__", { polluted: true });
+
+    expect(Object.hasOwn(target, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(target)).toBe(Object.prototype);
+    expect(JSON.parse(JSON.stringify(target))).toEqual(
+      JSON.parse('{"__proto__": {"polluted": true}}'),
+    );
+  });
+});
+
+describe("toolSuccess over a map with a key named __proto__", () => {
+  it("keeps the entry and leaves the prototype alone", () => {
+    const data = { additional: JSON.parse('{"__proto__": {"value": 1, "unit": "", "display": "1"}}') };
+
+    const result = toolSuccess(data);
+
+    const additional = (result.structuredContent as { additional: Record<string, unknown> }).additional;
+    expect(Object.hasOwn(additional, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(additional)).toBe(Object.prototype);
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining('"__proto__"'),
+    });
+  });
+});
+
+describe("toolFailure with details", () => {
+  it("sanitises the details as thoroughly as the message", () => {
+    const result = toolFailure("VALIDATION_FAILED", "The draft would not run.", {
+      errors: [
+        {
+          field: "draft",
+          message: `could not read /Users/jane/runs/history.sqlite`,
+        },
+      ],
+    });
+
+    const failure = readToolFailure(result);
+    const errors = (failure?.details as { errors: { message: string }[] }).errors;
+    expect(errors[0]?.message).toContain("<path>");
+    expect(errors[0]?.message).not.toContain("jane");
+  });
+
+  it("omits the key entirely when there are no details", () => {
+    const result = toolFailure("DB_LOCKED", "Try again after the current run.");
+
+    const [block] = result.content;
+    if (block?.type !== "text") throw new Error("expected a text block");
+    expect(JSON.parse(block.text)).toEqual({
+      code: "DB_LOCKED",
+      message: "Try again after the current run.",
+    });
+    expect(readToolFailure(result)).not.toHaveProperty("details");
+  });
+
+  it("still carries no structuredContent, which is what a real client validates", () => {
+    const result = toolFailure("VALIDATION_FAILED", "No.", { errors: [] });
+
+    expect(result.structuredContent).toBeUndefined();
+    expect(result.isError).toBe(true);
   });
 });

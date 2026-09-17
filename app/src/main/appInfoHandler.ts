@@ -3,7 +3,9 @@ import { existsSync } from "node:fs";
 
 import {
   isStorageLocationId,
+  readMcpSetupOptions,
   type McpSetup,
+  type McpSetupOptions,
   type RevealResult,
   type StorageInfo,
   type StorageLocation,
@@ -40,14 +42,21 @@ export function registerAppInfoHandlers(
    * one. Computed once and closed over, Settings kept saying it for the rest of
    * the session, contradicting the History tab next to it.
    */
-  resolveMcpSetup: () => Promise<McpSetup>,
+  resolveMcpSetup: (options: McpSetupOptions) => Promise<McpSetup>,
   revealItem: RevealItem,
   /** Injected for the same reason `revealItem` is: no Electron under test. */
   pathExists: (target: string) => boolean = existsSync,
 ): void {
   ipcMain.handle(APP_INFO_STORAGE_CHANNEL, (): StorageInfo => ({ locations }));
 
-  ipcMain.handle(APP_INFO_MCP_CHANNEL, (): Promise<McpSetup> => resolveMcpSetup());
+  ipcMain.handle(
+    APP_INFO_MCP_CHANNEL,
+    (_event, rawOptions: unknown): Promise<McpSetup> =>
+      // Narrowed here for the same reason the reveal handler narrows its id:
+      // `ipcMain.handle` checks nothing. This one decides whether the emitted
+      // block tells an agent it may run estimates, so it fails closed.
+      resolveMcpSetup(readMcpSetupOptions(rawOptions)),
+  );
 
   ipcMain.handle(APP_INFO_REVEAL_CHANNEL, (_event, rawId: unknown): RevealResult => {
     /*

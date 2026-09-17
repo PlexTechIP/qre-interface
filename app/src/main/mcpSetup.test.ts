@@ -20,6 +20,11 @@ const PATHS = {
   serverBundlePath: "/Applications/QRE Interface.app/Contents/Resources/mcp-server.mjs",
   runDatabasePath: "/Users/an analyst/Library/Application Support/qre/run-history.sqlite",
   hasSavedRuns: true,
+  pythonBinPath:
+    "/Applications/QRE Dashboard.app/Contents/Resources/python/.venv/bin/python3",
+  // Off by default, like the checkbox: every test above is about the block an
+  // analyst gets without opting into anything.
+  allowRuns: false,
 };
 
 const everythingExists = (): boolean => true;
@@ -138,5 +143,113 @@ describe("the MCP setup block", () => {
 
       expect(setup.problems.join(" ")).toMatch(/inside this app's archive/i);
     });
+  });
+});
+
+describe("the Python interpreter", () => {
+  it("is always named, because the server's own default is wrong when packaged", () => {
+    // `resolvePythonBin` falls back to a path relative to its own module, which
+    // is right from a checkout and wrong beside `mcp-server.mjs` in a release.
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    expect(setup.entry.env.QRE_PYTHON_BIN).toBe(PATHS.pythonBinPath);
+    expect(setup.claudeCodeCommand).toContain(
+      `QRE_PYTHON_BIN='${PATHS.pythonBinPath}'`,
+    );
+  });
+
+  it("is in the Codex TOML block too", () => {
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    expect(setup.codexConfigToml).toContain("QRE_PYTHON_BIN = ");
+  });
+});
+
+describe("the Codex tool timeout", () => {
+  it("sits between args and the env table, and is emitted either way", () => {
+    // Codex defaults to 60 seconds and an estimate routinely takes longer, so
+    // without this a run that SUCCEEDED is reported to the analyst as a
+    // timeout.
+    for (const allowRuns of [false, true]) {
+      const lines = buildMcpSetup({ ...PATHS, allowRuns, exists: everythingExists })
+        .codexConfigToml.split("\n");
+
+      const argsAt = lines.findIndex((line) => line.startsWith("args = "));
+      const timeoutAt = lines.indexOf("tool_timeout_sec = 600");
+      const blankAt = lines.indexOf("");
+
+      expect(timeoutAt).toBe(argsAt + 1);
+      expect(blankAt).toBe(timeoutAt + 1);
+    }
+  });
+});
+
+describe("letting agents run estimates", () => {
+  it("says nothing about runs when the analyst has not asked for it", () => {
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    // Absent rather than "0": absence is what the server reads as off, so
+    // turning the toggle back off and re-pasting really does turn it off.
+    expect(setup.entry.env).not.toHaveProperty("QRE_MCP_ALLOW_RUNS");
+    expect(setup.claudeCodeCommand).not.toContain("QRE_MCP_ALLOW_RUNS");
+    expect(setup.problems).toEqual([]);
+  });
+
+  it("carries the opt-in in every form of the block when it is on", () => {
+    const setup = buildMcpSetup({
+      ...PATHS,
+      allowRuns: true,
+      exists: everythingExists,
+    });
+
+    expect(setup.entry.env.QRE_MCP_ALLOW_RUNS).toBe("1");
+    expect(setup.claudeCodeCommand).toContain(`--env QRE_MCP_ALLOW_RUNS='1'`);
+    expect(setup.codexCommand).toContain(`--env QRE_MCP_ALLOW_RUNS='1'`);
+    expect(setup.codexConfigToml).toContain(`QRE_MCP_ALLOW_RUNS = "1"`);
+    expect(JSON.parse(setup.configJson)).toMatchObject({
+      mcpServers: { "qre-dashboard": { env: { QRE_MCP_ALLOW_RUNS: "1" } } },
+    });
+    expect(setup.problems).toEqual([]);
+  });
+
+  it("makes the Codex command set the tool timeout itself", () => {
+    // `codex mcp add` has no timeout flag and rewrites the table on a repeat
+    // add, so the one-liner applies the line after the add, idempotently. The
+    // Claude Code command needs nothing of the kind.
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    expect(setup.codexCommand).toMatch(/^codex mcp add /);
+    expect(setup.codexCommand).toContain(" && perl -0pi -e '");
+    expect(setup.codexCommand).toContain("tool_timeout_sec = 600");
+    expect(setup.codexCommand).toContain("(?!tool_timeout_sec)");
+    expect(setup.codexCommand).toMatch(/~\/\.codex\/config\.toml$/);
+    expect(setup.claudeCodeCommand).not.toContain("perl");
+  });
+
+  it("offers Codex a standing instruction without writing it anywhere", () => {
+    // Codex finds a custom server's tools only by searching for them and does
+    // not show the server's instructions, so a session asked to "run an
+    // estimate" can answer from the web. The stanza is offered for AGENTS.md;
+    // the command deliberately does not touch that file.
+    const setup = buildMcpSetup({ ...PATHS, exists: everythingExists });
+
+    expect(setup.codexAgentsInstruction).toContain("qre-dashboard MCP server");
+    expect(setup.codexAgentsInstruction).toContain("qre_run_estimate");
+    expect(setup.codexAgentsInstruction).toMatch(/trapped ion/i);
+    expect(setup.codexCommand).not.toContain("AGENTS.md");
+    expect(setup.claudeCodeCommand).not.toContain("AGENTS.md");
+  });
+
+  it("reports a missing Python environment, but only when runs are on", () => {
+    const noPython = (target: string): boolean => target !== PATHS.pythonBinPath;
+
+    const enabled = buildMcpSetup({ ...PATHS, allowRuns: true, exists: noPython });
+    expect(enabled.problems.join(" ")).toMatch(/setup_venv\.sh/);
+    expect(enabled.problems.join(" ")).toMatch(/QRE_PYTHON_BIN/);
+
+    // With runs off the interpreter is never used, so saying it is missing
+    // would be noise on a block that works perfectly.
+    const disabled = buildMcpSetup({ ...PATHS, allowRuns: false, exists: noPython });
+    expect(disabled.problems).toEqual([]);
   });
 });

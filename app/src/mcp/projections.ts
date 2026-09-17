@@ -5,7 +5,7 @@
  * properly-escaped user-authored text and no sensitive internal fields.
  */
 
-import { boundedText } from "./toolResult.js";
+import { boundedText, setOwnProperty } from "./toolResult.js";
 import type {
   FieldMetric,
   NumericMetric,
@@ -50,6 +50,12 @@ export interface RunSettings {
   traceTransform: Record<string, number | string | boolean | null>;
 }
 
+/** One point on the curve: the two numbers a frontier trades against each other. */
+export interface FrontierEndpoint {
+  physicalQubits: number;
+  runtime: number;
+}
+
 /**
  * RunDetail — a fuller view of a run than RunSummary, but still with `raw`
  * excluded, and every engine-controlled field bounded, so the response has a
@@ -80,6 +86,18 @@ export interface RunDetail {
    * is here, so this is not the whole row.
    */
   frontierSampleOmitted: number;
+  /**
+   * The whole frontier as (qubits, runtime) points, cheapest in qubits first,
+   * capped at `MAX_FRONTIER_POINTS`. Units are the ones the span reports.
+   *
+   * `frontierSample` is one row with every metric; this is every row with two
+   * metrics. Together they are what the dashboard's Results page shows, which
+   * is the point: an agent that ran an estimate should be able to report the
+   * curve without sending the analyst to the app to look at it.
+   */
+  frontierPoints: FrontierEndpoint[];
+  /** Points past the cap. Zero for an ordinary run. */
+  frontierPointsOmitted: number;
 }
 
 /**
@@ -122,14 +140,12 @@ export function toRunSummary(record: RunRecord): RunSummary {
  * reading them from one named row makes the assumption visible rather than
  * averaging over it.
  */
-function toFrontierSpan(
+export function toFrontierSpan(
   frontier: readonly FrontierRow[] | null,
 ): FrontierSpan | null {
   if (frontier === null || frontier.length === 0) return null;
 
-  const byQubits = [...frontier].sort(
-    (a, b) => a.physicalQubits.value - b.physicalQubits.value,
-  );
+  const byQubits = sortByQubits(frontier);
   const cheapest = byQubits[0];
   const largest = byQubits[byQubits.length - 1];
   if (cheapest === undefined || largest === undefined) return null;
@@ -146,6 +162,42 @@ function toFrontierSpan(
       physicalQubits: largest.physicalQubits.value,
       runtime: largest.runtime.value,
     },
+  };
+}
+
+/** The one ordering every frontier view here uses: fewest qubits first. */
+function sortByQubits(frontier: readonly FrontierRow[]): FrontierRow[] {
+  return [...frontier].sort(
+    (a, b) => a.physicalQubits.value - b.physicalQubits.value,
+  );
+}
+
+/**
+ * How many frontier points a detail carries. A frontier from one factory
+ * choice is usually one point and rarely more than a handful; the cap exists
+ * for the engine configuration nobody has written yet, not for today's runs.
+ */
+const MAX_FRONTIER_POINTS = 32;
+
+/**
+ * The curve itself, as bare (qubits, runtime) pairs.
+ *
+ * Numbers only, no units and no display strings: the units are on the span,
+ * and the per-metric `display` text is what makes a single row cost as much
+ * context as this whole list does.
+ */
+function toFrontierPoints(
+  frontier: readonly FrontierRow[] | null,
+): { points: FrontierEndpoint[]; omitted: number } {
+  if (frontier === null || frontier.length === 0) return { points: [], omitted: 0 };
+
+  const byQubits = sortByQubits(frontier);
+  return {
+    points: byQubits.slice(0, MAX_FRONTIER_POINTS).map((row) => ({
+      physicalQubits: row.physicalQubits.value,
+      runtime: row.runtime.value,
+    })),
+    omitted: Math.max(0, byQubits.length - MAX_FRONTIER_POINTS),
   };
 }
 
@@ -215,11 +267,13 @@ function boundedFrontierSample(row: FrontierRow): {
     }
     const bounded = boundedMetricValue(metric.value);
     if (bounded.flattened) lost += 1;
-    kept[boundedKey] = {
+    // Keys are engine-authored; see `setOwnProperty` for why plain assignment
+    // is not safe for a key named `__proto__`.
+    setOwnProperty(kept, boundedKey, {
       value: bounded.value,
       unit: boundedText(metric.unit, MAX_SHORT_FIELD),
       display: boundedText(metric.display, MAX_SHORT_FIELD),
-    };
+    } satisfies FieldMetric);
   }
 
   const sample: FrontierRow = {
@@ -263,6 +317,7 @@ export function toRunDetail(record: RunRecord): RunDetail {
   const frontierRowCount = frontier ? frontier.length : null;
   const firstRow = frontier && frontier.length > 0 ? frontier[0] : undefined;
   const bounded = firstRow ? boundedFrontierSample(firstRow) : null;
+  const curve = toFrontierPoints(frontier);
 
   let error = record.result.error;
   if (error !== null) {
@@ -290,6 +345,8 @@ export function toRunDetail(record: RunRecord): RunDetail {
     frontierSample: bounded?.sample ?? null,
     frontierRowCount,
     frontierSampleOmitted: bounded?.omitted ?? 0,
+    frontierPoints: curve.points,
+    frontierPointsOmitted: curve.omitted,
   };
 }
 
@@ -326,16 +383,18 @@ function toBoundedSettings(
     const key = boundedText(prefix, MAX_SHORT_FIELD);
     if (Object.hasOwn(bounded, key)) return;
 
+    // Keys come from a stored config; `setOwnProperty` keeps a key named
+    // `__proto__` as data rather than letting it rewire the map.
     if (typeof value === "number" || typeof value === "boolean") {
-      bounded[key] = value;
+      setOwnProperty(bounded, key, value);
     } else if (typeof value === "string") {
-      bounded[key] = boundedText(value, MAX_SHORT_FIELD);
+      setOwnProperty(bounded, key, boundedText(value, MAX_SHORT_FIELD));
     } else if (value === null || value === undefined) {
       // A real null: the stage is off, the option is unset. Distinct from the
       // null below, which means "too deep to show".
-      bounded[key] = null;
+      setOwnProperty(bounded, key, null);
     } else if (depth >= MAX_SETTING_DEPTH) {
-      bounded[key] = null;
+      setOwnProperty(bounded, key, null);
     } else if (Array.isArray(value)) {
       value.forEach((item, index) => walk(item, `${prefix}.${index}`, depth + 1));
     } else {

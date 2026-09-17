@@ -21,6 +21,7 @@
 import { z } from "zod";
 
 import type { RunSettings } from "./projections.js";
+import { STORE_ACCESS_ERROR_CODES } from "./runStoreAccess.js";
 
 import {
   ARCHITECTURE_TYPES,
@@ -126,6 +127,8 @@ const runDetail = z.object({
   frontierSample: frontierRow.nullable(),
   frontierRowCount: z.number().nullable(),
   frontierSampleOmitted: z.number(),
+  frontierPoints: z.array(frontierEndpoint),
+  frontierPointsOmitted: z.number(),
 });
 
 export const LIST_BENCHMARKS_OUTPUT = {
@@ -141,12 +144,69 @@ export const LIST_BENCHMARKS_OUTPUT = {
 
 export const LIST_RUNS_OUTPUT = {
   runs: z.array(runSummary),
-  totalMatched: z.number(),
-  nextCursor: z.string().optional(),
+  totalMatched: z
+    .number()
+    .describe("How many runs match the filter, counted at the time of this call."),
+  nextCursor: z
+    .string()
+    .optional()
+    .describe(
+      "Pass as `cursor` for the next page. Absent means there are no more " +
+        "runs — it is the only end-of-history signal, because a page can be " +
+        "shorter than `limit` while more remain.",
+    ),
 };
 
 export const GET_RUN_OUTPUT = {
   run: runDetail,
+};
+
+/**
+ * Why a finished run is not in the analyst's history.
+ *
+ * Every way of failing to OPEN the database, plus one for failing to write to
+ * an open one. The open codes are reused rather than restated so that a client
+ * reading `warning.code` sees the same vocabulary it already sees in an
+ * `isError` result — `DB_LOCKED` in particular means the same thing in both
+ * places, and only the consequence differs.
+ */
+export const SAVE_WARNING_CODES = [
+  ...STORE_ACCESS_ERROR_CODES,
+  "SAVE_FAILED",
+] as const;
+
+/**
+ * The run IN FULL, not the list summary.
+ *
+ * The first live test reported only qubits and runtime, because that was all
+ * the summary shape carried and the model did not go on to call `qre_get_run`.
+ * An agent that just spent the analyst's two minutes should be able to report
+ * everything the Results page would show from this one reply — settings,
+ * timings, the representative row with every metric, and the curve — so the
+ * shape is `qre_get_run`'s, plus the span for ranking against saved runs.
+ */
+export const RUN_ESTIMATE_OUTPUT = {
+  run: runDetail,
+  frontier: frontierSpan
+    .nullable()
+    .describe(
+      "The span of the frontier, in the shape qre_list_runs uses, so this run " +
+        "can be ranked against saved ones without another call. Null when the " +
+        "estimate failed.",
+    ),
+  saved: z
+    .boolean()
+    .describe("Whether the run was appended to the dashboard's history."),
+  warning: z
+    .object({
+      code: z.enum(SAVE_WARNING_CODES),
+      message: z.string(),
+    })
+    .optional()
+    .describe(
+      "Present only when saved is false. The estimate itself still ran and " +
+        "`run` is its real result — this says why it is not in the history.",
+    ),
 };
 
 export const VALIDATE_CONFIG_OUTPUT = {
