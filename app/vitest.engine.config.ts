@@ -24,6 +24,9 @@ export default defineConfig({
       "src/main/engine/architectureBounds.test.ts",
       "src/main/engine/execute.test.ts",
       "src/main/engine/qreEngine.test.ts",
+      // The MCP run tool end to end: the server outside Electron, the real
+      // interpreter, and a record the read tools then read.
+      "src/main/engine/mcpRunEstimate.test.ts",
     ],
   },
 });

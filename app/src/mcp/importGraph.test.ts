@@ -36,15 +36,34 @@ describe("MCP import graph validation", () => {
     const allowlist = new Set<string>([
       // Benchmark registry
       resolve(appDir, "src/main/engine/benchmarkRegistry.ts"),
+      // The engine adapter, reached only by `qre_run_estimate`. These are the
+      // seven modules between `QreEngine.run(config)` and a Python subprocess,
+      // and none of them imports Electron or touches a DOM — which is why the
+      // run tool can call the app's real estimator rather than a second copy of
+      // the invocation logic that would drift from it.
+      resolve(appDir, "src/main/engine/qreEngine.ts"),
+      resolve(appDir, "src/main/engine/execute.ts"),
+      resolve(appDir, "src/main/engine/configToInvocation.ts"),
+      resolve(appDir, "src/main/engine/outputToResult.ts"),
+      resolve(appDir, "src/main/engine/invocation.ts"),
+      resolve(appDir, "src/main/engine/uploadValidation.ts"),
+      // Which interpreter to spawn, resolved the same way the dashboard
+      // resolves it so the two cannot disagree about the venv.
+      resolve(appDir, "src/main/engine/pythonBin.ts"),
       // Where the dashboard published its database, and the committed
       // generation contract the draft tools validate against.
       resolve(appDir, "src/main/dataDir.ts"),
       resolve(appDir, "src/main/draftValidation.ts"),
-      // The READ path of the SQLite store, and only the read path. The
-      // read-write `sqliteRunStore.ts` is deliberately absent: the MCP server
-      // may not migrate or write, so its module must not be reachable at all.
+      // The READ path of the SQLite store, and only the read path.
       resolve(appDir, "src/main/sqliteReadOnlyRunStore.ts"),
       resolve(appDir, "src/main/sqliteRunStoreReader.ts"),
+      // The append path: one INSERT, and a store that refuses to open a
+      // database at a schema it does not already know. The read-write
+      // `sqliteRunStore.ts` is still deliberately absent — it migrates, and
+      // migration is the dashboard's alone — which the test below asserts
+      // directly rather than leaving to this list.
+      resolve(appDir, "src/main/sqliteAppendRunStore.ts"),
+      resolve(appDir, "src/main/sqliteRunStoreWriter.ts"),
       resolve(appDir, "src/shared/runRecordValidation.ts"),
       resolve(appDir, "src/shared/runStore.ts"),
       // The run form and the two directions between it and a generated draft.
@@ -83,6 +102,26 @@ describe("MCP import graph validation", () => {
           `Unexpected import outside src/mcp/ and src/shared/: ${relativePath}`
         );
       }
+    }
+  });
+
+  it("cannot reach the code that migrates or creates the database", () => {
+    // An allowlist is what a developer edits to make the test above go green,
+    // so "sqliteRunStore.ts must never appear there" cannot be enforced BY the
+    // allowlist. `sqliteRunStore.ts` runs the migration and `databaseFile.ts`
+    // creates directories; both are the dashboard's, and the server must not
+    // be one import away from either.
+    const appDir = cwd();
+    const visited = walkImportGraph(resolve(appDir, "src/mcp/server.ts"));
+
+    for (const forbidden of [
+      "src/main/sqliteRunStore.ts",
+      "src/main/databaseFile.ts",
+    ]) {
+      expect(
+        visited.has(resolve(appDir, forbidden)),
+        `${forbidden} is reachable from the MCP server`,
+      ).toBe(false);
     }
   });
 

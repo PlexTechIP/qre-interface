@@ -11,7 +11,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { RevealResult, StorageInfo, StorageLocation } from "../shared/appInfoTypes.js";
 import { FAKE_MCP_SETUP } from "../shared/testing/fakeAppInfo.js";
 import { registerAppInfoHandlers } from "./appInfoHandler.js";
-import { APP_INFO_REVEAL_CHANNEL, APP_INFO_STORAGE_CHANNEL } from "./ipcChannels.js";
+import {
+  APP_INFO_MCP_CHANNEL,
+  APP_INFO_REVEAL_CHANNEL,
+  APP_INFO_STORAGE_CHANNEL,
+} from "./ipcChannels.js";
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
@@ -32,10 +36,11 @@ function setup(
   };
   const revealItem = vi.fn(revealImpl);
   const pathExists = vi.fn(pathExistsImpl);
+  const resolveMcpSetup = vi.fn(async () => FAKE_MCP_SETUP);
   registerAppInfoHandlers(
     ipcMain,
     LOCATIONS,
-    async () => FAKE_MCP_SETUP,
+    resolveMcpSetup,
     revealItem,
     pathExists,
   );
@@ -48,7 +53,7 @@ function setup(
     );
   };
 
-  return { invoke, revealItem, pathExists };
+  return { invoke, revealItem, pathExists, resolveMcpSetup };
 }
 
 describe("appInfoHandler", () => {
@@ -145,5 +150,30 @@ describe("appInfoHandler", () => {
       code: "REVEAL_FAILED",
       message: expect.stringContaining("no file manager") as unknown as string,
     });
+  });
+});
+
+describe("the MCP setup options the renderer sends", () => {
+  it("passes a real opt-in through", async () => {
+    const { invoke, resolveMcpSetup } = setup();
+
+    await invoke(APP_INFO_MCP_CHANNEL, { allowRuns: true });
+
+    expect(resolveMcpSetup).toHaveBeenCalledWith({ allowRuns: true });
+  });
+
+  it("fails closed on anything that is not literally true", async () => {
+    // `ipcMain.handle` checks nothing, and this option decides whether the
+    // emitted block tells an agent it may run estimates on this machine. A
+    // truthy string must not turn it on.
+    const { invoke, resolveMcpSetup } = setup();
+
+    for (const raw of [{ allowRuns: "yes" }, { allowRuns: 1 }, {}, null, undefined, "true"]) {
+      resolveMcpSetup.mockClear();
+      await invoke(APP_INFO_MCP_CHANNEL, raw);
+      expect(resolveMcpSetup, JSON.stringify(raw)).toHaveBeenCalledWith({
+        allowRuns: false,
+      });
+    }
   });
 });

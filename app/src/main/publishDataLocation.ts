@@ -7,7 +7,7 @@
  * side, which the MCP server imports, contains nothing that can modify a file.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
 import { resolveDataDirectory, resolveLocationPointerPath } from "./dataDir.js";
 
@@ -31,7 +31,29 @@ export function publishRunDatabaseLocation(runDatabasePath: string): void {
 
   try {
     mkdirSync(resolveDataDirectory(), { recursive: true });
-    writeFileSync(pointerPath, contents, "utf8");
+    /*
+     * Written to a sibling and renamed into place, because a reader is
+     * watching.
+     *
+     * `writeFileSync` truncates and then writes, so a process reading the
+     * pointer in that window gets an empty or half-written file. The MCP
+     * server resolves this path on every tool call and reads "" as "no
+     * history is configured", which tells the analyst to launch the dashboard
+     * that is, at that moment, launching. `rename` within a directory is
+     * atomic, so a reader sees either the old pointer or the new one.
+     */
+    const temporaryPath = `${pointerPath}.${process.pid}.tmp`;
+    try {
+      writeFileSync(temporaryPath, contents, "utf8");
+      renameSync(temporaryPath, pointerPath);
+    } catch (error) {
+      try {
+        unlinkSync(temporaryPath);
+      } catch {
+        // Nothing to clean up, or nothing we can do about it.
+      }
+      throw error;
+    }
   } catch (error) {
     console.warn(
       `Could not record the run-history location at ${pointerPath}. ` +

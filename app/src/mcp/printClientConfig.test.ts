@@ -29,14 +29,24 @@ import {
 
 let directory: string;
 const savedDbPath = process.env.QRE_DB_PATH;
+const savedPythonBin = process.env.QRE_PYTHON_BIN;
 
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "qre-config-"));
+  // An interpreter that exists on every machine. Agent runs are on by default,
+  // so a checkout with no venv reports a problem — correctly — and the tests
+  // below that assert "no problems" are about the database, not the venv.
+  // CI has no venv (the unit-test job installs no Python), and this file went
+  // red there the first time the default flipped while passing on every
+  // developer machine that had run setup_venv.sh.
+  process.env.QRE_PYTHON_BIN = process.execPath;
 });
 
 afterEach(() => {
   if (savedDbPath === undefined) delete process.env.QRE_DB_PATH;
   else process.env.QRE_DB_PATH = savedDbPath;
+  if (savedPythonBin === undefined) delete process.env.QRE_PYTHON_BIN;
+  else process.env.QRE_PYTHON_BIN = savedPythonBin;
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -69,7 +79,10 @@ describe("the printed client configuration", () => {
 
     if (report.databasePath === null) {
       expect(report.problems.join(" ")).toContain("QRE_DB_PATH");
-      expect(report.config.env).toEqual({});
+      // Not "env is empty": the block also carries QRE_PYTHON_BIN when this
+      // checkout has a venv, and that is unrelated to whether a database was
+      // published. What must be absent is the database variable.
+      expect(report.config.env).not.toHaveProperty("QRE_DB_PATH");
     }
   });
 
@@ -180,4 +193,48 @@ describe("the printed configuration, actually run", () => {
       await client.close();
     }
   }, 30_000);
+});
+
+describe("agent runs in the emitted block", () => {
+  it("are on by default, matching the dashboard's block", () => {
+    const report = buildConfigReport();
+
+    expect(report.allowRuns).toBe(true);
+    expect(report.config.env.QRE_MCP_ALLOW_RUNS).toBe("1");
+    expect(claudeCodeCommand(report.config)).toContain(
+      "--env QRE_MCP_ALLOW_RUNS='1'",
+    );
+  });
+
+  it("are left out of a read-only block", () => {
+    const report = buildConfigReport({ allowRuns: false });
+
+    expect(report.allowRuns).toBe(false);
+    expect(report.config.env).not.toHaveProperty("QRE_MCP_ALLOW_RUNS");
+    expect(claudeCodeCommand(report.config)).not.toContain("QRE_MCP_ALLOW_RUNS");
+  });
+
+  it("names the interpreter when there is one", () => {
+    // `beforeEach` points QRE_PYTHON_BIN at an executable that exists.
+    const report = buildConfigReport({ allowRuns: true });
+
+    expect(report.pythonBin).toBe(process.execPath);
+    expect(report.config.env.QRE_PYTHON_BIN).toBe(process.execPath);
+    expect(report.problems.join(" ")).not.toMatch(/setup_venv\.sh/);
+  });
+
+  it("says what to run when there is no interpreter, and only when runs are on", () => {
+    // Both branches on every machine, rather than whichever one the checkout
+    // happens to be in: the block must not pretend an interpreter exists, and
+    // must say what to run — but a read-only block has no interpreter to miss.
+    process.env.QRE_PYTHON_BIN = join(directory, "no-such-python3");
+
+    const enabled = buildConfigReport({ allowRuns: true });
+    expect(enabled.pythonBin).toBeNull();
+    expect(enabled.config.env).not.toHaveProperty("QRE_PYTHON_BIN");
+    expect(enabled.problems.join(" ")).toMatch(/setup_venv\.sh/);
+
+    const readOnly = buildConfigReport({ allowRuns: false });
+    expect(readOnly.problems.join(" ")).not.toMatch(/setup_venv\.sh/);
+  });
 });

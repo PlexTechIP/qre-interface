@@ -144,6 +144,38 @@ describe("MCP server stdio handshake", () => {
     });
   });
 
+  it("registers the run tool only when the environment says so", async () => {
+    // The gate is the client's configuration, so this is the test that drives
+    // it the way a client sets it: a variable on the spawned process.
+    async function toolNames(env: Record<string, string>): Promise<string[]> {
+      const transport = new StdioClientTransport({
+        command: "tsx",
+        args: ["src/mcp/server.ts"],
+        cwd: APP_DIR,
+        stderr: "pipe",
+        env,
+      });
+      const client = new Client({ name: "qre-scaffold-test", version: "0.0.0" });
+      await client.connect(transport);
+      try {
+        return (await client.listTools()).tools.map((tool) => tool.name);
+      } finally {
+        await client.close();
+      }
+    }
+
+    // `PATH` is needed for `tsx` itself; QRE_MCP_ALLOW_RUNS is the subject.
+    const base: Record<string, string> = {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+    };
+
+    expect(await toolNames(base)).not.toContain("qre_run_estimate");
+    expect(
+      await toolNames({ ...base, QRE_MCP_ALLOW_RUNS: "1" }),
+    ).toContain("qre_run_estimate");
+  }, 60000);
+
   it("handshakes with a real SDK client over stdio", async () => {
     const transport = new StdioClientTransport({
       command: "tsx",

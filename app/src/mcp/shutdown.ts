@@ -19,6 +19,16 @@ import { logError } from "./logger.js";
 
 export interface ShutdownDependencies {
   server: { close: () => Promise<void> } | null;
+  /**
+   * Stop anything this process spawned, BEFORE the server stops accepting.
+   *
+   * `server.close()` waits for in-flight requests, and a request running an
+   * estimate is holding a Python subprocess for up to two minutes — so waiting
+   * for it first means the grace timer expires and the child is orphaned.
+   * Killing the engine first turns that request into a fast failure the
+   * sequence can actually wait for.
+   */
+  stopEngine?: () => void;
   transport: { close: () => Promise<void> } | null;
   closeStore: () => void;
   flush: () => Promise<void>;
@@ -81,6 +91,14 @@ export async function shutdown(
   shuttingDown = true;
 
   const sequence = async (): Promise<"done"> => {
+    if (dependencies.stopEngine !== undefined) {
+      try {
+        dependencies.stopEngine();
+      } catch (error) {
+        // A failure to kill a child must not strand the rest of the sequence.
+        logError("error stopping the engine during shutdown", error);
+      }
+    }
     await closeQuietly("server", dependencies.server);
     await closeQuietly("transport", dependencies.transport);
     dependencies.closeStore();

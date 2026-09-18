@@ -49,6 +49,34 @@ export interface McpClientEntry {
   readonly env: Readonly<Record<string, string>>;
 }
 
+/**
+ * What the analyst decided, on its way to the block that is emitted.
+ *
+ * A per-call option rather than a stored setting because it is not one: the
+ * toggle does not change anything about this process, it changes what the
+ * emitted configuration SAYS — and the configuration only takes effect when a
+ * client next starts the server with it. Persisting it in main would create a
+ * second place for "are agent runs on?" to be answered, and the only honest
+ * answer lives in the analyst's MCP client config.
+ */
+export interface McpSetupOptions {
+  readonly allowRuns: boolean;
+}
+
+/**
+ * Read an options object that arrived over IPC.
+ *
+ * Fails CLOSED: anything that is not literally `true` is off. This decides
+ * whether the emitted block tells an agent it may run estimates on the
+ * analyst's machine, so "truthy" is not the right test — a stray `"false"`
+ * string from a future caller must not turn it on.
+ */
+export function readMcpSetupOptions(raw: unknown): McpSetupOptions {
+  return {
+    allowRuns: (raw as { allowRuns?: unknown } | null | undefined)?.allowRuns === true,
+  };
+}
+
 export interface McpSetup {
   readonly entry: McpClientEntry;
   /** The `mcpServers` block, ready to paste into a client's config file. */
@@ -59,6 +87,14 @@ export interface McpSetup {
   readonly codexCommand: string;
   /** The `~/.codex/config.toml` block, for editing that file by hand. */
   readonly codexConfigToml: string;
+  /**
+   * The standing instruction the Codex command appends to `~/.codex/AGENTS.md`,
+   * offered on its own for an analyst who would rather put it in a project's
+   * `AGENTS.md`. Codex finds a custom server's tools only when the model
+   * searches for them and does not show the server's own instructions, so
+   * without this a request to "run an estimate" can be answered from the web.
+   */
+  readonly codexAgentsInstruction: string;
   /**
    * What is not yet true. Empty means the block above will work as it stands;
    * anything here is a step the analyst has to take first, said in their words
@@ -86,12 +122,13 @@ export interface AppInfoService {
   /**
    * How to point an MCP client at this install.
    *
-   * Read-only like the rest of this surface: it reports a configuration, and
-   * cannot apply one. Writing another application's config file is that
-   * application's business, and a dashboard that edited it would be reaching
-   * outside its own install to do it.
+   * Reports a configuration and cannot apply one. Writing another
+   * application's config file is that application's business, and a dashboard
+   * that edited it would be reaching outside its own install to do it — which
+   * is also why `allowRuns` here changes only what the block SAYS. Nothing in
+   * this process starts allowing runs because it was passed.
    */
-  getMcpSetup(): Promise<McpSetup>;
+  getMcpSetup(options: McpSetupOptions): Promise<McpSetup>;
   /**
    * Show a stored file in the OS file manager.
    *

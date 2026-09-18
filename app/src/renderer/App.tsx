@@ -32,6 +32,16 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const THEME_STORAGE_KEY = "qre-theme";
 const AGENT_SELECTION_STORAGE_KEY = "qre-agent-provider-selection";
+/**
+ * Whether the MCP block Settings emits lets connected agents run estimates.
+ *
+ * A renderer preference rather than anything in main, because that is honestly
+ * all it is: ticking it changes the text an analyst copies out of Settings, and
+ * takes effect only when their MCP client next starts the server with it.
+ * Storing it in main would create a second place to answer "are agent runs on?"
+ * whose answer could disagree with the client config that actually decides.
+ */
+const MCP_ALLOW_RUNS_STORAGE_KEY = "qre-mcp-allow-runs";
 
 type Page = "config" | "agent" | "results" | "history" | "comparison";
 
@@ -56,6 +66,24 @@ const UNAVAILABLE_AGENT_STATUS: AgentProviderStatus = {
  */
 function getInitialThemePreference(): ThemePreference {
   return readStoredPreference(window.localStorage.getItem(THEME_STORAGE_KEY));
+}
+
+/**
+ * On unless the analyst has explicitly turned it off.
+ *
+ * The default flipped after the first live tests: two attempts in a row ended
+ * with the agent correctly reporting "read-only", because the block had been
+ * copied with the box unticked. The block this decides is text the analyst
+ * pastes into their own client, and that client still asks before the first
+ * run — so "on" here costs one click at the client rather than none at all.
+ * The only off is an explicit `"0"`, which is what the effect below writes.
+ */
+function getInitialAllowAgentRuns(): boolean {
+  try {
+    return window.localStorage.getItem(MCP_ALLOW_RUNS_STORAGE_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
 function getInitialAgentSelection(): { provider: ProviderId; model: string } {
@@ -143,6 +171,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const resolvedAgentService = resolveAgentService(agentService);
   const [themePreference, setThemePreference] = useState<ThemePreference>(
     getInitialThemePreference,
+  );
+  const [allowAgentRuns, setAllowAgentRuns] = useState<boolean>(
+    getInitialAllowAgentRuns,
   );
   const [systemDark, setSystemDark] = useState<boolean>(systemPrefersDark);
   const theme = resolveTheme(themePreference, systemDark);
@@ -304,6 +335,25 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
       JSON.stringify(agentSelection),
     );
   }, [agentSelection]);
+
+  useEffect(() => {
+    try {
+      // "0" is the value that matters: the default is on, so an explicit off
+      // is the only state that has to survive a relaunch, and it reads back
+      // the same.
+      //
+      // Guarded like the matching read: `localStorage` throws outright where
+      // site data is blocked, and an exception raised in an effect unmounts the
+      // whole app over a preference that did not persist.
+      window.localStorage.setItem(
+        MCP_ALLOW_RUNS_STORAGE_KEY,
+        allowAgentRuns ? "1" : "0",
+      );
+    } catch {
+      // Not persisted this session. The toggle still works; it just starts off
+      // again next launch.
+    }
+  }, [allowAgentRuns]);
 
   // Provider status drives the permanent header indicator, so it is re-read
   // on mount and again whenever a key is stored — the indicator would
@@ -776,6 +826,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           {showHistorySurface ? (
             <RunHistoryContainer
               store={window.store}
+              // An agent can save a run through the MCP server while this page
+              // is open. Only History lists runs, so only History needs to hear
+              // about it — Results shows one run the analyst already chose.
+              changes={window.store}
               view={activePage === "comparison" ? "comparison" : "history"}
               onViewChange={setActivePage}
               onNavigateToConfig={() => setActivePage("config")}
@@ -828,6 +882,8 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
             }}
             themePreference={themePreference}
             onThemePreferenceChange={setThemePreference}
+            allowAgentRuns={allowAgentRuns}
+            onAllowAgentRunsChange={setAllowAgentRuns}
             activeTab={settingsTab}
             onActiveTabChange={setSettingsTab}
           />

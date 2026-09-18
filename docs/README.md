@@ -23,6 +23,8 @@ docs/
 ├── setup-and-troubleshooting.md ← clean-machine setup and real failure fixes
 ├── agentic-integration-research.md ← standing reference: MCP, BYO-key, and the
 │                                structured-output finding (read its Currency note)
+├── mcp-run-launch-design.md   ← how an external agent should launch a run:
+│                                options, client support (Sep 2026), recommendation
 ├── glossary.md                ← QRE and project terminology
 ├── week-1/                    ← Tue Jun 30 → Tue Jul 7, 2026
 │   ├── week-1-overview.md

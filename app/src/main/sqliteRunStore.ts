@@ -1,18 +1,16 @@
 import { DatabaseSync } from "node:sqlite";
 
-import { validateRunRecord } from "../shared/runRecordValidation.js";
 import { prepareDatabasePath } from "./databaseFile.js";
-import { RunRecordExistsError } from "../shared/runStore.js";
+import { insertRunRecord } from "./sqliteRunStoreWriter.js";
 import {
   DATABASE_SCHEMA_VERSION,
   FACTORY_SET_DELIMITER,
-  encodeFactorySet,
+  countRecords,
   selectAllRecords,
   selectRecordById,
   selectRecordsByFilter,
 } from "./sqliteRunStoreReader.js";
 import {
-  applicationKey,
   type RunFilter,
   type RunRecord,
   type RunStore,
@@ -51,13 +49,6 @@ const INITIAL_SCHEMA = `
     ON run_records(created_at DESC, saved_at DESC, id DESC);
 `;
 
-function isPrimaryKeyConstraint(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("errcode" in error))
-    return false;
-  const { errcode } = error as { errcode?: unknown };
-  return errcode === 1555 || errcode === 2067;
-}
-
 /**
  * Main-process SQLite implementation of the committed RunStore boundary.
  *
@@ -83,51 +74,11 @@ export class SqliteRunStore implements RunStore {
   }
 
   async save(record: RunRecord): Promise<void> {
-    const existing = this.database
-      .prepare("SELECT 1 FROM run_records WHERE id = ?")
-      .get(record.id);
-    if (existing !== undefined) throw new RunRecordExistsError(record.id);
-
-    const validation = validateRunRecord(record);
-    if (!validation.valid) {
-      throw new Error(`Cannot save invalid RunRecord: ${validation.errors}`);
-    }
-
-    const insert = this.database.prepare(`
-      INSERT INTO run_records (
-        id,
-        schema_version,
-        record_json,
-        name,
-        application,
-        architecture,
-        qec_code,
-        magic_state_factory,
-        qre_version,
-        created_at,
-        saved_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    try {
-      insert.run(
-        record.id,
-        record.schemaVersion,
-        JSON.stringify(record),
-        record.config.name,
-        applicationKey(record.config),
-        record.config.architecture.type,
-        record.config.qecCode,
-        encodeFactorySet(record.config.magicStateFactories),
-        record.result.qreVersion,
-        record.config.createdAt,
-        record.savedAt,
-      );
-    } catch (error) {
-      if (isPrimaryKeyConstraint(error))
-        throw new RunRecordExistsError(record.id);
-      throw error;
-    }
+    // The statement itself lives in `sqliteRunStoreWriter.ts`, shared with the
+    // MCP server's append-only store so that both write the same row the same
+    // way — and so that the module holding the INSERT is one that provably
+    // cannot migrate.
+    insertRunRecord(this.database, record);
   }
 
   async list(): Promise<RunRecord[]> {
@@ -144,6 +95,36 @@ export class SqliteRunStore implements RunStore {
 
   async query(filter: RunFilter): Promise<RunRecord[]> {
     return selectRecordsByFilter(this.database, filter);
+  }
+
+  /**
+   * How many runs are saved. Not part of `RunStore`: the History surface
+   * always wants the records, and this exists for the caller that asked
+   * `list().length > 0` and paid for every record to learn a boolean.
+   */
+  async count(): Promise<number> {
+    return countRecords(this.database);
+  }
+
+  /**
+   * SQLite's `data_version`, which changes when ANOTHER connection commits to
+   * this database and never when this one does.
+   *
+   * That asymmetry is exactly the signal the History watcher needs. `fs.watch`
+   * on the database file is unreliable under WAL — a commit lands in the -wal
+   * file and the main file's mtime may not move at all — and polling the row
+   * count cannot tell a delete-then-insert from no change. This is one pragma
+   * on an open connection.
+   */
+  dataVersion(): number {
+    const row = this.database.prepare("PRAGMA data_version").get() as
+      | { data_version?: unknown }
+      | undefined;
+    const version = row?.data_version;
+    if (typeof version !== "number") {
+      throw new Error("Could not read the SQLite run-store data version.");
+    }
+    return version;
   }
 
   /** Close the underlying connection during application shutdown or test cleanup. */
