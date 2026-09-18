@@ -21,7 +21,7 @@ const PATHS = {
   runDatabasePath: "/Users/an analyst/Library/Application Support/qre/run-history.sqlite",
   hasSavedRuns: true,
   pythonBinPath:
-    "/Applications/QRE Dashboard.app/Contents/Resources/python/.venv/bin/python3",
+    "/Applications/QRE Interface.app/Contents/Resources/python/.venv/bin/python3",
   // Off by default, like the checkbox: every test above is about the block an
   // analyst gets without opting into anything.
   allowRuns: false,

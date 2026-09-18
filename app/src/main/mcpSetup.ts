@@ -165,7 +165,7 @@ const CODEX_TOOL_TIMEOUT_SEC = 600;
  * MCP" in the prompt is the alternative, and it works.
  */
 const CODEX_AGENTS_LINES: readonly string[] = [
-  `## QRE Dashboard (${SERVER_NAME} MCP server)`,
+  `## QRE Interface (${SERVER_NAME} MCP server)`,
   "For any request to run, estimate, size or compare quantum resource " +
     "estimates - Shor factoring, Ekera-Hastad factoring, Grover search, phase " +
     "estimation, quantum dynamics, on hardware such as trapped ion, " +

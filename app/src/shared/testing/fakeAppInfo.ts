@@ -67,7 +67,7 @@ function fakeSetup(entry: McpClientEntry): McpSetup {
       `'s/^(\\[mcp_servers\\.qre-dashboard\\]\\n)(?!tool_timeout_sec)/` +
       `\${1}tool_timeout_sec = 600\\n/m' ~/.codex/config.toml`,
     codexAgentsInstruction:
-      "## QRE Dashboard (qre-dashboard MCP server)\n" +
+      "## QRE Interface (qre-dashboard MCP server)\n" +
       "Use the qre-dashboard MCP tools (qre_run_estimate and the rest) for " +
       "quantum resource estimates.",
     codexConfigToml: [

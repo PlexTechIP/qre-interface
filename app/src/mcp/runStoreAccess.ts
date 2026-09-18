@@ -197,15 +197,11 @@ interface CachedStore<T> {
   inode: number;
 }
 
-  const dbPath = resolveRunDatabasePath();
-  if (!dbPath || dbPath.trim() === "") {
-    throw createStoreAccessError(
-      "DB_NOT_CONFIGURED",
-      "No run history is configured. Launch the QRE Interface once so it can " +
-        "record where its database lives, or set QRE_DB_PATH to the path shown " +
-        "under Settings > Data & storage.",
-    );
-  }
+/** What both caches need of the thing they hold. */
+interface SchemaCheckedStore {
+  schemaVersion(): number;
+  close(): void;
+}
 
 function fileIdentity(path: string): { device: number; inode: number } | null {
   try {
@@ -231,7 +227,7 @@ function isSameFile(
 function notConfigured(): StoreAccessError {
   return createStoreAccessError(
     "DB_NOT_CONFIGURED",
-    "No run history is configured. Launch the QRE Dashboard once so it can " +
+    "No run history is configured. Launch the QRE Interface once so it can " +
       "record where its database lives, or set QRE_DB_PATH to the path shown " +
       "under Settings > Data & storage.",
   );
@@ -304,7 +300,7 @@ class StoreCache<T extends SchemaCheckedStore> {
    * cannot be read this instant, or a stat that fails, says nothing about where
    * the database went — so the open connection is left alone and only this call
    * fails. Discarding it meant a single unreadable `location.json` answered
-   * `DB_NOT_CONFIGURED` ("Launch the QRE Dashboard once…") for a history that
+   * `DB_NOT_CONFIGURED` ("Launch the QRE Interface once…") for a history that
    * was open and answering a moment earlier.
    */
   get(): T {

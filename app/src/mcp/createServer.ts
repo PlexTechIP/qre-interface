@@ -62,7 +62,7 @@ export const RUN_DRAFT_SCHEMA_URI = "qre://contracts/run-draft.schema.json";
  * use these tools rather than the web for it.
  */
 const BASE_INSTRUCTIONS =
-  "the QRE Dashboard, an analyst's local front end to Microsoft's Quantum " +
+  "the QRE Interface, an analyst's local front end to Microsoft's Quantum " +
   "Resource Estimator (QRE). A QRE estimate computes the physical qubits, " +
   "runtime, code distance and magic-state factories a fault-tolerant quantum " +
   "computer needs to run a benchmark — Shor's factoring, Ekerå–Håstad " +

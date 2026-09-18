@@ -359,7 +359,7 @@ describe("getRunStore", () => {
    * Not knowing where the database is says nothing about where it went. The
    * pointer file is rewritten by the dashboard, and a reader that caught it
    * mid-write read "" — so a server that had just answered a query reported
-   * `DB_NOT_CONFIGURED` ("Launch the QRE Dashboard once…") and dropped the
+   * `DB_NOT_CONFIGURED` ("Launch the QRE Interface once…") and dropped the
    * connection it was answering from.
    */
   it("keeps an open connection when the pointer cannot be read", async () => {
