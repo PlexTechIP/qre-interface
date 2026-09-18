@@ -37,15 +37,41 @@ const banner =
 
 // Ajv still emits CommonJS `require(...)` for its runtime/format helpers even
 // with code.esm, which has no meaning in the renderer's ESM bundle. Rewrite
-// each into a top-level namespace import so the module is pure ESM.
+// each into a top-level default import so the module is pure ESM.
+//
+// The tricky part is CommonJS→ESM interop, which is genuinely inconsistent
+// across the three hosts this file runs under: Vite's esbuild (the renderer,
+// where a Majorana config once crashed with "func3 is not a function"), Node's
+// ESM loader (the MCP import-graph test), and Vitest. For the default import of
+// `ajv/dist/runtime/ucs2length` (a CommonJS module whose sole export is
+// `exports.default = ucs2length`):
+//
+//   - esbuild and Node bind the default import to `module.exports`, i.e.
+//     `{ default: fn }`, so the function is at `dep.default`.
+//   - Vitest unwraps one level, binding the default import to `fn` directly,
+//     so `dep.default` is `undefined`.
+//
+// So `dep.default ?? dep` recovers the CommonJS default export in every host,
+// and reading a named property off `(dep.default ?? dep)` recovers a named
+// export (`ajv-formats`' `fullFormats`, whose `.default` is always undefined, so
+// the `?? dep` branch yields `module.exports`). Rewrite each `require(X).prop`
+// accordingly; a `.default` access resolves to the recovered value itself.
 let code = standaloneCode(ajv, validate);
 const imports = new Map();
-code = code.replace(/require\((["'])(.*?)\1\)/g, (_match, _quote, moduleId) => {
-  if (!imports.has(moduleId)) imports.set(moduleId, `__ajvDep${imports.size}`);
-  return imports.get(moduleId);
-});
+code = code.replace(
+  /require\((["'])(.*?)\1\)(?:\.(\w+))?/g,
+  (_match, _quote, moduleId, prop) => {
+    if (!imports.has(moduleId)) imports.set(moduleId, `__ajvDep${imports.size}`);
+    const dep = imports.get(moduleId);
+    const moduleExports = `(${dep}.default ?? ${dep})`;
+    // `.default` -> the recovered default export; any other prop (or a bare
+    // require) -> that prop off the recovered `module.exports`.
+    if (prop === undefined || prop === "default") return moduleExports;
+    return `${moduleExports}.${prop}`;
+  },
+);
 const importLines = [...imports]
-  .map(([moduleId, binding]) => `import * as ${binding} from ${JSON.stringify(moduleId)};`)
+  .map(([moduleId, binding]) => `import ${binding} from ${JSON.stringify(moduleId)};`)
   .join("\n");
 
 writeFileSync(OUT, `${banner}${importLines}\n${code}`);
