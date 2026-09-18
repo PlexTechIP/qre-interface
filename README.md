@@ -1,6 +1,12 @@
-# QRE Dashboard
+# QRE Interface
 
-QRE Dashboard is a cross-platform desktop application built around Microsoft's open-source **Quantum Resource Estimator (QRE v3)**. It gives analysts a desktop interface for working with QRE without relying on VS Code or the command line.
+A cross-platform desktop application that wraps Microsoft's open-source
+**Quantum Resource Estimator (QRE v3)** in a structured, analyst-facing
+interface. QRE is powerful but is normally driven through VS Code or the command
+line — a workflow built for quantum researchers, not for the government and
+industry analysts who use resource estimation as a benchmarking and evaluation
+tool. QRE Interface gives those users a way to **configure**, **run**,
+**save**, **compare**, and **export** resource estimates without writing code.
 
 Users can **configure**, **run**, **save**, **compare**, and **export** resource estimates without writing code.
 
@@ -18,6 +24,22 @@ Built through a **PlexTech × Microsoft** collaboration.
 * **Optional AI assistant** — describe an estimate in plain language and use a supported model to draft the configuration. Users provide their own API key, which is stored locally and only sent to the selected provider when making a request.
 * **MCP server** — a Model Context Protocol server exposes saved run history to external agents for analysis and review and, when enabled, lets them run estimates.
 * **Offline and reproducible** — core estimation workflows work without a network connection, and each run records the QRE engine version used to produce it.
+
+## Download
+
+Prebuilt, self-contained installers for macOS and Windows are published on the
+[**latest release**](https://github.com/PlexTechIP/qre-interface/releases/latest).
+The QRE engine ships inside the app — there is nothing else to install.
+
+| Platform | Download |
+|---|---|
+| macOS (Apple Silicon) | [`QRE-Interface-arm64.dmg`](https://github.com/PlexTechIP/qre-interface/releases/latest/download/QRE-Interface-arm64.dmg) |
+| macOS (Intel) | [`QRE-Interface-x64.dmg`](https://github.com/PlexTechIP/qre-interface/releases/latest/download/QRE-Interface-x64.dmg) |
+| Windows (x64) | [`QRE-Interface-Setup.exe`](https://github.com/PlexTechIP/qre-interface/releases/latest/download/QRE-Interface-Setup.exe) |
+
+The current builds are **unsigned**, so the first launch shows an OS warning —
+[`docs/installing.md`](docs/installing.md) has the one-time steps to open it on
+each platform.
 
 ## Who it's for
 
@@ -141,6 +163,33 @@ npm run test:engine
 ### Continuous integration
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs type checking and unit tests on each pull request and push using the pinned Node version.
+
+### Building installers / releasing
+
+Installers are built and published by
+[`.github/workflows/release.yml`](.github/workflows/release.yml), triggered by
+pushing a version tag:
+
+```sh
+cd app && npm version 0.1.0   # bumps package.json and creates the tag
+git push origin main --tags   # the tag push starts the release build
+```
+
+A matrix of macOS (Apple Silicon + Intel) and Windows runners each bundles a
+platform-matched standalone Python with `qdk[qre]`
+([`scripts/bundlePython.mjs`](app/scripts/bundlePython.mjs)), builds the app, and
+uploads the installer to a **draft** GitHub Release for the tag. Review the draft,
+then publish it — only then do the README's "latest" download links resolve.
+
+To produce an installer locally for your own platform:
+
+```sh
+cd app
+npm run bundle:python   # stage the standalone engine (downloads ~a few hundred MB)
+npm run dist            # build + package into app/release/ (no publishing)
+```
+
+Builds are currently **unsigned** (see [`docs/installing.md`](docs/installing.md)).
 
 ## Repository layout
 

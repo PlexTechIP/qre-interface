@@ -227,7 +227,7 @@ describe("getRunStore", () => {
     expect(thrown?.code).toBe("DB_NOT_CONFIGURED");
     // Naming the variable is not enough — a first-time user has no idea what
     // to set it to. Point them at the two things that produce an answer.
-    expect(thrown?.message).toMatch(/QRE Dashboard/);
+    expect(thrown?.message).toMatch(/QRE Interface/);
     expect(thrown?.message).toMatch(/QRE_DB_PATH/);
   });
 
@@ -359,7 +359,7 @@ describe("getRunStore", () => {
    * Not knowing where the database is says nothing about where it went. The
    * pointer file is rewritten by the dashboard, and a reader that caught it
    * mid-write read "" — so a server that had just answered a query reported
-   * `DB_NOT_CONFIGURED` ("Launch the QRE Dashboard once…") and dropped the
+   * `DB_NOT_CONFIGURED` ("Launch the QRE Interface once…") and dropped the
    * connection it was answering from.
    */
   it("keeps an open connection when the pointer cannot be read", async () => {

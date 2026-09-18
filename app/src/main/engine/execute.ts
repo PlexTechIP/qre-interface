@@ -3,9 +3,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { QreInvocation } from "./invocation.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WRAPPER_SCRIPT = path.join(__dirname, "python", "estimate.py");
-const MATPLOTLIB_CONFIG = path.join(__dirname, "python", ".matplotlib");
+// The engine directory holds the `python/` subtree — the `estimate.py` wrapper,
+// its matplotlib config, and (in dev) the venv, or (packaged) the bundled
+// standalone interpreter. In dev/test this module's own directory is that dir;
+// packaged, the main process passes the extraResources location, since the
+// compiled bundle lives inside the asar where a subprocess cannot read.
+const DEFAULT_ENGINE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const wrapperScript = (engineDir: string): string =>
+  path.join(engineDir, "python", "estimate.py");
+const matplotlibConfig = (engineDir: string): string =>
+  path.join(engineDir, "python", ".matplotlib");
 const liveEngineProcesses = new Set<ChildProcess>();
 
 // Explicit allowlist instead of spreading the full parent env, so secrets in
@@ -21,9 +28,17 @@ const ALLOWED_ENV_KEYS = [
   "TMPDIR",
 ] as const;
 
-export function buildEngineEnv(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function buildEngineEnv(
+  parentEnv: NodeJS.ProcessEnv,
+  engineDir: string = DEFAULT_ENGINE_DIR,
+): NodeJS.ProcessEnv {
+  // matplotlib needs a WRITABLE config/cache dir. Under engineDir works in dev,
+  // but the packaged engine lives in a read-only resources directory, so the
+  // main process overrides this with a per-user location via QRE_MPLCONFIGDIR.
+  const mplConfigDir =
+    parentEnv["QRE_MPLCONFIGDIR"] ?? matplotlibConfig(engineDir);
   const env: NodeJS.ProcessEnv = {
-    MPLCONFIGDIR: MATPLOTLIB_CONFIG,
+    MPLCONFIGDIR: mplConfigDir,
     PYTHONUTF8: "1",
     QDK_PYTHON_TELEMETRY: "none",
   };
@@ -152,10 +167,11 @@ export function interpretProcessCompletion(
 export function execute(
   invocation: QreInvocation,
   pythonBin: string,
+  engineDir: string = DEFAULT_ENGINE_DIR,
 ): Promise<ExecuteResult> {
   return new Promise((resolve) => {
-    const child = spawn(pythonBin, [WRAPPER_SCRIPT], {
-      env: buildEngineEnv(process.env),
+    const child = spawn(pythonBin, [wrapperScript(engineDir)], {
+      env: buildEngineEnv(process.env, engineDir),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });

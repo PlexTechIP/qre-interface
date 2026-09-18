@@ -186,7 +186,7 @@ describe("a failure reaching a client that has listed tools", () => {
     const failure = await failureFrom(client, "qre_list_runs", {});
 
     expect(failure.code).toBe("DB_SCHEMA_MISMATCH");
-    expect(failure.message).toContain("QRE Dashboard");
+    expect(failure.message).toContain("QRE Interface");
   });
 
   it("reports a run that cannot become a draft", async () => {

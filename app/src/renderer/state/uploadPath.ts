@@ -22,7 +22,7 @@ export function resolveUploadPath(file: File): ResolvedUploadPath {
     return {
       ok: false,
       message:
-        "File paths are only available in the desktop app. Open this window from the QRE Dashboard application to upload a program.",
+        "File paths are only available in the desktop app. Open this window from the QRE Interface application to upload a program.",
     };
   }
 

@@ -2,17 +2,27 @@
  * Submit-level validation: check a serialized RunConfig against the committed
  * JSON Schema (the same artifact the MockEngine validates against). The rules
  * are NOT re-encoded here — the schema is the single source of truth.
+ *
+ * The validator is PRECOMPILED to standalone, eval-free code at build time
+ * (scripts/compileSchemas.mjs) rather than compiled at runtime with Ajv. Ajv's
+ * runtime `compile` uses `new Function`, which the renderer's Content-Security-
+ * Policy forbids — so a runtime compile here painted the packaged app blank.
+ * The generated module is the same validator, minus the eval.
  */
 
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
-
-import runConfigSchema from "../../shared/contracts/runconfig.schema.json";
+import validate from "./runConfigValidator.generated.js";
 import type { RunConfig } from "../../shared/types";
 
-const ajv = new Ajv({ allErrors: true, strict: false });
-addFormats(ajv);
-const validate = ajv.compile(runConfigSchema);
+/**
+ * Render Ajv errors the way `ajv.errorsText` did (`data<pointer> <message>`,
+ * one per line), reimplemented here so this module no longer needs a live Ajv
+ * instance — the standalone validator carries no `errorsText`.
+ */
+function errorsText(errors: typeof validate.errors): string {
+  return (errors ?? [])
+    .map((error) => `data${error.instancePath} ${error.message ?? "is invalid"}`)
+    .join("\n");
+}
 
 /** One schema failure, with the field it is about already separated out. */
 export interface SchemaIssue {
@@ -61,7 +71,7 @@ export function validateRunConfigSchema(config: RunConfig): SchemaValidationResu
   const valid = validate(config);
   return {
     valid,
-    errors: valid ? "" : ajv.errorsText(validate.errors, { separator: "\n" }),
+    errors: valid ? "" : errorsText(validate.errors),
     issues: valid ? [] : issuesFrom(validate.errors),
   };
 }

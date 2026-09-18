@@ -56,16 +56,26 @@ describe("hardenWebContents", () => {
     expect(navigateTo("not a url")).toBe(false);
   });
 
-  it("blocks every navigation in the packaged build", () => {
-    // The packaged renderer is loaded with `loadFile`, and a `file://` URL has
-    // origin "null" — which compares EQUAL to every other `file://` URL. Passing
-    // the loaded path as the allowed origin would wave through the entire
-    // filesystem, so the packaged case allows nothing at all.
+  it("allows an app:// reload but nothing else in the packaged build", () => {
+    // The packaged renderer is served over app://local, whose origin the URL
+    // parser reports as opaque "null". A reload of the same document is fine;
+    // other opaque-origin schemes (file:, data:) must NOT be waved through just
+    // because their origins also read as "null".
+    const { contents, navigateTo } = fakeContents();
+    hardenWebContents(contents, "app://local/index.html");
+
+    expect(navigateTo("app://local/index.html")).toBe(true);
+    expect(navigateTo("file:///Applications/QRE.app/Contents/dist/index.html")).toBe(false);
+    expect(navigateTo("file:///Users/someone/.ssh/id_rsa")).toBe(false);
+    expect(navigateTo("data:text/html,<script>alert(1)</script>")).toBe(false);
+    expect(navigateTo("https://example.com/")).toBe(false);
+  });
+
+  it("still allows nothing when no document is permitted", () => {
     const { contents, navigateTo } = fakeContents();
     hardenWebContents(contents);
 
-    expect(navigateTo("file:///Applications/QRE.app/Contents/dist/index.html")).toBe(false);
     expect(navigateTo("file:///Users/someone/.ssh/id_rsa")).toBe(false);
-    expect(navigateTo("https://example.com/")).toBe(false);
+    expect(navigateTo("app://local/index.html")).toBe(false);
   });
 });

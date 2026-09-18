@@ -68,5 +68,12 @@ export const BENCHMARK_REGISTRY: Record<string, BenchmarkEntry> = {
 export function resolveBenchmark(
   benchmarkId: string,
 ): BenchmarkEntry | undefined {
-  return BENCHMARK_REGISTRY[benchmarkId];
+  const entry = BENCHMARK_REGISTRY[benchmarkId];
+  if (!entry) return undefined;
+  // Packaged, the Q# sources ship beside the asar (a subprocess cannot read
+  // them from inside it), so the main process points here via QRE_BENCHMARKS_DIR.
+  // Read at call time — the override is set after this module is first imported.
+  const override = process.env["QRE_BENCHMARKS_DIR"];
+  if (!override || override.length === 0) return entry;
+  return { ...entry, sourcePath: path.join(override, "qsharp-project") };
 }

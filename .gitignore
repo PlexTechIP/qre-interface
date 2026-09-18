@@ -6,3 +6,10 @@ app/src/main/engine/python/.qre-cache/
 app/src/main/engine/python/.matplotlib/
 .tmp/
 __pycache__/
+
+# Packaging: the staged standalone Python engine and electron-builder output are
+# large, generated artifacts produced per-platform at release time.
+app/build/
+app/release/
+app/dist/
+app/dist-electron/

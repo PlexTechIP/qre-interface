@@ -45,7 +45,7 @@ export function buildConversationMarkdown(conversation: Conversation, exportedAt
     "",
     // Dated through the same helper the run and comparison exports use, so the
     // three cannot drift into three different ways of saying when.
-    `${exportedOnLine(exportedAt) ?? "> Exported from the QRE Dashboard."} Proposals are recorded as they`,
+    `${exportedOnLine(exportedAt) ?? "> Exported from the QRE Interface."} Proposals are recorded as they`,
     "> were made; a run is only created when an analyst opens one in Run",
     "> Configuration and executes it.",
     "",

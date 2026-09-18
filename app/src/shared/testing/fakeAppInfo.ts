@@ -31,7 +31,7 @@ export const FAKE_STORAGE_LOCATIONS: readonly StorageLocation[] = [
  * returned would still pass against a fixture that contradicted itself.
  */
 const FAKE_ENTRY: McpClientEntry = {
-  command: "/fixture/Applications/QRE Dashboard",
+  command: "/fixture/Applications/QRE Interface",
   args: ["/fixture/resources/mcp-server.mjs"],
   env: {
     ELECTRON_RUN_AS_NODE: "1",
@@ -67,7 +67,7 @@ function fakeSetup(entry: McpClientEntry): McpSetup {
       `'s/^(\\[mcp_servers\\.qre-dashboard\\]\\n)(?!tool_timeout_sec)/` +
       `\${1}tool_timeout_sec = 600\\n/m' ~/.codex/config.toml`,
     codexAgentsInstruction:
-      "## QRE Dashboard (qre-dashboard MCP server)\n" +
+      "## QRE Interface (qre-dashboard MCP server)\n" +
       "Use the qre-dashboard MCP tools (qre_run_estimate and the rest) for " +
       "quantum resource estimates.",
     codexConfigToml: [

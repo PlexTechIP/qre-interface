@@ -141,7 +141,7 @@ describe.each([
     renderDialog();
 
     expect(screen.getByLabelText(/export preview/i).textContent).toContain(
-      "> Exported from the QRE Dashboard on 2026-08-12T19:04:31.000Z.",
+      "> Exported from the QRE Interface on 2026-08-12T19:04:31.000Z.",
     );
 
     await act(async () => {
