@@ -733,14 +733,14 @@ select {
 
 .scatter-wrap {
   display: grid;
-  min-height: 220px;
+  min-height: 240px;
   place-items: center;
 }
 
 .frontier-scatter {
   width: 100%;
-  max-width: 460px;
-  min-height: 220px;
+  max-width: 520px;
+  min-height: 240px;
 }
 
 .chart-gridline {
@@ -779,6 +779,11 @@ select {
 
 .chart-label.y {
   text-anchor: middle;
+}
+
+.frontier-area {
+  fill: var(--color-chart-line);
+  opacity: 0.08;
 }
 
 .frontier-line {
@@ -824,13 +829,13 @@ select {
 
 .scatter-tooltip-title {
   fill: #20a8cc;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 800;
 }
 
 .scatter-tooltip-row {
   fill: #dbe5f2;
-  font-size: 9.5px;
+  font-size: 13px;
   font-weight: 700;
 }
 
