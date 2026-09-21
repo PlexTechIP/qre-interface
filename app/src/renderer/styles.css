@@ -867,6 +867,7 @@ select {
   padding: 12px 14px;
   text-align: left;
   white-space: nowrap;
+  transition: font-size 0.1s ease;
 }
 
 .frontier-table thead th {
@@ -899,6 +900,15 @@ select {
 .frontier-table tbody tr:focus {
   background: var(--color-row-hover);
   outline: none;
+}
+
+/* Enlarge the hovered/focused row's text so the value under the cursor is easy
+   to read; padding is unchanged so the row grows only by the added line height. */
+.frontier-table tbody tr:hover th,
+.frontier-table tbody tr:hover td,
+.frontier-table tbody tr:focus th,
+.frontier-table tbody tr:focus td {
+  font-size: 15px;
 }
 
 .frontier-table tbody tr:focus {
