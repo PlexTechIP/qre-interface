@@ -1150,6 +1150,26 @@ select {
 .skeleton-grid span {
   border-radius: 999px;
   background: linear-gradient(90deg, var(--color-skeleton-a), var(--color-skeleton-b), var(--color-skeleton-a));
+  /* Oversize the gradient so the highlight band has room to travel across the
+     box, then slide it edge to edge for a continuous loading shimmer. */
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line,
+  .skeleton-grid span {
+    animation: none;
+  }
 }
 
 .skeleton-line {
