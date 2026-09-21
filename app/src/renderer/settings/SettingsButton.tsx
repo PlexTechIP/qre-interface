@@ -20,9 +20,10 @@ interface SettingsButtonProps {
  * on the page this button opens, so a reader who saw "Network off" had to go
  * looking for the place to do something about it.
  *
- * Dropping the indicator entirely was not an option: brief constraint 7 asks
- * that the feature stay visibly networked, and outside the chat page this is
- * the only thing that says so.
+ * The networked state stays reachable — brief constraint 7 asks that the
+ * feature stay networked and outside the chat page this is the only thing that
+ * reports it — but it now lives in the button's accessible name and tooltip
+ * rather than a status dot beside the gear.
  */
 export function SettingsButton({
   status,
@@ -72,19 +73,6 @@ export function SettingsButton({
       {...(active ? { "aria-current": "page" as const } : {})}
     >
       <GearIcon />
-      {/*
-        The same dot the provider cards use, so "configured" means one thing
-        across the app — but the DOT's own modifier, not the pill's. The pill
-        rule is a descendant selector, and putting `--on` on the dot itself left
-        it matching nothing and rendering grey whatever the network state was.
-
-        `aria-hidden` because the state is already in the name above —
-        announcing it twice is worse than once.
-      */}
-      <span
-        className={`agent-status__dot${on ? " agent-status__dot--on" : ""}`}
-        aria-hidden="true"
-      />
     </button>
   );
 }
