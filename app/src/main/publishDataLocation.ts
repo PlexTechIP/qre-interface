@@ -18,8 +18,19 @@ import { resolveDataDirectory, resolveLocationPointerPath } from "./dataDir.js";
  * dashboard itself, so a failure here is logged and swallowed: a read-only home
  * directory must not stop the app launching. The file is left alone when the
  * location has not changed, so a normal launch does not touch the disk.
+ *
+ * An `overridden` path — one that came from `QRE_DB_PATH` — is never
+ * published. The override belongs to one launch from one shell; the pointer is
+ * machine-wide and outlives the launch, so writing it there redirected every
+ * MCP client that relies on the pointer to a scratch database long after the
+ * dev session that chose it had ended. A client that wants the scratch file
+ * sets `QRE_DB_PATH` in its own `env` block, the same way the dashboard did.
  */
-export function publishRunDatabaseLocation(runDatabasePath: string): void {
+export function publishRunDatabaseLocation(
+  runDatabasePath: string,
+  { overridden = false }: { overridden?: boolean } = {},
+): void {
+  if (overridden) return;
   const pointerPath = resolveLocationPointerPath();
   const contents = `${JSON.stringify({ runDatabase: runDatabasePath }, null, 2)}\n`;
 

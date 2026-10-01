@@ -77,6 +77,29 @@ describe("publishRunDatabaseLocation", () => {
     expect(statSync(resolveLocationPointerPath()).mtimeMs).toBe(first);
   });
 
+  /**
+   * `QRE_DB_PATH` is a per-launch override — the setup guide's recipe for
+   * pointing a dev session at a throwaway database. Publishing it turned that
+   * one launch into a standing redirect: every MCP client that relies on the
+   * pointer went on reading (and, with agent runs on, writing) the scratch
+   * file after the dev session ended.
+   */
+  it("leaves the published pointer alone when the database path is an override", () => {
+    publishRunDatabaseLocation("/Users/someone/Library/run-history.sqlite");
+
+    publishRunDatabaseLocation("/tmp/scratch.sqlite", { overridden: true });
+
+    expect(readPublishedRunDatabasePath()).toBe(
+      "/Users/someone/Library/run-history.sqlite",
+    );
+  });
+
+  it("does not create a pointer for an overridden database", () => {
+    publishRunDatabaseLocation("/tmp/scratch.sqlite", { overridden: true });
+
+    expect(readPublishedRunDatabasePath()).toBeNull();
+  });
+
   it("does not fail app startup when the pointer cannot be written", () => {
     // Publishing is a convenience for other processes; the dashboard itself
     // works fine without it, so a read-only home must not stop it launching.

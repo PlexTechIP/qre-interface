@@ -79,6 +79,10 @@ a scratch database. Setting it in the client config's `env` block is the normal
 way to do it: the variable travels with the server entry rather than having to be
 in the machine environment.
 
+The dashboard only publishes the database it resolved for itself. Launched with
+`QRE_DB_PATH`, it leaves the pointer alone, so a dev session on a scratch file
+does not redirect clients that rely on the pointer.
+
 If neither is available the server still starts and `qre_list_benchmarks` still
 works; everything that needs history returns `DB_NOT_CONFIGURED` with an
 instruction to launch the dashboard once.

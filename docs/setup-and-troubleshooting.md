@@ -94,6 +94,9 @@ To isolate state or inspect a known database, set:
 QRE_DB_PATH=/absolute/path/to/run-history.sqlite npm run dev
 ```
 
+An overridden database is not published to `~/.qre-dashboard/location.json`,
+so MCP clients that rely on that pointer keep reading the default history.
+
 To force a specific Python interpreter, set:
 
 ```bash
