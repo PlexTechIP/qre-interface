@@ -27,6 +27,15 @@ const APP_DIR = resolve(cwd());
 const BUNDLE_PATH = resolve(APP_DIR, "dist-electron/mcp-server.mjs");
 const BUNDLE_BUILT = existsSync(BUNDLE_PATH);
 
+/**
+ * How long `talkToServer` waits before giving up with the server's stderr, and
+ * the per-test limit above it. Without the second, Vitest's 5s default ends a
+ * cold `tsx` boot on a busy machine first and reports a bare timeout — the
+ * backstop and its diagnostics never get a chance to run.
+ */
+const SERVER_BACKSTOP_MS = 20000;
+const SERVER_TEST_TIMEOUT_MS = SERVER_BACKSTOP_MS + 10000;
+
 function initializeRequest(id: number): string {
   return `${JSON.stringify({
     jsonrpc: "2.0",
@@ -78,12 +87,12 @@ async function talkToServer(options: {
     const timer = setTimeout(() => {
       finish(
         new Error(
-          `server did not answer in ${String(options.timeoutMs ?? 20000)}ms.\n` +
+          `server did not answer in ${String(options.timeoutMs ?? SERVER_BACKSTOP_MS)}ms.\n` +
             `stdout: ${JSON.stringify(stdout.slice(0, 500))}\n` +
             `stderr: ${stderr.slice(0, 500)}`,
         ),
       );
-    }, options.timeoutMs ?? 20000);
+    }, options.timeoutMs ?? SERVER_BACKSTOP_MS);
 
     child.on("error", (error) => finish(error));
     child.stderr.on("data", (chunk: Buffer) => {
@@ -125,7 +134,7 @@ describe("MCP server stdio handshake", () => {
     }
     // The server is not silent — it logs readiness — and none of it is on stdout.
     expect(stderr).toContain("mcp server ready");
-  });
+  }, SERVER_TEST_TIMEOUT_MS);
 
   it("completes an initialize handshake", async () => {
     const { lines } = await talkToServer({
@@ -142,7 +151,7 @@ describe("MCP server stdio handshake", () => {
     expect(response?.result).toMatchObject({
       serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     });
-  });
+  }, SERVER_TEST_TIMEOUT_MS);
 
   it("registers the run tool only when the environment says so", async () => {
     // The gate is the client's configuration, so this is the test that drives
@@ -219,7 +228,7 @@ describe("the built MCP bundle", () => {
     expect(response?.result).toMatchObject({
       serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     });
-  });
+  }, SERVER_TEST_TIMEOUT_MS);
 
   it.skipIf(!BUNDLE_BUILT)("imports nothing from electron", () => {
     const bundle = readFileSync(BUNDLE_PATH, "utf8");
@@ -246,5 +255,5 @@ describe("the built MCP bundle", () => {
         `non-JSON on stdout: ${line.slice(0, 120)}`,
       ).not.toThrow();
     }
-  });
+  }, SERVER_TEST_TIMEOUT_MS);
 });
