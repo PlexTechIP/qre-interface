@@ -39,9 +39,11 @@ const measurementTimeInput = () =>
 const errorRateInput = () =>
   screen.getByRole("textbox", { name: /^error rate$/i });
 
-/** Fill the two required GateBased times — the only fields without defaults. */
+/** Set the two required GateBased times explicitly, whatever they held. */
 async function fillRequiredTimes(user: ReturnType<typeof userEvent.setup>) {
+  await user.clear(gateTimeInput());
   await user.type(gateTimeInput(), "50");
+  await user.clear(measurementTimeInput());
   await user.type(measurementTimeInput(), "100");
 }
 
@@ -53,13 +55,27 @@ beforeEach(() => {
 });
 
 describe("Run-button validation gating", () => {
-  it("starts disabled because gate/measurement times have no defaults", () => {
+  /**
+   * Superconducting is the default architecture, and it used to be the only
+   * one that opened unrunnable: Majorana and Neutral Atom arrive prefilled,
+   * while the first screen a new analyst saw asked for gate and measurement
+   * times they had no way to know. The defaults are QRE's own
+   * `qubit_gate_ns_e4` preset, which the form's 1e-4 error rate already is.
+   */
+  it("starts runnable on QRE's standard superconducting timings", () => {
     render(<RunConfiguration />);
-    expect(runButton()).toBeDisabled();
+
+    expect(gateTimeInput()).toHaveValue("50");
+    expect(measurementTimeInput()).toHaveValue("100");
+    expect(runButton()).toBeEnabled();
   });
 
-  it("shows an inline reason for each missing required time", () => {
+  it("shows an inline reason for each missing required time", async () => {
+    const user = userEvent.setup();
     render(<RunConfiguration />);
+    await user.clear(gateTimeInput());
+    await user.clear(measurementTimeInput());
+
     // Queried as buttons, because that is what each summary entry is: the
     // reason and the jump to the field it names are one control. The field
     // name inside it is its own element, so a text query would miss the row.

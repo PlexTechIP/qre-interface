@@ -40,8 +40,16 @@ function expectSchemaValid(state: FormState) {
 }
 
 describe("toRunConfig — defaults path", () => {
-  it("does NOT serialize a fresh draft (gate/measurement times undefaulted)", () => {
-    expect(serialize(createInitialFormState())).toBeNull();
+  it("serializes a fresh draft: the defaults are a runnable configuration", () => {
+    const config = expectSchemaValid(createInitialFormState());
+    expect(config.architecture).toMatchObject({ gateTime: 50, measurementTime: 100 });
+  });
+
+  it("does NOT serialize a draft whose required times have been cleared", () => {
+    const s = createInitialFormState();
+    s.architecture.gateBased.gateTime = null;
+    s.architecture.gateBased.measurementTime = null;
+    expect(serialize(s)).toBeNull();
   });
 
   it("serializes to a schema-valid RunConfig once the two required times are entered", () => {

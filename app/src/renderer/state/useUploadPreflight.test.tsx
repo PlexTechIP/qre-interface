@@ -32,10 +32,14 @@ function stubPreflight(result: { ok: true } | { ok: false; code: "INVALID_CONFIG
 
 const runButton = () => screen.getByRole("button", { name: /run estimate/i });
 
-/** Fill the two GateBased times, the only fields with no defaults. */
+/** Set the two GateBased times explicitly, whatever they held. */
 async function fillRequiredTimes(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByRole("textbox", { name: /single-qubit gate time/i }), "50");
-  await user.type(screen.getByRole("textbox", { name: /^measurement time/i }), "100");
+  const gateTime = screen.getByRole("textbox", { name: /single-qubit gate time/i });
+  await user.clear(gateTime);
+  await user.type(gateTime, "50");
+  const measurementTime = screen.getByRole("textbox", { name: /^measurement time/i });
+  await user.clear(measurementTime);
+  await user.type(measurementTime, "100");
 }
 
 /**

@@ -262,10 +262,14 @@ export function createInitialFormState(): FormState {
     },
     architecture: {
       type: "gateBased",
+      // QRE's `qubit_gate_ns_e4` preset: 1e-4 errors, 50 ns gates, 100 ns
+      // measurement. Superconducting is the default architecture, and it was
+      // the only one to open unrunnable — asking a first-time analyst for two
+      // hardware timings before the app would do anything at all.
       gateBased: {
         errorRate: 0.0001,
-        gateTime: null,
-        measurementTime: null,
+        gateTime: 50,
+        measurementTime: 100,
         twoQubitGateTime: null,
       },
       majorana: {

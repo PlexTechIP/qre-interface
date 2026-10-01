@@ -151,15 +151,7 @@ describe("App shell wiring", () => {
   it("switches the sidebar to Results when a run completes", async () => {
     render(<App />);
 
-    // The default config only needs gate + measurement times to become valid.
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /single-qubit gate time/i }),
-      "50",
-    );
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /^measurement time/i }),
-      "100",
-    );
+    // The default config is runnable as it stands.
     await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
 
     // On completion the sidebar moves to Results and the result shows there.
@@ -1165,18 +1157,6 @@ describe("App shell — the agent round trip", () => {
     await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
   };
 
-  /** The default form needs its two required times before it will serialize. */
-  const fillRequiredTimes = async (): Promise<void> => {
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /single-qubit gate time/i }),
-      "50",
-    );
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /^measurement time/i }),
-      "100",
-    );
-  };
-
   it("marks a model-authored run in history without tagging its name", async () => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
     render(<App />);
@@ -1277,7 +1257,6 @@ describe("App shell — the agent round trip", () => {
   it("offers nothing to go back to for a run the analyst authored", async () => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
     render(<App />);
-    await fillRequiredTimes();
 
     await runIt();
 

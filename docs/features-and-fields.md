@@ -227,9 +227,14 @@ The seven fields map 1:1 onto `LogicalCounts` keys.
 | Field | Type | Default |
 |---|---|---|
 | Error Rate | float `[0 - 0.01)` | 1e-4 |
-| Single-Qubit Gate Time (ns) | int `[> 0]` | None |
-| Measurement Time (ns) | int `[> 0]` | None |
+| Single-Qubit Gate Time (ns) | int `[> 0]` | 50 |
+| Measurement Time (ns) | int `[> 0]` | 100 |
 | Two-Qubit Gate Time (ns) *(optional)* | int `[> 0]` | None |
+
+The defaults are QRE's `qubit_gate_ns_e4` preset (1e-4 errors, 50 ns gates,
+100 ns measurement), so the default architecture opens runnable like the other
+two. They used to be blank, which made Superconducting the only architecture a
+new analyst could not run without first knowing their hardware's timings.
 
 **Tooltip copy**
 
