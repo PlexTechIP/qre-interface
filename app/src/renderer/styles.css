@@ -2918,6 +2918,13 @@ input[type="range"]:focus-visible,
   text-transform: uppercase;
 }
 
+/* A unit keeps its case inside an uppercased label: "µm" uppercases to a
+   capital mu that reads as "MM", and "ns" to "NS". See labelWithUnit.tsx. */
+.field__label-unit {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 /* --- Segmented control (application type / architecture) -----------*/
 .seg {
   display: grid;

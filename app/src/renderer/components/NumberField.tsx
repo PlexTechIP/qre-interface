@@ -5,6 +5,7 @@ import {
   definitionDescribedBy,
   definitionId,
 } from "./DefinitionTip";
+import { labelWithUnit } from "./labelWithUnit";
 
 interface NumberFieldProps {
   id: string;
@@ -104,7 +105,7 @@ export function NumberField({
     <div className={`field${showError ? " field--error" : ""}`}>
       <div className="field__label-row">
         <label className="field__label" htmlFor={id}>
-          {label}
+          {labelWithUnit(label)}
           {required ? (
             <span className="field__req" title="Required">
               {" "}

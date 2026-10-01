@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { DefinitionTip, definitionId } from "./DefinitionTip";
+import { labelWithUnit } from "./labelWithUnit";
 
 interface FieldProps {
   id: string;
@@ -40,7 +41,7 @@ export function Field({
     <div className={`field${error ? " field--error" : ""}`}>
       <div className="field__label-row">
         <label className="field__label" htmlFor={id}>
-          {label}
+          {labelWithUnit(label)}
           {required ? (
             <span className="field__req" title="Required">
               {" "}
