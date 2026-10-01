@@ -18,6 +18,10 @@ import {
   normalizeFormState,
   type FormState,
 } from "./state/formState";
+import {
+  storeSavedPrograms,
+  withSavedProgramLibrary,
+} from "./state/savedProgramLibrary";
 import { validateRunConfigSchema } from "./state/schemaValidation";
 import {
   generateName,
@@ -127,12 +131,13 @@ export function RunConfiguration({
    * is what stops a remount re-seeding the original proposal over the analyst's
    * edits to it.
    */
-  const [state, setState] = useState<FormState>(
-    () =>
+  const [state, setState] = useState<FormState>(() =>
+    withSavedProgramLibrary(
       initialDraft ??
-      (initialConfig
-        ? formStateFromRunConfig(initialConfig)
-        : (restoredState?.state ?? createInitialFormState())),
+        (initialConfig
+          ? formStateFromRunConfig(initialConfig)
+          : (restoredState?.state ?? createInitialFormState())),
+    ),
   );
   /**
    * Who authored the configuration NOW IN THE FORM — held here rather than read
@@ -171,12 +176,12 @@ export function RunConfiguration({
   // the editable form when it changes.
   useEffect(() => {
     if (initialDraft) {
-      setState(initialDraft);
+      setState(withSavedProgramLibrary(initialDraft));
       setDraftProvenance(provenance);
       setDraftProposal(proposed ?? []);
       setDraftConversationId(conversationId);
     } else if (initialConfig) {
-      setState(formStateFromRunConfig(initialConfig));
+      setState(withSavedProgramLibrary(formStateFromRunConfig(initialConfig)));
       // A Rerun replaces the model's draft with a saved config, so whatever
       // authored that draft no longer describes what is on screen — and neither
       // does the list of what that model chose.
@@ -191,7 +196,14 @@ export function RunConfiguration({
     // re-apply a stale `initialDraft` over the analyst's edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfig, initialDraft]);
- 
+
+  // The library outlives this form: every seed above starts from one that
+  // knows nothing of it, so each change is written back as it happens.
+  const savedPrograms = state.application.savedPrograms;
+  useEffect(() => {
+    storeSavedPrograms(savedPrograms);
+  }, [savedPrograms]);
+
   /*
    * Mirror the form upward.
    *

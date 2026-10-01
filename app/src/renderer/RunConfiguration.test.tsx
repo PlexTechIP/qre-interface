@@ -9,10 +9,16 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { buildFailedResult, buildSuccessResult, fakeEstimator } from "../shared/testing";
+import {
+  buildFailedResult,
+  buildRunConfig,
+  buildSuccessResult,
+  fakeEstimator,
+} from "../shared/testing";
 import type { RunConfig } from "../shared/types";
 import { RunConfiguration } from "./RunConfiguration";
 import { createInitialFormState, type FormState } from "./state/formState";
+import { loadSavedPrograms, storeSavedPrograms } from "./state/savedProgramLibrary";
 
 const runButton = () => screen.getByRole("button", { name: /run estimate/i });
 
@@ -538,5 +544,52 @@ describe("Configuration summary reflects the draft", () => {
 
     await user.click(majoranaRadio());
     expect(within(qecValue()).getByText("Three-Aux")).toBeInTheDocument();
+  });
+});
+
+/**
+ * "Save Program" has to mean saved. The library used to live only in the
+ * form's in-memory state, so a relaunch emptied it — and so did every Rerun
+ * and every model draft, because each of those builds a fresh form.
+ */
+describe("The saved-program library outlives the form", () => {
+  const PROGRAM = {
+    id: "saved-1",
+    name: "shor.qs",
+    filePath: "/Users/analyst/programs/shor.qs",
+    format: "qsharp" as const,
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    storeSavedPrograms([PROGRAM]);
+  });
+
+  it("offers a program saved in an earlier session", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(screen.getByRole("radio", { name: "Saved Programs" }));
+
+    expect(screen.getByRole("radio", { name: /shor\.qs/ })).toBeVisible();
+  });
+
+  it("keeps the library when a rerun replaces the form", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration initialConfig={buildRunConfig()} />);
+
+    await user.click(screen.getByRole("radio", { name: "Saved Programs" }));
+
+    expect(screen.getByRole("radio", { name: /shor\.qs/ })).toBeVisible();
+  });
+
+  it("forgets a program the analyst deletes from it", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(screen.getByRole("radio", { name: "Saved Programs" }));
+    await user.click(screen.getByRole("button", { name: "Delete shor.qs" }));
+
+    expect(loadSavedPrograms()).toEqual([]);
   });
 });

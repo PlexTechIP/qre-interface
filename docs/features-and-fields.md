@@ -173,6 +173,9 @@ One of: **Benchmarks**, **Saved Programs**, **Manual Logical Counts**.
 
 - Supported formats: Q#, OpenQASM, QIR
 - Accepted inputs: zip files, folders
+- The library persists across launches, reruns and model drafts. It stores
+  references (name, path, format), not the files, so a program that has moved
+  is reported by the upload pre-flight when it is selected.
 
 ### Manual Logical Counts
 
