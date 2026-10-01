@@ -308,7 +308,7 @@ describe("ChatPage — a turn", () => {
    * and Configure are separate ways to build a run, sharing what happens after.
    */
   it("runs a proposal as drafted, saves it, and reports the finished run", async () => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0, store: () => window.store });
     const runStore = new InMemoryRunStore();
     window.store = withNoChangeSource(runStore);
     const onRunComplete = vi.fn();

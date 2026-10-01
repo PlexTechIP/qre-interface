@@ -7,18 +7,21 @@
  * The engine RESOLVES with a failed RunResult on engine failure and REJECTS
  * only on programmer error (schema-invalid input reaching the boundary); Run is
  * gated on validity, so the rejected branch is defensive, not an expected path.
+ *
+ * Recording the run in history is NOT done here. Main saves every run before
+ * it replies (main/estimatorHandler.ts): saving here, after the reply, lost the
+ * run whenever the page was not there to receive it — a reload mid-run, or a
+ * page that had unmounted.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type {
-  EstimatorService,
+  EstimatorBridge,
   RunConfig,
   RunProvenance,
   RunResult,
-  RunStore,
 } from "../../shared/types";
-import { makeRunRecord } from "../../shared/types";
 import type { FormState } from "./formState";
 import { toRunConfig, type RunStamp } from "./toRunConfig";
 
@@ -28,12 +31,31 @@ export type RunState =
   | { phase: "done"; config: RunConfig; result: RunResult }
   | { phase: "rejected"; config: RunConfig; message: string };
 
+/**
+ * What the caller that started a run wants to hear about it.
+ *
+ * These ride on the run itself — they are called from the promise, not from an
+ * effect watching `runState` — so they still fire when the page that started
+ * the run has unmounted. Reporting completion from an effect is what used to
+ * lose a run the moment the analyst navigated away from it.
+ */
+export interface RunHooks {
+  onStarted?: (config: RunConfig) => void;
+  onSettled?: (config: RunConfig, result: RunResult) => void;
+  /** The defensive programmer-error path: the run never reached a result. */
+  onRejected?: (config: RunConfig) => void;
+  /** The analyst stopped the run; it will not be recorded. */
+  onCancelled?: (config: RunConfig) => void;
+}
+
 export interface RunFlow {
   runState: RunState;
   /** Serialize the draft, stamp it, and run. No-op if the draft can't serialize. */
-  start: (state: FormState, provenance?: RunProvenance) => void;
+  start: (state: FormState, provenance?: RunProvenance, hooks?: RunHooks) => void;
   /** Re-run the last config under a fresh stamp (same configuration, new run). */
-  retry: () => void;
+  retry: (hooks?: RunHooks) => void;
+  /** Stop the run in flight and return to the form. Its result is never shown. */
+  cancel: () => void;
   /** Return to the form to change the configuration. */
   edit: () => void;
 }
@@ -49,69 +71,82 @@ function stamp(provenance?: RunProvenance): RunStamp {
   return next;
 }
 
-function getEstimator(): Pick<EstimatorService, "run"> {
+function getEstimator(): EstimatorBridge {
   return window.estimator;
 }
 
-function getRunStore(): RunStore {
-  return window.store;
-}
-
-export function useRunFlow(
-  estimator: Pick<EstimatorService, "run"> = getEstimator(),
-  store: RunStore = getRunStore(),
-): RunFlow {
+export function useRunFlow(estimator: EstimatorBridge = getEstimator()): RunFlow {
   const [runState, setRunState] = useState<RunState>({ phase: "idle" });
+  /**
+   * The last config run, for Retry — read from a ref, not from inside a
+   * `setRunState` updater. An updater must be pure: React calls it twice under
+   * StrictMode, and starting the run from one ran every Retry twice in dev.
+   */
+  const lastConfig = useRef<RunConfig | null>(null);
+  /** The run in flight, if any — cleared by Cancel, so its reply is ignored. */
+  const inFlight = useRef<{ config: RunConfig; hooks: RunHooks } | null>(null);
 
   const execute = useCallback(
-    async (config: RunConfig): Promise<void> => {
+    async (config: RunConfig, hooks: RunHooks = {}): Promise<void> => {
+      lastConfig.current = config;
+      inFlight.current = { config, hooks };
       setRunState({ phase: "running", config });
+      hooks.onStarted?.(config);
+      let result: RunResult;
       try {
-        const result = await estimator.run(config);
-        setRunState({ phase: "done", config, result });
-        // Save-after-run: persist every completed run (succeeded OR failed) as an
-        // immutable record, so it appears in Run History. `makeRunRecord` keys the
-        // record by config.id and requires result.runId === config.id (both engines
-        // guarantee this). A persistence failure must never break the results view.
-        try {
-          await store.save(makeRunRecord(config, result, new Date().toISOString()));
-        } catch (saveErr) {
-          console.error("Failed to save run to history:", saveErr);
-        }
+        // Resolves once main has run the estimate AND recorded it in history.
+        result = await estimator.run(config);
       } catch (err) {
+        if (inFlight.current?.config.id !== config.id) return;
+        inFlight.current = null;
         setRunState({
           phase: "rejected",
           config,
           message: err instanceof Error ? err.message : String(err),
         });
+        hooks.onRejected?.(config);
+        return;
       }
+      // Cancelled (or superseded) while running: nobody is waiting on this one.
+      if (inFlight.current?.config.id !== config.id) return;
+      inFlight.current = null;
+      setRunState({ phase: "done", config, result });
+      hooks.onSettled?.(config, result);
     },
-    [estimator, store],
+    [estimator],
   );
 
+  const cancel = useCallback((): void => {
+    const running = inFlight.current;
+    if (running === null) return;
+    inFlight.current = null;
+    void estimator.cancel?.(running.config.id);
+    setRunState({ phase: "idle" });
+    running.hooks.onCancelled?.(running.config);
+  }, [estimator]);
+
   const start = useCallback(
-    (state: FormState, provenance?: RunProvenance): void => {
+    (state: FormState, provenance?: RunProvenance, hooks?: RunHooks): void => {
       // Provenance goes IN through the stamp rather than onto the result
       // afterwards. The Run gate validates `toRunConfig(state, stamp)`, so a
       // field assigned after that call is a field the gate never inspected —
       // the object approved and the object executed have to be the same one.
       const config = toRunConfig(state, stamp(provenance));
       if (config === null) return; // Run is gated on validity; unreachable in practice.
-      void execute(config);
+      void execute(config, hooks);
     },
     [execute],
   );
 
-  const retry = useCallback((): void => {
-    setRunState((prev) => {
-      if (prev.phase === "idle") return prev;
-      const config: RunConfig = { ...prev.config, ...stamp() };
-      void execute(config);
-      return { phase: "running", config };
-    });
-  }, [execute]);
+  const retry = useCallback(
+    (hooks?: RunHooks): void => {
+      if (lastConfig.current === null) return;
+      void execute({ ...lastConfig.current, ...stamp() }, hooks);
+    },
+    [execute],
+  );
 
   const edit = useCallback((): void => setRunState({ phase: "idle" }), []);
 
-  return { runState, start, retry, edit };
+  return { runState, start, retry, cancel, edit };
 }

@@ -36,7 +36,7 @@ import { setSystemPrefersDark, systemThemeListenerCount } from "./test/matchMedi
  */
 describe("App shell wiring", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore(SAMPLE_RUN_RECORDS));
     window.agent = fakeAgentService();
     window.chats = new InMemoryChatStore();
@@ -356,7 +356,7 @@ describe("agent service resolution", () => {
  */
 describe("App shell — Settings", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     // `getInitialAgentSelection` reads localStorage, so a selection left behind
@@ -684,7 +684,7 @@ describe("App shell — Settings", () => {
  */
 describe("App shell — system theme", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     window.agent = fakeAgentService();
@@ -788,7 +788,7 @@ describe("App shell — system theme", () => {
  */
 describe("App shell — OpenRouter", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     window.localStorage.clear();
@@ -901,7 +901,7 @@ describe("App shell — OpenRouter", () => {
  */
 describe("App shell — who fetches the OpenRouter catalogue", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     window.localStorage.clear();
@@ -1054,7 +1054,7 @@ describe("App shell — who fetches the OpenRouter catalogue", () => {
  */
 describe("App shell — the run form across navigation", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     window.localStorage.clear();
@@ -1158,7 +1158,7 @@ describe("App shell — the agent round trip", () => {
   };
 
   it("marks a model-authored run in history without tagging its name", async () => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0, store: () => window.store });
     render(<App />);
     await carryProposalIntoForm();
 
@@ -1175,7 +1175,7 @@ describe("App shell — the agent round trip", () => {
   });
 
   it("leads a failed run back to the conversation that proposed it", async () => {
-    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 0, store: () => window.store });
     render(<App />);
     await carryProposalIntoForm();
     await runIt();
@@ -1200,7 +1200,7 @@ describe("App shell — the agent round trip", () => {
 
   it("hands the model the error text it has no other way to see", async () => {
     const failure = buildFailedResult();
-    window.estimator = fakeEstimator(failure, { delayMs: 0 });
+    window.estimator = fakeEstimator(failure, { delayMs: 0, store: () => window.store });
     render(<App />);
     await carryProposalIntoForm();
     await runIt();
@@ -1216,7 +1216,7 @@ describe("App shell — the agent round trip", () => {
   /** The message waits in the composer — sending is the analyst's call. */
   it("does not send the diagnosis on the analyst's behalf", async () => {
     const seen: unknown[] = [];
-    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildFailedResult(), { delayMs: 0, store: () => window.store });
     window.agent = {
       ...fakeAgentService(),
       async requestReply(request) {
@@ -1237,7 +1237,7 @@ describe("App shell — the agent round trip", () => {
   });
 
   it("leads a successful run back too, to ask about the outcome", async () => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0, store: () => window.store });
     render(<App />);
     await carryProposalIntoForm();
     await runIt();
@@ -1255,7 +1255,7 @@ describe("App shell — the agent round trip", () => {
    * so there is nowhere for the control to lead.
    */
   it("offers nothing to go back to for a run the analyst authored", async () => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0, store: () => window.store });
     render(<App />);
 
     await runIt();
@@ -1275,7 +1275,7 @@ describe("App shell — the agent round trip", () => {
  */
 describe("App shell — editing a proposal in place", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 0, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     window.agent = fakeAgentService();
@@ -1377,7 +1377,7 @@ describe("App shell — editing a proposal in place", () => {
 
 describe("App shell — Settings remembers where you were", () => {
   beforeEach(() => {
-    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10 });
+    window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });
     window.store = withNoChangeSource(new InMemoryRunStore());
     window.chats = new InMemoryChatStore();
     window.agent = fakeAgentService();
@@ -1403,5 +1403,86 @@ describe("App shell — Settings remembers where you were", () => {
       "aria-selected",
       "true",
     );
+  });
+});
+
+/**
+ * A run belongs to the app, not to the page it was started from.
+ *
+ * Every page is a conditional render, and the run used to report completion
+ * from an effect in the page that started it — so leaving that page mid-run
+ * meant nothing ever heard the run finish. Results kept showing the previous
+ * run, Configure came back as an idle form, and nothing said a run had ended.
+ */
+describe("App shell — a run outlives the page that started it", () => {
+  beforeEach(() => {
+    window.store = withNoChangeSource(new InMemoryRunStore());
+    window.estimator = fakeEstimator(buildSuccessResult(), {
+      delayMs: 200,
+      store: () => window.store,
+    });
+    window.agent = fakeAgentService();
+    window.chats = new InMemoryChatStore();
+  });
+
+  const navButton = (name: string) => screen.getByRole("button", { name });
+
+  async function startRunAndLeaveFor(page: string): Promise<void> {
+    await userEvent.click(screen.getByRole("button", { name: /run estimate/i }));
+    await userEvent.click(navButton(page));
+  }
+
+  it("leaves the analyst where they went, and says the run has finished", async () => {
+    render(<App />);
+    await startRunAndLeaveFor("Run History");
+
+    expect(await screen.findByText(/run finished/i)).toBeVisible();
+    expect(navButton("Run History")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens the finished run from that notice", async () => {
+    render(<App />);
+    await startRunAndLeaveFor("Run History");
+
+    await userEvent.click(await screen.findByRole("button", { name: "View results" }));
+
+    expect(screen.getByRole("heading", { name: "Estimation Results" })).toBeVisible();
+    expect(navButton("Results")).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText(/run finished/i)).toBeNull();
+  });
+
+  it("marks Configure as running until its run finishes", async () => {
+    render(<App />);
+    await startRunAndLeaveFor("Run History");
+
+    expect(navButton("Configure")).toHaveAccessibleDescription(/estimate is running/i);
+    await screen.findByText(/run finished/i);
+    expect(navButton("Configure")).not.toHaveAccessibleDescription(/running/i);
+  });
+
+  it("shows the run still in progress on coming back to Configure", async () => {
+    render(<App />);
+    await startRunAndLeaveFor("Run History");
+
+    await userEvent.click(navButton("Configure"));
+
+    expect(screen.getByText(/running your estimate against the engine/i)).toBeVisible();
+  });
+
+  it("delivers a proposal run started on the AI Agent page after leaving it", async () => {
+    render(<App />);
+    await userEvent.click(navButton("AI Agent"));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Your message" }),
+      "Estimate Grover search",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Run this configuration" }),
+    );
+    await userEvent.click(navButton("Run History"));
+
+    expect(await screen.findByText(/run finished/i)).toBeVisible();
+    expect(navButton("Run History")).toHaveAttribute("aria-current", "page");
   });
 });

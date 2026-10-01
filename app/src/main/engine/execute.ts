@@ -164,11 +164,26 @@ export function interpretProcessCompletion(
   return { ok: true, raw: parsed };
 }
 
+/** What an aborted run settles with. Never recorded — see estimatorHandler.ts. */
+const cancelled = (raw: Record<string, unknown> | null): ExecuteResult => ({
+  ok: false,
+  code: "ENGINE_CRASH",
+  message: "The run was cancelled before the engine finished.",
+  raw,
+});
+
+/**
+ * Run the wrapper once. `signal` cancels it: the process is killed and the
+ * promise settles straight away, rather than when the estimate would have
+ * finished — which for a large one is minutes away.
+ */
 export function execute(
   invocation: QreInvocation,
   pythonBin: string,
   engineDir: string = DEFAULT_ENGINE_DIR,
+  signal?: AbortSignal,
 ): Promise<ExecuteResult> {
+  if (signal?.aborted) return Promise.resolve(cancelled(null));
   return new Promise((resolve) => {
     const child = spawn(pythonBin, [wrapperScript(engineDir)], {
       env: buildEngineEnv(process.env, engineDir),
@@ -181,13 +196,21 @@ export function execute(
     let stderr = "";
     let settled = false;
 
+    const onAbort = (): void => {
+      if (settled) return;
+      child.kill("SIGKILL");
+      finish(cancelled(processDiagnosticsRaw(stdout, stderr, null)));
+    };
+
     const finish = (result: ExecuteResult): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       liveEngineProcesses.delete(child);
       resolve(result);
     };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     const timer = setTimeout(() => {
       if (settled) return;

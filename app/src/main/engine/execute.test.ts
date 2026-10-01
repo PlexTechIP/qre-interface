@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -175,6 +177,41 @@ describe("execute", () => {
       expect(result.raw).toBeNull();
     }
   }, 15_000);
+
+  /**
+   * Cancel. A large estimate can run for minutes, and there was no way to stop
+   * one short of quitting the app. The stand-in "interpreter" is Node running an
+   * `estimate.py` that idles forever, so the test needs no Python and no CPU.
+   */
+  describe("cancellation", () => {
+    it("stops the engine process and settles at once when the run is aborted", async () => {
+      const engineDir = mkdtempSync(path.join(tmpdir(), "qre-execute-abort-"));
+      mkdirSync(path.join(engineDir, "python"));
+      writeFileSync(path.join(engineDir, "python", "estimate.py"), "setInterval(() => {}, 1000);\n");
+      const controller = new AbortController();
+      try {
+        const pending = execute(invocation(), process.execPath, engineDir, controller.signal);
+        setTimeout(() => controller.abort(), 50);
+
+        const result = await pending;
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.message).toMatch(/cancelled/i);
+      } finally {
+        rmSync(engineDir, { recursive: true, force: true });
+      }
+    }, 5_000);
+
+    it("never starts the process for a run aborted before it began", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const result = await execute(invocation(), "/nonexistent/python", undefined, controller.signal);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toMatch(/cancelled/i);
+    });
+  });
 
   describe("buildEngineEnv", () => {
     it("drops everything from the parent env except the allowlist", () => {

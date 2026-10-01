@@ -132,8 +132,9 @@ const pythonBin = app.isPackaged
 if (app.isPackaged) {
   process.env["QRE_BENCHMARKS_DIR"] = path.join(engineDir, "benchmarks");
 }
+// Its IPC handler is registered in `whenReady`, beside the run store it
+// records every finished run into.
 const engine = new QreEngine(pythonBin, engineDir);
-registerEstimatorHandler(ipcMain, engine);
 // Form-level pre-flight for uploaded programs (main-process filesystem access).
 registerUploadHandler(ipcMain);
 
@@ -175,17 +176,18 @@ app.whenReady().then(() => {
    * one that says so, and nothing about it would look stale.
    *
    * `PRAGMA data_version` changes only when ANOTHER connection commits, so the
-   * dashboard's own saves do not trigger this — those already update the UI
-   * through the path that made them.
+   * dashboard's own saves do not trigger this. Those are announced by the
+   * estimator handler below, on the same channel.
    */
+  const broadcastStoreChanged = (): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      // Tolerates zero windows: on macOS the app lives on with none open.
+      if (!window.isDestroyed()) window.webContents.send(STORE_CHANGED_CHANNEL);
+    }
+  };
   storeWatcher = startStoreWatcher({
     readVersion: () => store.dataVersion(),
-    broadcast: () => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        // Tolerates zero windows: on macOS the app lives on with none open.
-        if (!window.isDestroyed()) window.webContents.send(STORE_CHANGED_CHANNEL);
-      }
-    },
+    broadcast: broadcastStoreChanged,
     // Without this the watcher fails in perfect silence: `onError` is optional
     // and every failed read returns early, so a connection that starts throwing
     // every tick simply stops History updating with nothing anywhere saying
@@ -194,6 +196,14 @@ app.whenReady().then(() => {
     onError: (error) => {
       console.error("[store-watcher] could not check for external changes", error);
     },
+  });
+
+  // Every run the dashboard starts is recorded here, before the renderer hears
+  // back, so a window that reloads or a page that unmounts mid-run cannot
+  // drop it — and open windows are told, so History lists it straight away.
+  registerEstimatorHandler(ipcMain, engine, {
+    store,
+    onRecorded: broadcastStoreChanged,
   });
 
   // Tell non-Electron processes where that resolved to. The MCP server cannot

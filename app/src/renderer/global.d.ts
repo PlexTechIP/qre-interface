@@ -1,5 +1,5 @@
 import type {
-  EstimatorService,
+  EstimatorBridge,
   RunStore,
   RunStoreChangeSource,
   UploadedProgramFormat,
@@ -15,7 +15,7 @@ export type UploadPreflightResult =
 
 declare global {
   interface Window {
-    estimator: Pick<EstimatorService, "run">;
+    estimator: EstimatorBridge;
     /**
      * The run history, plus a subscription to changes another process made.
      *

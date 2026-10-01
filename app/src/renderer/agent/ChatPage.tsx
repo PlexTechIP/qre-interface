@@ -44,6 +44,10 @@ interface ChatPageProps {
    * and run; they share the same Results and History downstream.
    */
   onRunComplete: (config: RunConfig, result: RunResult, conversationId?: string) => void;
+  /** A run has started from this page — the shell marks it as in flight. */
+  onRunStart?: ((config: RunConfig) => void) | undefined;
+  /** That run is over, with a result or without one. */
+  onRunEnd?: ((config: RunConfig) => void) | undefined;
   /**
    * The inline configuration editor, held by the shell so it survives this
    * page's unmounting.
@@ -221,6 +225,8 @@ export function ChatPage({
   store,
   status,
   onRunComplete,
+  onRunStart,
+  onRunEnd,
   editorOpen,
   editorSnapshot,
   onOpenEditor,
@@ -251,23 +257,16 @@ export function ChatPage({
    * Running a proposal AS DRAFTED, without opening the editor first.
    *
    * The same run flow the Configure path uses — it stamps a RunConfig, runs it
-   * over the estimator bridge, and persists the finished run to history. On
-   * completion the shell moves to the Results page (via `onRunComplete`), so a
-   * run started here lands exactly where a Configure run does. The in-flight
-   * spinner shows via `ChatRunPanel` until then.
+   * over the estimator bridge, which records the finished run in history. On
+   * completion the shell decides where the analyst lands (via `onRunComplete`),
+   * exactly as for a Configure run. The in-flight spinner shows via
+   * `ChatRunPanel` until then.
+   *
+   * Completion is reported through the run's own hooks (see `runDraft`), not an
+   * effect on `runState`: an effect dies with this page, so leaving it mid-run
+   * used to mean nobody heard the run finish.
    */
-  const { runState, start: startRun, edit: clearRun } = useRunFlow();
-  /** The conversation the in-flight run came from, for the Results back-link. */
-  const runConversationId = useRef<string | undefined>(undefined);
-  /** Fire `onRunComplete` once per finished run, not on every re-render. */
-  const reportedRunId = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (runState.phase !== "done") return;
-    if (reportedRunId.current === runState.config.id) return;
-    reportedRunId.current = runState.config.id;
-    onRunComplete(runState.config, runState.result, runConversationId.current);
-  }, [runState, onRunComplete]);
+  const { runState, start: startRun, edit: clearRun, cancel: cancelRun } = useRunFlow();
   // The conversation whose export preview is open (null = closed). Holding the
   // loaded conversation itself means the dialog can never be open with nothing
   // to render.
@@ -744,8 +743,15 @@ export function ChatPage({
   const runDraft = (message: ChatMessage): void => {
     const handoff = resolveDraft(message);
     if (handoff === null) return;
-    runConversationId.current = handoff.conversationId;
-    startRun(handoff.state, handoff.provenance);
+    startRun(handoff.state, handoff.provenance, {
+      onStarted: (config) => onRunStart?.(config),
+      onSettled: (config, result) => {
+        onRunEnd?.(config);
+        onRunComplete(config, result, handoff.conversationId);
+      },
+      onRejected: (config) => onRunEnd?.(config),
+      onCancelled: (config) => onRunEnd?.(config),
+    });
   };
 
   /** Open the proposal in the editor, in place on this page, to change it first. */
@@ -977,6 +983,8 @@ export function ChatPage({
           */}
           <RunConfiguration
             onRunComplete={onRunComplete}
+            onRunStart={onRunStart}
+            onRunEnd={onRunEnd}
             restoredState={editorSnapshot}
             onStateChange={onEditorStateChange}
           />
@@ -1129,7 +1137,7 @@ export function ChatPage({
             shell moves to the Results page (and saves the run to history), so
             this only ever paints the spinner before that hand-off.
           */}
-          <ChatRunPanel runState={runState} onDismiss={clearRun} />
+          <ChatRunPanel runState={runState} onDismiss={clearRun} onCancel={cancelRun} />
 
           {/*
             The analyst's message stays in the transcript when a turn fails —

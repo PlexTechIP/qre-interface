@@ -6,6 +6,8 @@ interface ChatRunPanelProps {
   runState: RunState;
   /** Clear a rejected run and return to the conversation. */
   onDismiss: () => void;
+  /** Stop the run in flight and return to the conversation. */
+  onCancel: () => void;
 }
 
 /**
@@ -21,6 +23,7 @@ interface ChatRunPanelProps {
 export function ChatRunPanel({
   runState,
   onDismiss,
+  onCancel,
 }: ChatRunPanelProps): React.JSX.Element | null {
   if (runState.phase === "running") {
     const props: ResultsAreaProps = {
@@ -31,6 +34,11 @@ export function ChatRunPanel({
     return (
       <section className="chat-run" aria-label="Run">
         <ResultsArea {...props} />
+        <div className="chat-run__actions">
+          <button type="button" className="agent-secondary" onClick={onCancel}>
+            Cancel run
+          </button>
+        </div>
       </section>
     );
   }

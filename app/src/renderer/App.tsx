@@ -21,6 +21,7 @@ import { Modal } from "./Modal";
 import { RunConfiguration, type FormSnapshot } from "./RunConfiguration";
 import { SettingsButton } from "./settings/SettingsButton";
 import { AI_PROVIDERS_TAB_INDEX, SettingsPage } from "./settings/SettingsPage";
+import { useRunFlow } from "./state/useRunFlow";
 import {
   DARK_QUERY,
   readStoredPreference,
@@ -534,22 +535,99 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     { runId: string; conversationId: string } | null
   >(null);
 
-  const handleRunComplete = useCallback(
+  /**
+   * The page on screen, readable when a run lands — which is after the render
+   * that started it, so the state variable captured then would be stale.
+   */
+  const activePageRef = useRef<Page>(activePage);
+  useEffect(() => {
+    activePageRef.current = activePage;
+  }, [activePage]);
+
+  /**
+   * Configure's run flow, held here rather than in the page.
+   *
+   * The page unmounts on every sidebar click. With the flow inside it, a run
+   * the analyst walked away from kept going with nothing left to show it, and
+   * coming back found an idle form as though nothing had been started.
+   */
+  const configureRunFlow = useRunFlow();
+  const resetConfigureRun = configureRunFlow.edit;
+
+  /** Runs in flight, by the page that started them — marked in the sidebar. */
+  const [runsInFlight, setRunsInFlight] = useState<
+    readonly { id: string; origin: Page }[]
+  >([]);
+  const handleRunStart = useCallback((origin: Page, config: RunConfig): void => {
+    setRunsInFlight((current) => [...current, { id: config.id, origin }]);
+  }, []);
+  const handleRunEnd = useCallback((config: RunConfig): void => {
+    setRunsInFlight((current) => current.filter((run) => run.id !== config.id));
+  }, []);
+
+  /**
+   * A run that finished while the analyst was on another page.
+   *
+   * Not pushed onto Results and not navigated to: whatever they went to do
+   * next is what they are looking at, and a run landing on them would take it
+   * away. The notice says it finished and offers the way there.
+   */
+  const [finishedElsewhere, setFinishedElsewhere] = useState<{
+    config: RunConfig;
+    result: RunResult;
+    conversationId?: string;
+  } | null>(null);
+
+  /** Surface a finished run on the Results page (and move the sidebar there). */
+  const showRun = useCallback(
     (config: RunConfig, result: RunResult, conversationId?: string): void => {
+      setLatestRun({ config, result });
+      setRunOrigin(
+        conversationId === undefined ? null : { runId: config.id, conversationId },
+      );
+      setActivePage("results");
+    },
+    [],
+  );
+
+  const handleRunComplete = useCallback(
+    (origin: Page, config: RunConfig, result: RunResult, conversationId?: string): void => {
       setDraftHandoff(null);
       // The run has happened; the agent's inline editor has done its job. Closing
       // it means a trip back to the AI agent lands on the conversation — with the
       // composer for follow-ups and the "ask about this run" round trip — rather
       // than on a stale editor for a configuration that has already run.
       closeAgentEditor();
-      setLatestRun({ config, result });
-      setRunOrigin(
-        conversationId === undefined ? null : { runId: config.id, conversationId },
-      );
-      // Surface the finished run on the Results page (and move the sidebar there).
-      setActivePage("results");
+      // Configure goes back to its form: the result belongs on Results now,
+      // and a held flow would otherwise greet the next visit with this run.
+      if (origin === "config") resetConfigureRun();
+      if (activePageRef.current === origin) {
+        showRun(config, result, conversationId);
+      } else {
+        setFinishedElsewhere(
+          conversationId === undefined ? { config, result } : { config, result, conversationId },
+        );
+      }
     },
-    [closeAgentEditor],
+    [closeAgentEditor, resetConfigureRun, showRun],
+  );
+  const handleConfigureRunStart = useCallback(
+    (config: RunConfig) => handleRunStart("config", config),
+    [handleRunStart],
+  );
+  const handleConfigureRunComplete = useCallback(
+    (config: RunConfig, result: RunResult, conversationId?: string) =>
+      handleRunComplete("config", config, result, conversationId),
+    [handleRunComplete],
+  );
+  const handleAgentRunStart = useCallback(
+    (config: RunConfig) => handleRunStart("agent", config),
+    [handleRunStart],
+  );
+  const handleAgentRunComplete = useCallback(
+    (config: RunConfig, result: RunResult, conversationId?: string) =>
+      handleRunComplete("agent", config, result, conversationId),
+    [handleRunComplete],
   );
 
   /**
@@ -720,20 +798,31 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
           <nav className="nav-list">
             {NAV_ITEMS.map((item) => {
               const active = item.page === activePage;
+              // A run started here and still going. Said as a DESCRIPTION, so
+              // the item keeps its name; the dot is the sighted equivalent.
+              const running = runsInFlight.some((run) => run.origin === item.page);
+              const runningId = `nav-running-${item.page}`;
               return (
                 <Fragment key={item.page}>
                   <button
                     type="button"
                     className={`nav-item${active ? " nav-item--active" : ""}`}
-                    title={item.label}
+                    title={running ? `${item.label} — an estimate is running` : item.label}
                     aria-current={active ? "page" : undefined}
+                    aria-describedby={running ? runningId : undefined}
                     onClick={() => setActivePage(item.page)}
                   >
                     <span className="nav-item__icon" aria-hidden="true">
                       {item.icon}
                     </span>
                     <span className="nav-item__label">{item.label}</span>
+                    {running ? <span className="nav-item__running" aria-hidden="true" /> : null}
                   </button>
+                  {running ? (
+                    <span id={runningId} className="sr-only">
+                      An estimate is running
+                    </span>
+                  ) : null}
                   {/* Split the two model/config entries from the results-oriented
                       trio with a hairline rule. */}
                   {item.page === "config" ? (
@@ -746,9 +835,40 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
         </aside>
 
         <section className="workspace">
+          {finishedElsewhere ? (
+            <div className="run-notice" role="status">
+              <span className="run-notice__text">
+                {finishedElsewhere.result.status === "failed" ? "Run failed" : "Run finished"}
+                {" · "}
+                <strong>{finishedElsewhere.config.name}</strong>
+              </span>
+              <button
+                type="button"
+                className="run-notice__view"
+                onClick={() => {
+                  const { config, result, conversationId } = finishedElsewhere;
+                  setFinishedElsewhere(null);
+                  showRun(config, result, conversationId);
+                }}
+              >
+                View results
+              </button>
+              <button
+                type="button"
+                className="run-notice__dismiss"
+                aria-label="Dismiss"
+                onClick={() => setFinishedElsewhere(null)}
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
           {activePage === "config" ? (
             <RunConfiguration
-              onRunComplete={handleRunComplete}
+              runFlow={configureRunFlow}
+              onRunStart={handleConfigureRunStart}
+              onRunEnd={handleRunEnd}
+              onRunComplete={handleConfigureRunComplete}
               initialConfig={rerunConfig}
               initialDraft={draftHandoff?.state}
               provenance={draftHandoff?.provenance}
@@ -788,7 +908,9 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
                 History exactly like the Configure tab — the two tabs are
                 separate ways to build a run, not separate destinations for it.
               */
-              onRunComplete={handleRunComplete}
+              onRunComplete={handleAgentRunComplete}
+              onRunStart={handleAgentRunStart}
+              onRunEnd={handleRunEnd}
               /*
                 The inline editor lives in the shell so it, and any edits in it,
                 survive leaving the AI agent page and coming back. Read during

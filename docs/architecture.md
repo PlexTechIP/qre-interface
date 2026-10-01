@@ -42,7 +42,9 @@ from QDK, a test double, or a future estimator implementation.
 
 The preload exposes exactly seven renderer surfaces:
 
-- `window.estimator`: estimation runs, backed by QRE.
+- `window.estimator`: estimation runs, backed by QRE, and `cancel(runId)` to
+  stop one in flight. Main kills the engine process; a cancelled run is not
+  recorded.
 - `window.store`: run history persistence, backed by SQLite.
 - `window.files`: file path lookup for uploaded programs.
 - `window.uploads`: pre-flight validation of an uploaded program file.
@@ -199,6 +201,12 @@ contractually rejected store operations may reject.
 Run history is owned by Electron main, not the renderer. `SqliteRunStore`
 implements the shared `RunStore` interface over `node:sqlite`; renderer code
 uses the same async interface through `window.store`.
+
+A run started from the dashboard is recorded by main, in the estimator IPC
+handler, before `window.estimator.run` resolves; main then sends
+`store:changed` so open windows re-read History. The renderer does not save
+runs itself. It used to, after the reply arrived, which lost the run whenever
+the page was not there to receive it (a reload mid-run).
 
 Each row in `run_records` stores:
 

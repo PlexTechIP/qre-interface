@@ -645,7 +645,18 @@ export interface RunStoreChangeSource {
 }
 
 export interface EstimatorService {
-  run(config: RunConfig): Promise<RunResult>;
+  /** `signal` cancels the run: it settles promptly instead of finishing. */
+  run(config: RunConfig, options?: { signal?: AbortSignal }): Promise<RunResult>;
+}
+
+/**
+ * The estimator as the renderer reaches it: run, and stop a run in flight.
+ *
+ * `cancel` is optional because a stand-in that cannot be cancelled is still a
+ * valid estimator; the run flow simply has nothing to tell it.
+ */
+export interface EstimatorBridge extends Pick<EstimatorService, "run"> {
+  cancel?(runId: string): Promise<void>;
 }
  
 // ---------------------------------------------------------------------------

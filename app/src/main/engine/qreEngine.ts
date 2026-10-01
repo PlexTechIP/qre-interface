@@ -21,7 +21,7 @@ export class QreEngine implements EstimatorService {
     private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
   ) {}
 
-  async run(config: RunConfig): Promise<RunResult> {
+  async run(config: RunConfig, options: { signal?: AbortSignal } = {}): Promise<RunResult> {
     const startedAt = new Date().toISOString();
     try {
       // Pre-flight uploaded programs before the engine spawns: a missing,
@@ -67,6 +67,7 @@ export class QreEngine implements EstimatorService {
         invocationResult.invocation,
         this.pythonBin,
         this.engineDir,
+        options.signal,
       );
       return outputToResult(
         config,

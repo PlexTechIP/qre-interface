@@ -26,7 +26,7 @@ import type {
   NewConversation,
 } from "../shared/chatTypes.js";
 import type {
-  EstimatorService,
+  EstimatorBridge,
   RunConfig,
   RunFilter,
   RunRecord,
@@ -56,6 +56,7 @@ import {
   CHAT_SEARCH_CHANNEL,
   CREDENTIAL_CLEAR_CHANNEL,
   CREDENTIAL_CONFIGURE_CHANNEL,
+  ESTIMATOR_CANCEL_CHANNEL,
   ESTIMATOR_RUN_CHANNEL,
   UPLOAD_PREFLIGHT_CHANNEL,
   STORE_DELETE_CHANNEL,
@@ -66,9 +67,12 @@ import {
   STORE_SAVE_CHANNEL,
 } from "./ipcChannels.js";
 
-const estimator: Pick<EstimatorService, "run"> = {
+const estimator: EstimatorBridge = {
   run(config: RunConfig): Promise<RunResult> {
     return ipcRenderer.invoke(ESTIMATOR_RUN_CHANNEL, config) as Promise<RunResult>;
+  },
+  cancel(runId: string): Promise<void> {
+    return ipcRenderer.invoke(ESTIMATOR_CANCEL_CHANNEL, runId) as Promise<void>;
   },
 };
 

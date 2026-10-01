@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
  
 import type { RunConfig, RunProvenance, RunResult } from "../shared/types";
 import type { ProposedField } from "./agent/draftToFormState";
@@ -28,7 +28,7 @@ import {
   schemaValidationStamp,
   toRunConfig,
 } from "./state/toRunConfig";
-import { useRunFlow } from "./state/useRunFlow";
+import { useRunFlow, type RunFlow, type RunHooks } from "./state/useRunFlow";
 import { isConfigValid, validateForm, type FieldErrors } from "./state/validation";
 import {
   blocksRun,
@@ -108,6 +108,16 @@ interface RunConfigurationProps {
    * anonymous one.
    */
   onStateChange?: (snapshot: FormSnapshot) => void;
+  /**
+   * A run flow held by the shell, so a run outlives this page: navigate away
+   * mid-run and come back, and the run is still on screen. Omitted (tests,
+   * standalone use), the page runs its own.
+   */
+  runFlow?: RunFlow | undefined;
+  /** A run has started from this page — the shell marks it as in flight. */
+  onRunStart?: ((config: RunConfig) => void) | undefined;
+  /** That run is over, with a result or without one. */
+  onRunEnd?: ((config: RunConfig) => void) | undefined;
 }
 
 /** The Run Configuration surface — the seven inputs + summary + validation. */
@@ -120,6 +130,9 @@ export function RunConfiguration({
   conversationId,
   restoredState,
   onStateChange,
+  runFlow,
+  onRunStart,
+  onRunEnd,
 }: RunConfigurationProps = {}): React.JSX.Element {
   /*
    * Seed order: a draft the analyst just accepted, then a rerun they just
@@ -170,7 +183,8 @@ export function RunConfiguration({
   const [draftConversationId, setDraftConversationId] = useState<string | undefined>(
     () => (initialDraft ? conversationId : restoredState?.conversationId),
   );
-  const { runState, start, retry, edit } = useRunFlow();
+  const ownRunFlow = useRunFlow();
+  const { runState, start, retry, cancel, edit } = runFlow ?? ownRunFlow;
 
   // A Rerun hands a reconstructed config down as `initialConfig`; load it into
   // the editable form when it changes.
@@ -221,15 +235,25 @@ export function RunConfiguration({
     });
   }, [state, draftProvenance, draftProposal, draftConversationId, onStateChange]);
 
-  // Notify the shell exactly once per finished run (keyed on the stamped id, so
-  // Retry — which mints a fresh id — reports as a distinct run).
-  const reportedIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (runState.phase !== "done") return;
-    if (reportedIdRef.current === runState.config.id) return;
-    reportedIdRef.current = runState.config.id;
-    onRunComplete?.(runState.config, runState.result, draftConversationId);
-  }, [runState, onRunComplete, draftConversationId]);
+  /*
+   * What the shell hears about a run started here: once when it starts, once
+   * when it finishes. Attached to the run itself rather than reported from an
+   * effect watching `runState`, because an effect dies with this page — leave
+   * Configure mid-run and nothing heard the run finish. The conversation is
+   * captured now, at Run-click, as the one that authored what is running.
+   */
+  const runHooks = (): RunHooks => {
+    const runConversationId = draftConversationId;
+    return {
+      onStarted: (config) => onRunStart?.(config),
+      onSettled: (config, result) => {
+        onRunEnd?.(config);
+        onRunComplete?.(config, result, runConversationId);
+      },
+      onRejected: (config) => onRunEnd?.(config),
+      onCancelled: (config) => onRunEnd?.(config),
+    };
+  };
  
   // Every update is normalized so cross-field coupling (Litinski19 fallback)
   // can never leave the draft internally inconsistent.
@@ -297,7 +321,12 @@ export function RunConfiguration({
               : "Review the result, then retry or edit the configuration."}
           </p>
         </header>
-        <RunFlowPanel runState={runState} onRetry={retry} onEdit={edit} />
+        <RunFlowPanel
+          runState={runState}
+          onRetry={() => retry(runHooks())}
+          onEdit={edit}
+          onCancel={cancel}
+        />
       </div>
     );
   }
@@ -384,7 +413,7 @@ export function RunConfiguration({
             type="button"
             className="run-button run-button--full"
             disabled={!valid}
-            onClick={() => start(state, draftProvenance)}
+            onClick={() => start(state, draftProvenance, runHooks())}
           >
             Run estimate
           </button>

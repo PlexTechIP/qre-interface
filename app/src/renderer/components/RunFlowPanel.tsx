@@ -7,6 +7,8 @@ interface RunFlowPanelProps {
   runState: RunState;
   onRetry: () => void;
   onEdit: () => void;
+  /** Stop the run in flight. Without it there is no way out of a long run. */
+  onCancel?: () => void;
   showDeveloperInspector?: boolean;
 }
 
@@ -20,6 +22,7 @@ export function RunFlowPanel({
   runState,
   onRetry,
   onEdit,
+  onCancel,
   showDeveloperInspector = false,
 }: RunFlowPanelProps): React.JSX.Element {
   if (runState.phase === "idle") {
@@ -76,14 +79,24 @@ export function RunFlowPanel({
             Retry
           </button>
         )}
-        <button
-          type="button"
-          className="run-button run-button--secondary"
-          onClick={onEdit}
-          disabled={running}
-        >
-          Edit configuration
-        </button>
+        {running && onCancel ? (
+          <button
+            type="button"
+            className="run-button run-button--secondary"
+            onClick={onCancel}
+          >
+            Cancel run
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="run-button run-button--secondary"
+            onClick={onEdit}
+            disabled={running}
+          >
+            Edit configuration
+          </button>
+        )}
       </div>
 
       {showDeveloperInspector ? (

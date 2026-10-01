@@ -1,4 +1,6 @@
 export const ESTIMATOR_RUN_CHANNEL = "estimator:run";
+// Stop a run in flight, by its config id. The run is not recorded.
+export const ESTIMATOR_CANCEL_CHANNEL = "estimator:cancel";
 
 // Pre-flight for an uploaded program file, so the FORM can reject a missing,
 // unreadable, wrong-extension or implausible file before Run is ever clicked.

@@ -527,6 +527,26 @@ describe("Model-assisted provenance", () => {
   });
 });
 
+describe("Cancelling a run", () => {
+  it("offers Cancel while the run is in flight, and returns to the form", async () => {
+    const cancelled: string[] = [];
+    window.estimator = {
+      ...fakeEstimator(buildSuccessResult(), { delayMs: 500 }),
+      cancel: async (runId: string) => {
+        cancelled.push(runId);
+      },
+    };
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(runButton());
+    await user.click(screen.getByRole("button", { name: "Cancel run" }));
+
+    expect(runButton()).toBeEnabled();
+    expect(cancelled).toHaveLength(1);
+  });
+});
+
 describe("Configuration summary reflects the draft", () => {
   it("shows the derived QEC code, and updates it when architecture changes", async () => {
     const user = userEvent.setup();
