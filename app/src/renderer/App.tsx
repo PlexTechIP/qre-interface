@@ -221,6 +221,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
   const rememberFormState = useCallback((snapshot: FormSnapshot): void => {
     formSnapshotRef.current = snapshot;
     setDraftHandoff((current) => (current === null ? current : null));
+    // A rerun is the same kind of arrival and is retired the same way: left
+    // standing, it outranked this snapshot on every later mount and reset the
+    // form to the rerun every time the analyst came back to it.
+    setRerunConfig((current) => (current === null ? current : null));
   }, []);
 
   /**

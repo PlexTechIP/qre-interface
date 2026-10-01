@@ -226,6 +226,30 @@ describe("App shell wiring", () => {
     expect(nameInput.value).toMatch(/\(\d+\)$/);
   });
 
+  /**
+   * A rerun is an arrival, like a model's draft: it seeds the form once.
+   * Held in the shell forever, it outranked the restored snapshot on every
+   * later mount, so a trip to History and back threw away everything the
+   * analyst had changed since pressing Rerun.
+   */
+  it("keeps edits made to a rerun config after leaving and returning to Configure", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+    const rerunButtons = await screen.findAllByRole("button", { name: "Rerun" });
+    await userEvent.click(rerunButtons[0]!);
+
+    const nameInput = await screen.findByRole("textbox", { name: /optional/i });
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Edited after rerun");
+
+    await userEvent.click(screen.getByRole("button", { name: "Run History" }));
+    await userEvent.click(screen.getByRole("button", { name: "Configure" }));
+
+    expect(screen.getByRole("textbox", { name: /optional/i })).toHaveValue(
+      "Edited after rerun",
+    );
+  });
+
   it("keeps each run's selected frontier row across Results, History, and Comparison", async () => {
     const selectedRun = buildRunRecord({
       config: {
