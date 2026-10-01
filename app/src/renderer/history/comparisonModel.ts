@@ -290,6 +290,8 @@ export interface ComparisonBar {
   value: number | null;
   /** Pre-formatted label via formatMetric — the text equivalent for the bar. */
   display: string;
+  /** The run's series colour — the same one its frontier curve is drawn in. */
+  color: string;
 }
 
 export interface ChartSpec {
@@ -330,6 +332,7 @@ export function buildCharts(
         shortName: col.shortName,
         value,
         display: formatMetric(metric),
+        color: seriesStyle(index).color,
       };
     });
     if (hasNumeric) charts.push({ key: row.key, label: row.label, unit, bars });
@@ -385,6 +388,9 @@ export interface FrontierComparison {
   qubitsUnit: string;
   logRuntime: boolean;
   logQubits: boolean;
+  /** Decade ticks for a log axis; absent for a linear one, whose ticks Recharts picks. */
+  runtimeTicks?: number[];
+  qubitsTicks?: number[];
 }
 
 /**
@@ -422,13 +428,31 @@ export function seriesStyle(index: number): { color: string; symbol: SeriesSymbo
   };
 }
 
-/** Log scaling earns its keep only across wide, strictly positive ranges. */
-const LOG_SCALE_RATIO = 100;
+/**
+ * Log scaling earns its keep only across wide, strictly positive ranges — and a
+ * decade is wide enough. At 100x, a 31-bit Shor run compared with RSA-2048
+ * (80x apart in qubits) stayed linear, and the smaller run's whole curve lay
+ * flat along the floor of the chart.
+ */
+const LOG_SCALE_RATIO = 10;
 
 function shouldUseLogScale(values: readonly number[]): boolean {
   // Log cannot plot zero or negatives, so a single non-positive value rules it out.
   if (values.length < 2 || values.some((value) => !(value > 0))) return false;
   return Math.max(...values) / Math.min(...values) >= LOG_SCALE_RATIO;
+}
+
+/**
+ * One tick per power of ten, from the decade below the smallest value to the
+ * decade above the largest, so the axis has a labelled mark at every order of
+ * magnitude it covers. Left to itself, Recharts labelled one point across eight.
+ */
+function decadeTicks(values: readonly number[]): number[] {
+  const low = Math.floor(Math.log10(Math.min(...values)));
+  const high = Math.ceil(Math.log10(Math.max(...values)));
+  const ticks: number[] = [];
+  for (let exponent = low; exponent <= high; exponent += 1) ticks.push(10 ** exponent);
+  return ticks;
 }
 
 function numericValue(metric: FieldMetric | undefined): number | null {
@@ -489,14 +513,18 @@ export function buildFrontierSeries(columns: readonly ComparisonColumn[]): Front
 
   const allRuntimes = series.flatMap((s) => s.points.map((p) => p.runtime));
   const allQubits = series.flatMap((s) => s.points.map((p) => p.physicalQubits));
+  const logRuntime = shouldUseLogScale(allRuntimes);
+  const logQubits = shouldUseLogScale(allQubits);
 
   return {
     series,
     omitted,
     runtimeUnit: runtimeUnit || "ns",
     qubitsUnit: qubitsUnit || "qubits",
-    logRuntime: shouldUseLogScale(allRuntimes),
-    logQubits: shouldUseLogScale(allQubits),
+    logRuntime,
+    logQubits,
+    ...(logRuntime ? { runtimeTicks: decadeTicks(allRuntimes) } : {}),
+    ...(logQubits ? { qubitsTicks: decadeTicks(allQubits) } : {}),
   };
 }
 

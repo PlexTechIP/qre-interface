@@ -46,8 +46,16 @@ const MARKER = 5;
 const MARKER_SELECTED = 7.5;
 
 export function FrontierCurves({ columns }: FrontierCurvesProps) {
-  const { series, omitted, runtimeUnit, qubitsUnit, logRuntime, logQubits } =
+  const { series, omitted, runtimeUnit, qubitsUnit, logRuntime, logQubits, runtimeTicks, qubitsTicks } =
     buildFrontierSeries(columns);
+  // A log axis spans whole decades and is marked at each one; a linear axis is
+  // left to Recharts. The muted text token, because the axis-line colour is
+  // too faint to read as text.
+  const axisTick = { fontSize: 11, fill: "var(--color-muted)" };
+  const logAxis = (ticks: number[] | undefined) =>
+    ticks && ticks.length > 0
+      ? ({ scale: "log", ticks, domain: [ticks[0]!, ticks[ticks.length - 1]!] } as const)
+      : ({ domain: ["auto", "auto"] } as const);
 
   // The chart's own text equivalent, so the figure announces its content even
   // before a reader reaches the table.
@@ -104,10 +112,9 @@ export function FrontierCurves({ columns }: FrontierCurvesProps) {
                 dataKey="runtime"
                 name="Runtime"
                 stroke="var(--color-chart-axis)"
-                tick={{ fontSize: 11 }}
+                tick={axisTick}
                 tickFormatter={formatRuntime}
-                domain={["auto", "auto"]}
-                {...(logRuntime ? ({ scale: "log" } as const) : {})}
+                {...logAxis(logRuntime ? runtimeTicks : undefined)}
                 label={{ value: "Runtime", position: "insideBottom", offset: -16, fontSize: 11 }}
               />
               <YAxis
@@ -116,10 +123,9 @@ export function FrontierCurves({ columns }: FrontierCurvesProps) {
                 name="Physical qubits"
                 width={72}
                 stroke="var(--color-chart-axis)"
-                tick={{ fontSize: 11 }}
+                tick={axisTick}
                 tickFormatter={formatQubits}
-                domain={["auto", "auto"]}
-                {...(logQubits ? ({ scale: "log" } as const) : {})}
+                {...logAxis(logQubits ? qubitsTicks : undefined)}
                 label={{
                   value: "Physical qubits",
                   angle: -90,

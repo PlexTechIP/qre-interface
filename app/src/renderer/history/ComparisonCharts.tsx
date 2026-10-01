@@ -2,6 +2,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   LabelList,
   ResponsiveContainer,
   Tooltip,
@@ -32,11 +33,17 @@ export interface ComparisonChartsProps {
 }
 
 interface BarDatum {
+  /** The run's number in the legend, shown under its bar. */
+  position: string;
   name: string;
   fullName: string;
   value: number | null;
   display: string;
+  color: string;
 }
+
+/** Axis text: the muted text token. The axis-line colour is too faint to read. */
+const AXIS_TICK = { fontSize: 11, fill: "var(--color-muted)" };
 
 export function ComparisonCharts({ columns, hiddenKeys }: ComparisonChartsProps) {
   const charts = buildCharts(columns, hiddenKeys);
@@ -49,21 +56,43 @@ export function ComparisonCharts({ columns, hiddenKeys }: ComparisonChartsProps)
     );
   }
 
+  // Each run is named once, here, in its series colour. Named under every bar
+  // instead, the names of three runs in a 280px chart ran into each other.
+  const runs = charts[0]?.bars ?? [];
+
   return (
-    <div className="comparison-charts">
-      {charts.map((spec) => (
-        <ComparisonBarChart key={spec.key} spec={spec} />
-      ))}
-    </div>
+    <>
+      <ul className="comparison-charts__legend" aria-label="Runs in these charts">
+        {runs.map((run, index) => (
+          <li key={run.id} className="comparison-charts__legend-item">
+            <span
+              className="comparison-charts__swatch"
+              style={{ background: run.color }}
+              aria-hidden="true"
+            >
+              {index + 1}
+            </span>
+            {run.name}
+          </li>
+        ))}
+      </ul>
+      <div className="comparison-charts">
+        {charts.map((spec) => (
+          <ComparisonBarChart key={spec.key} spec={spec} />
+        ))}
+      </div>
+    </>
   );
 }
 
 function ComparisonBarChart({ spec }: { spec: ChartSpec }) {
-  const data: BarDatum[] = spec.bars.map((bar) => ({
+  const data: BarDatum[] = spec.bars.map((bar, index) => ({
+    position: String(index + 1),
     name: bar.shortName,
     fullName: bar.name,
     value: bar.value,
     display: bar.display,
+    color: bar.color,
   }));
 
   const tickFormatter = (value: number): string =>
@@ -77,15 +106,31 @@ function ComparisonBarChart({ spec }: { spec: ChartSpec }) {
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 20, right: 12, bottom: 4, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-chart-grid)" vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--color-chart-axis)" interval={0} />
+          {/* Numbers, not names: the legend above names each run once. */}
+          <XAxis
+            dataKey="position"
+            tick={AXIS_TICK}
+            interval={0}
+            stroke="var(--color-chart-axis)"
+          />
           <YAxis
             width={64}
-            tick={{ fontSize: 11 }}
+            tick={AXIS_TICK}
             stroke="var(--color-chart-axis)"
             tickFormatter={tickFormatter}
           />
-          <Tooltip cursor={{ fill: "var(--color-row-hover)" }} content={<ChartTooltip />} />
-          <Bar dataKey="value" fill="var(--color-accent)" maxBarSize={72} radius={[3, 3, 0, 0]}>
+          {/* Free to leave the plot area: a long run name is wider than one chart,
+              and kept inside it the tooltip was cut off at the chart's edge. */}
+          <Tooltip
+            cursor={{ fill: "var(--color-row-hover)" }}
+            content={<ChartTooltip />}
+            allowEscapeViewBox={{ x: true, y: true }}
+            wrapperStyle={{ zIndex: 30 }}
+          />
+          <Bar dataKey="value" maxBarSize={72} radius={[3, 3, 0, 0]}>
+            {data.map((datum) => (
+              <Cell key={datum.fullName} fill={datum.color} />
+            ))}
             <LabelList dataKey="display" position="top" style={{ fontSize: 11, fill: "var(--color-body)" }} />
           </Bar>
         </BarChart>

@@ -9,9 +9,11 @@ import type { FrontierRow, RunRecord } from "../../shared/types";
 import {
   COMPARE_MIN_SELECTION,
   additionalFieldDefinitions,
+  buildCharts,
   buildComparisonRows,
   buildFrontierSeries,
   compareSelectionWarning,
+  seriesStyle,
   toComparisonColumn,
 } from "./comparisonModel";
 
@@ -430,6 +432,61 @@ describe("frontier curve series", () => {
     expect(withZero.logRuntime).toBe(false);
   });
 
+  /**
+   * Comparing a 31-bit Shor run (38,495 qubits) with RSA-2048 (3,079,551)
+   * spans 80x — under the old 100x threshold that stayed linear, and the
+   * small run's whole curve sat on the axis floor beneath the large one.
+   */
+  it("puts a spread of a decade or more on a log axis", () => {
+    const result = buildFrontierSeries([
+      toComparisonColumn(
+        recordWithFrontier("Small", "10000000-0000-4000-8000-00000000000a", [
+          pointAt(54_200_000, 38_495),
+        ]),
+      ),
+      toComparisonColumn(
+        recordWithFrontier("Large", "10000000-0000-4000-8000-00000000000b", [
+          pointAt(4.87e15, 3_079_551),
+        ]),
+      ),
+    ]);
+
+    expect(result.logQubits).toBe(true);
+  });
+
+  /**
+   * A log axis left to Recharts' own ticks labelled a single point across eight
+   * decades of runtime ("54.2 ms" and nothing else), so where any run sat could
+   * not be read off the axis at all.
+   */
+  it("gives a log axis a tick at every decade it spans", () => {
+    const result = buildFrontierSeries([
+      toComparisonColumn(
+        recordWithFrontier("Wide", "10000000-0000-4000-8000-00000000000a", [
+          pointAt(36_900_000, 136_010),
+          pointAt(4.87e15, 3_079_551),
+        ]),
+      ),
+    ]);
+
+    expect(result.runtimeTicks).toEqual([1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16]);
+    expect(result.qubitsTicks).toEqual([1e5, 1e6, 1e7]);
+  });
+
+  it("leaves a linear axis's ticks to the chart", () => {
+    const result = buildFrontierSeries([
+      toComparisonColumn(
+        recordWithFrontier("Narrow", "10000000-0000-4000-8000-00000000000b", [
+          pointAt(10, 10),
+          pointAt(20, 20),
+        ]),
+      ),
+    ]);
+
+    expect(result.runtimeTicks).toBeUndefined();
+    expect(result.qubitsTicks).toBeUndefined();
+  });
+
   it("returns no series at all when nothing in the selection has a frontier", () => {
     const failed = SAMPLE_RUN_RECORDS.filter((r) => r.result.status === "failed");
     expect(failed.length).toBeGreaterThan(0);
@@ -462,5 +519,25 @@ describe("compare-selection threshold", () => {
   it("stops warning once the threshold is met", () => {
     expect(compareSelectionWarning(2)).toBeNull();
     expect(compareSelectionWarning(6)).toBeNull();
+  });
+});
+
+/**
+ * Every bar used to be the same accent colour, with the run told apart only by
+ * its name under the axis — and three long names under three narrow bars
+ * overlapped into one unreadable string. Each run now keeps the colour its
+ * frontier curve has, so a bar is matched to its run by a legend, once.
+ */
+describe("per-metric bars", () => {
+  it("colour each run's bar the way that run's frontier curve is coloured", () => {
+    const columns = SAMPLE_RUN_RECORDS.slice(0, 3).map((record) => toComparisonColumn(record));
+
+    const [chart] = buildCharts(columns, new Set());
+
+    expect(chart?.bars.map((bar) => bar.color)).toEqual([
+      seriesStyle(0).color,
+      seriesStyle(1).color,
+      seriesStyle(2).color,
+    ]);
   });
 });
