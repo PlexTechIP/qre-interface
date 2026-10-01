@@ -80,16 +80,32 @@ export interface FormValidation {
   fields: FieldErrors;
   /** Per-benchmark hyperparameter errors; empty when there are none. */
   hyperparams: HyperparamError[];
+  /**
+   * The keys in `fields` whose error is only that nothing has been entered or
+   * chosen yet — as opposed to a value that is there and wrong.
+   *
+   * The difference decides how the form speaks. A blank required field is the
+   * next thing to do; a value out of range is a mistake. Rendered alike, a
+   * fresh Manual Logical Counts form opened with "Resolve 7 issues to run" in
+   * danger red before the analyst had typed a character.
+   */
+  incomplete: (keyof FieldErrors)[];
 }
  
 export function validateForm(state: FormState): FormValidation {
   const errors: FieldErrors = {};
+  const incomplete: (keyof FieldErrors)[] = [];
   let hyperparams: HyperparamError[] = [];
   const { application, architecture, traceTransform, maxError } = state;
+  /** Record a field as blank-and-required: an error, but not a mistake. */
+  const missing = (key: keyof FieldErrors, message: string): void => {
+    (errors as Record<string, string>)[key] = message;
+    incomplete.push(key);
+  };
  
   if (application.type === "benchmark") {
     if (application.benchmarkId.length === 0) {
-      errors.benchmarkId = "Select a benchmark to estimate.";
+      missing("benchmarkId", "Select a benchmark to estimate.");
     }
     hyperparams = validateHyperparams(
       application.benchmarkId,
@@ -99,28 +115,30 @@ export function validateForm(state: FormState): FormValidation {
     const chosen = application.savedPrograms.find(
       (program) => program.id === application.selectedSavedId,
     );
-    if (!chosen) errors.savedProgram = "Select a saved program to estimate.";
+    if (!chosen) missing("savedProgram", "Select a saved program to estimate.");
   } else if (application.type === "manualCounts") {
-    validateManualCounts(application.manualCounts, errors);
+    validateManualCounts(application.manualCounts, errors, incomplete);
   } else if (application.upload.filePath.trim().length === 0) {
-    errors.uploadFilePath = "Choose a program file to upload.";
+    missing("uploadFilePath", "Choose a program file to upload.");
   }
  
   if (architecture.type === "gateBased") {
     const g = architecture.gateBased;
     if (g.errorRate === null) {
-      errors.errorRate = "Enter an error rate.";
+      missing("errorRate", "Enter an error rate.");
     } else if (!(g.errorRate > 0 && g.errorRate < 0.01)) {
       errors.errorRate = "Error rate must be between 0 and 0.01 (exclusive).";
     }
     if (g.gateTime === null) {
-      errors.gateTime = "Gate time is required — enter a value in nanoseconds.";
+      missing("gateTime", "Gate time is required — enter a value in nanoseconds.");
     } else {
       assignIf(errors, "gateTime", checkTime(g.gateTime, "Gate time"));
     }
     if (g.measurementTime === null) {
-      errors.measurementTime =
-        "Measurement time is required — enter a value in nanoseconds.";
+      missing(
+        "measurementTime",
+        "Measurement time is required — enter a value in nanoseconds.",
+      );
     } else {
       assignIf(errors, "measurementTime", checkTime(g.measurementTime, "Measurement time"));
     }
@@ -130,7 +148,7 @@ export function validateForm(state: FormState): FormValidation {
   } else if (architecture.type === "majorana") {
     const m = architecture.majorana;
     if (m.operationTime === null) {
-      errors.operationTime = "Operation time is required.";
+      missing("operationTime", "Operation time is required.");
     } else {
       assignIf(errors, "operationTime", checkTime(m.operationTime, "Operation time"));
     }
@@ -157,8 +175,10 @@ export function validateForm(state: FormState): FormValidation {
   const dmc = traceTransform.dynamicMemoryCompute;
   if (dmc !== null) {
     if (dmc.computeCapacityPercentage === null) {
-      errors.computeCapacityPercentage =
-        "Enter a compute capacity percentage, or turn Dynamic Memory Compute off.";
+      missing(
+        "computeCapacityPercentage",
+        "Enter a compute capacity percentage, or turn Dynamic Memory Compute off.",
+      );
     } else if (
       !(dmc.computeCapacityPercentage > 0 && dmc.computeCapacityPercentage <= 1)
     ) {
@@ -168,7 +188,7 @@ export function validateForm(state: FormState): FormValidation {
   }
 
   if (maxError === null) {
-    errors.maxError = "Enter a Total Fault Tolerant Execution Error.";
+    missing("maxError", "Enter a Total Fault Tolerant Execution Error.");
   } else if (!(maxError > 0 && maxError <= 1)) {
     errors.maxError =
       "Total Fault Tolerant Execution Error must be between 0 and 1 (1.0 is allowed).";
@@ -182,7 +202,7 @@ export function validateForm(state: FormState): FormValidation {
       "At least one of Round-Based, Litinski19 or GSJ24 must stay selected.";
   }
 
-  return { fields: errors, hyperparams };
+  return { fields: errors, hyperparams, incomplete };
 }
 
 /**
@@ -235,21 +255,35 @@ function assignIf(
 ): void {
   if (message !== undefined) (errors as Record<string, string>)[key] = message;
 }
- 
-/** Validate the seven Manual Logical Counts fields into `errors`. */
-function validateManualCounts(m: ManualCountsForm, errors: FieldErrors): void {
-  assignIf(errors, "numQubits", checkCount(m.numQubits, 1, "Logical Qubit Count"));
-  assignIf(errors, "tCount", checkCount(m.tCount, 0, "T Count"));
-  assignIf(errors, "rotationCount", checkCount(m.rotationCount, 0, "Rotation Count"));
-  assignIf(errors, "cczCount", checkCount(m.cczCount, 0, "CCZ Count"));
-  assignIf(errors, "ccixCount", checkCount(m.ccixCount, 0, "CCiX Count"));
-  assignIf(errors, "measurementCount", checkCount(m.measurementCount, 0, "Measurement Count"));
+
+/**
+ * Validate the seven Manual Logical Counts fields into `errors`, noting in
+ * `incomplete` the ones that are only blank.
+ */
+function validateManualCounts(
+  m: ManualCountsForm,
+  errors: FieldErrors,
+  incomplete: (keyof FieldErrors)[],
+): void {
+  const counts: [keyof ManualCountsForm & keyof FieldErrors, number, string][] = [
+    ["numQubits", 1, "Logical Qubit Count"],
+    ["tCount", 0, "T Count"],
+    ["rotationCount", 0, "Rotation Count"],
+    ["cczCount", 0, "CCZ Count"],
+    ["ccixCount", 0, "CCiX Count"],
+    ["measurementCount", 0, "Measurement Count"],
+  ];
+  for (const [key, min, label] of counts) {
+    assignIf(errors, key, checkCount(m[key], min, label));
+    if (m[key] === null) incomplete.push(key);
+  }
  
   // Rotation Depth is a non-negative integer additionally bounded by Rotation
   // Count (a rotation cannot have more depth than there are rotations).
   const depthBase = checkCount(m.rotationDepth, 0, "Rotation Depth");
   if (depthBase !== undefined) {
     errors.rotationDepth = depthBase;
+    if (m.rotationDepth === null) incomplete.push("rotationDepth");
   } else if (
     m.rotationCount !== null &&
     m.rotationDepth !== null &&

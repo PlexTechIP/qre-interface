@@ -246,6 +246,22 @@ export function RunConfiguration({
             : { uploadFilePath: preflight.message }),
         }
       : validation.fields;
+  /*
+   * Blank is not wrong. When everything left is a field nobody has filled in
+   * yet, the summary is a to-do list rather than an alert, and the Application
+   * card does not flag a program the analyst has not had the chance to pick.
+   * Number fields need no help here: they already hold an empty-required
+   * message until the field has been touched.
+   */
+  const incomplete = new Set(validation.incomplete);
+  const pending =
+    preflight.status !== "invalid" &&
+    validation.hyperparams.length === 0 &&
+    (Object.keys(errors) as (keyof FieldErrors)[]).every((key) => incomplete.has(key));
+  const applicationErrors: FieldErrors = { ...errors };
+  for (const key of ["benchmarkId", "savedProgram", "uploadFilePath"] as const) {
+    if (incomplete.has(key)) delete applicationErrors[key];
+  }
   const generatedName = generateName(state);
   // `draftProvenance` is passed to the gate and to Run from the same variable:
   // the config the gate approves is then the config that executes, provenance
@@ -295,7 +311,7 @@ export function RunConfiguration({
         <div className="run-config__form">
           <ApplicationSection
             value={state.application}
-            errors={errors}
+            errors={applicationErrors}
             hyperparamErrors={validation.hyperparams}
             isCheckingFile={preflight.status === "checking"}
             onChange={(application) => update((s) => ({ ...s, application }))}
@@ -347,7 +363,11 @@ export function RunConfiguration({
             generatedName={generatedName}
             onChange={(name) => update((s) => ({ ...s, name }))}
           />
-          <ValidationSummary errors={errors} hyperparams={validation.hyperparams} />
+          <ValidationSummary
+            errors={errors}
+            hyperparams={validation.hyperparams}
+            pending={pending}
+          />
           <button
             type="button"
             className="run-button run-button--full"

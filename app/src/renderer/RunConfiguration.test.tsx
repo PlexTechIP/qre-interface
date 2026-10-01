@@ -106,6 +106,46 @@ describe("Run-button validation gating", () => {
     expect(
       screen.getByRole("button", { name: /error rate must be between 0 and 0\.01/i }),
     ).toBeInTheDocument();
+    // A value that is wrong is an alert, not a to-do list.
+    expect(screen.getByText(/resolve 1 issue to run/i).closest('[role="alert"]')).not.toBeNull();
+  });
+
+  /**
+   * Blank is not wrong. Switching to Manual Logical Counts used to greet the
+   * analyst with "Resolve 7 issues to run" in danger red before they had typed
+   * a character; an empty form they have not touched is a list of what is left
+   * to fill in, and reads as one.
+   */
+  it("lists blank required fields as still to complete, not as errors", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(screen.getByRole("radio", { name: "Manual Logical Counts" }));
+
+    expect(runButton()).toBeDisabled();
+    expect(screen.getByText(/complete 7 required fields to run/i)).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not raise an alert for a saved program the analyst has not had a chance to pick", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(screen.getByRole("radio", { name: "Saved Programs" }));
+
+    expect(runButton()).toBeDisabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/complete 1 required field to run/i)).toBeVisible();
+  });
+
+  it("does not raise an alert for an upload the analyst has not chosen yet", async () => {
+    const user = userEvent.setup();
+    render(<RunConfiguration />);
+
+    await user.click(screen.getByRole("radio", { name: "Upload Program File" }));
+
+    expect(runButton()).toBeDisabled();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("rejects non-numeric input with an inline message", async () => {
