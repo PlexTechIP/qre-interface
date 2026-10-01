@@ -34,6 +34,21 @@ import {
  * comparison selection survives switching between the two.
  */
 
+/**
+ * What the analyst was doing on these surfaces, as of the last change.
+ *
+ * Held by the shell, because the shell is what outlives this page: opening a
+ * run moves to Results and unmounts the whole surface, and it used to take the
+ * search, the filters, the checked runs and the scroll position with it — the
+ * work of narrowing a long history down, undone by looking at one result.
+ */
+export interface HistorySession {
+  readonly filter: RunFilter;
+  readonly comparisonIds: readonly string[];
+  /** Window scroll offset per view, restored once the list has loaded. */
+  readonly scrollY: Readonly<Record<"history" | "comparison", number>>;
+}
+
 interface RunHistoryContainerProps {
   /** The run store to read from. Defaults to an empty in-memory store; the app
    *  shell injects the shared store its Run flow saves into, and tests inject a
@@ -63,6 +78,10 @@ interface RunHistoryContainerProps {
   /** App-level session selection for each immutable run record. */
   selectedRowByRunId?: SelectedRowByRunId;
   onSelectedRowChange?: (runId: string, selectedIndex: number) => void;
+  /** Where to pick up from — the session as it stood when this page was left. */
+  session?: HistorySession | undefined;
+  /** Report the session upward as it changes. */
+  onSessionChange?: ((session: HistorySession) => void) | undefined;
 }
 
 export function RunHistoryContainer({
@@ -75,6 +94,8 @@ export function RunHistoryContainer({
   onRerunRequest,
   selectedRowByRunId: controlledSelectedRows,
   onSelectedRowChange,
+  session,
+  onSessionChange,
 }: RunHistoryContainerProps = {}) {
   // The store is created once and never recreated across renders. Kept behind
   // the RunStore type so nothing here depends on it being in-memory.
@@ -94,12 +115,14 @@ export function RunHistoryContainer({
   const [hasLoaded, setHasLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [filter, setFilter] = useState<RunFilter>({});
+  const [filter, setFilter] = useState<RunFilter>(() => session?.filter ?? {});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // The unified selection: the set of record ids checked in History. Both
   // "Compare Selected" and "Delete Selected" operate on this one set.
-  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [comparisonIds, setComparisonIds] = useState<string[]>(() => [
+    ...(session?.comparisonIds ?? []),
+  ]);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -159,6 +182,31 @@ export function RunHistoryContainer({
   const [comparisonExportHiddenKeys, setComparisonExportHiddenKeys] =
     useState<ReadonlySet<string> | null>(null);
 
+  /*
+   * The session, mirrored up to the shell. Scroll is tracked from scroll events
+   * while this page is open — by the time an unmount cleanup runs, the next
+   * page is already in the document and the offset may have been clamped to
+   * its height — and kept per view, since History and Comparison scroll apart.
+   */
+  const scrollY = useRef<Record<"history" | "comparison", number>>({
+    history: session?.scrollY.history ?? 0,
+    comparison: session?.scrollY.comparison ?? 0,
+  });
+  const reportSession = useCallback((): void => {
+    onSessionChange?.({ filter, comparisonIds, scrollY: { ...scrollY.current } });
+  }, [onSessionChange, filter, comparisonIds]);
+  useEffect(() => {
+    reportSession();
+  }, [reportSession]);
+  useEffect(() => {
+    const onScroll = (): void => {
+      scrollY.current[view] = window.scrollY;
+      reportSession();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [view, reportSession]);
+
   /**
    * Re-read the store through the query API so the view always reflects stored
    * state (post-delete especially). Runs the active filter server-side, exactly
@@ -205,6 +253,16 @@ export function RunHistoryContainer({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Back to where the analyst left this view — once, after the first load,
+  // because before it there are no rows to be scrolled through.
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (!hasLoaded || scrollRestored.current) return;
+    scrollRestored.current = true;
+    const y = scrollY.current[view];
+    if (y > 0) window.scrollTo(0, y);
+  }, [hasLoaded, view]);
 
   // Somebody else wrote a run — an agent, through the MCP server. Reload
   // quietly; the unsubscribe is what keeps a listener from outliving the page.

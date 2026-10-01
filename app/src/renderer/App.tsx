@@ -11,7 +11,7 @@ import type { RunConfig, RunRecord, RunResult } from "../shared/types";
 import { ChatPage, type ChatView } from "./agent/ChatPage";
 import type { DraftHandoff } from "./agent/draftToFormState";
 import { QRE_VERSION } from "./constants/staticOptions";
-import { RunHistoryContainer } from "./history/RunHistoryContainer";
+import { RunHistoryContainer, type HistorySession } from "./history/RunHistoryContainer";
 import type { RerunRequest } from "./history/rerun";
 import { ResultsPage } from "./results/ResultsPage";
 import type { SelectedRowByRunId } from "./results/selectedRows";
@@ -227,6 +227,27 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
     // form to the rerun every time the analyst came back to it.
     setRerunConfig((current) => (current === null ? current : null));
   }, []);
+
+  /**
+   * Run History's search, filters, checked runs and scroll, mirrored up the
+   * same way as the form: a ref, because it is only read when the page mounts.
+   * Opening a run unmounts History, and without this the analyst came back to
+   * an empty search, nothing checked, and the top of the list.
+   */
+  const historySessionRef = useRef<HistorySession | null>(null);
+  const rememberHistorySession = useCallback((session: HistorySession): void => {
+    historySessionRef.current = session;
+  }, []);
+
+  /*
+   * Each page opens at its top. The window is the one scroller every page
+   * shares, so without this a page inherited the last one's offset — opening a
+   * run from far down History landed on Results already scrolled past its
+   * headline. History puts its own position back once its list has loaded.
+   */
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activePage]);
 
   /**
    * The AI agent's inline configuration editor, owned by the shell.
@@ -963,6 +984,10 @@ export function App({ agentService }: { agentService?: AgentService } = {}) {
               selectedRowByRunId={selectedRowByRunId}
               onSelectedRowChange={handleSelectedRowChange}
               onRerunRequest={handleRerunRequest}
+              // Read during render for the same reason `restoredState` is: the
+              // ref is written only by a child effect and read only at mount.
+              session={historySessionRef.current ?? undefined}
+              onSessionChange={rememberHistorySession}
             />
           ) : null}
         </section>

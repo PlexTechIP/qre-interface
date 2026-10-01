@@ -1375,6 +1375,80 @@ describe("App shell — editing a proposal in place", () => {
   });
 });
 
+/**
+ * Run History is where an analyst narrows hundreds of runs down to a handful,
+ * and opening one of those runs is the whole point. The page used to unmount on
+ * that click and take its state with it: back from Results, the search was
+ * empty, every checked run unchecked, and the list scrolled to the top.
+ */
+describe("App shell — Run History remembers where you were", () => {
+  beforeEach(() => {
+    window.store = withNoChangeSource(new InMemoryRunStore(SAMPLE_RUN_RECORDS));
+    window.estimator = fakeEstimator(buildSuccessResult(), {
+      delayMs: 10,
+      store: () => window.store,
+    });
+    window.agent = fakeAgentService();
+    window.chats = new InMemoryChatStore();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+    vi.restoreAllMocks();
+  });
+
+  const navButton = (name: string) => screen.getByRole("button", { name });
+
+  async function openFirstRunAndComeBack(): Promise<void> {
+    await userEvent.click((await screen.findAllByRole("button", { name: "View" }))[0]!);
+    await screen.findByRole("heading", { name: "Estimation Results" });
+    await userEvent.click(navButton("Run History"));
+  }
+
+  it("keeps the search and the checked runs after opening a run", async () => {
+    render(<App />);
+    await userEvent.click(navButton("Run History"));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search run name" }), "Shor");
+    await waitFor(() =>
+      expect(screen.getAllByRole("checkbox", { name: /^Select / })).toHaveLength(
+        SAMPLE_RUN_RECORDS.filter((record) => /shor/i.test(record.config.name)).length,
+      ),
+    );
+    await userEvent.click(screen.getAllByRole("checkbox", { name: /^Select / })[0]!);
+
+    await openFirstRunAndComeBack();
+
+    expect(screen.getByRole("searchbox", { name: "Search run name" })).toHaveValue("Shor");
+    await waitFor(() =>
+      expect(screen.getAllByRole("checkbox", { name: /^Select /, checked: true })).toHaveLength(1),
+    );
+  });
+
+  it("returns to where the list was scrolled", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    render(<App />);
+    await userEvent.click(navButton("Run History"));
+    await screen.findAllByRole("button", { name: "View" });
+    Object.defineProperty(window, "scrollY", { value: 640, configurable: true });
+    window.dispatchEvent(new Event("scroll"));
+
+    await openFirstRunAndComeBack();
+
+    await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith(0, 640));
+  });
+
+  it("opens every other page at the top rather than wherever the last one was", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    render(<App />);
+    await userEvent.click(navButton("Run History"));
+    Object.defineProperty(window, "scrollY", { value: 640, configurable: true });
+
+    await userEvent.click((await screen.findAllByRole("button", { name: "View" }))[0]!);
+
+    expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
+  });
+});
+
 describe("App shell — Settings remembers where you were", () => {
   beforeEach(() => {
     window.estimator = fakeEstimator(buildSuccessResult(), { delayMs: 10, store: () => window.store });

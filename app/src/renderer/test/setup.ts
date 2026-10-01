@@ -33,6 +33,12 @@ if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = function scrollIntoView(): void {};
 }
 
+// jsdom's `window.scrollTo` exists only to report "Not implemented" on every
+// call. The shell scrolls each page to its top, and Run History restores its
+// own offset, so a quiet no-op keeps that report out of every suite; tests that
+// care about where the window was sent spy on it.
+window.scrollTo = (() => {}) as typeof window.scrollTo;
+
 // jsdom ships no ResizeObserver, which Recharts' ResponsiveContainer constructs
 // on mount. A no-op stub lets the Comparison charts render in tests without
 // throwing; the charts have a text-equivalent table, so tests assert against
