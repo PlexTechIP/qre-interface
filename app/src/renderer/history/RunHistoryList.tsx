@@ -129,7 +129,7 @@ export function RunHistoryList({
                 <th scope="col" className="num">Factories</th>
                 <th scope="col" className="num">Total Error</th>
                 <th scope="col" className="num">Code Dist.</th>
-                <th scope="col">Actions</th>
+                <th scope="col" className="col-actions">Actions</th>
               </tr>
             </thead>
             <tbody>

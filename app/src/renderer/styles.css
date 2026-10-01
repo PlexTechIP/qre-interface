@@ -4557,6 +4557,36 @@ input[type="range"]:focus-visible,
   min-width: 180px;
 }
 
+/* The table is wider than its card in a default window, and the actions sat at
+   its far end, scrolled out of sight. Pinned to the scroller's right edge, they
+   stay in reach whatever is scrolled behind them. Sticky cells paint their own
+   background, so each row state is restated here; the inset shadow marks the
+   edge the other columns slide under. */
+.history-table .col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  box-shadow: inset 1px 0 0 var(--color-border);
+}
+
+.history-table thead th.col-actions {
+  z-index: 2;
+  background: var(--color-table-head-bg);
+}
+
+.history-table tbody tr:hover td.col-actions {
+  background: var(--color-row-hover);
+}
+
+.history-table tbody tr.selected td.col-actions {
+  background: var(--color-accent-bg);
+}
+
+.history-table tbody tr.marked-for-deletion td.col-actions {
+  background: var(--color-danger-bg);
+}
+
 /* Stack the four per-row actions in a 2x2 grid so the Actions column stays
    narrow instead of forcing a wide single row of buttons. */
 .row-actions {
